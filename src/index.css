@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 17% 4%;
+    --foreground: 40 70% 95%;
+    --card: 28 18% 9%;
+    --card-foreground: 40 70% 95%;
+    --popover: 30 17% 4%;
+    --popover-foreground: 40 70% 95%;
+    --primary: 36 89% 60%;
+    --primary-foreground: 30 17% 4%;
+    --secondary: 28 18% 9%;
+    --secondary-foreground: 40 70% 95%;
+    --muted: 28 12% 14%;
+    --muted-foreground: 34 12% 53%;
+    --accent: 36 89% 60%;
+    --accent-foreground: 30 17% 4%;
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 15% 19%;
+    --input: 28 18% 9%;
+    --ring: 36 89% 60%;
+    --radius: 0.375rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body, #root { @apply bg-background min-h-screen m-0 p-0; }
+  body {
+    @apply text-foreground;
+    font-family: 'Sora', system-ui, sans-serif;
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  .font-display { font-family: 'Major Mono Display', monospace; letter-spacing: -0.02em; }
+  .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  .pixel-img { image-rendering: pixelated; image-rendering: -moz-crisp-edges; }
+
+  .crt-scan::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 90;
+    background: repeating-linear-gradient(0deg,
+      rgba(244,174,60,0.025) 0px, rgba(244,174,60,0.025) 1px,
+      transparent 1px, transparent 3px);
+    mix-blend-mode: screen;
+  }
+  .crt-vignette::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 91;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.55) 100%);
+  }
+  .grain::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; opacity: 0.05; z-index: 92;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .corner-bracket { position: relative; }
+  .corner-bracket::before, .corner-bracket::after {
+    content: ''; position: absolute; width: 8px; height: 8px;
+    border-color: hsl(var(--primary)); border-style: solid;
+  }
+  .corner-bracket::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+  .corner-bracket::after { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+
+  @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  .shimmer { background: linear-gradient(90deg, hsl(var(--card)) 0%, hsl(var(--muted)) 50%, hsl(var(--card)) 100%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+  .fade-up { animation: fadeUp 0.35s ease-out both; }
+  @keyframes flicker { 0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.85} 95%{opacity:1} 96%{opacity:0.92} }
+  .flicker { animation: flicker 5s infinite; }
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
+
+  .scroll-x::-webkit-scrollbar, .scroll-y::-webkit-scrollbar { height: 6px; width: 6px; }
+  .scroll-x::-webkit-scrollbar-thumb, .scroll-y::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+  .scroll-x::-webkit-scrollbar-track, .scroll-y::-webkit-scrollbar-track { background: transparent; }
+}

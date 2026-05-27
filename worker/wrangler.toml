@@ -1,0 +1,43 @@
+name = "trainers-codex-api"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Production deploy: bind to api.trainerscodex.com via custom domain in Cloudflare.
+# Preview deploy: <project>.workers.dev fallback.
+
+# Origin allow-list for CORS — read from this env var.
+# The bundle is hosted on Cloudflare Pages at trainerscodex.com; the workers.dev
+# domain is included for preview-branch testing.
+[vars]
+ALLOWED_ORIGINS = "https://trainerscodex.com,https://www.trainerscodex.com,https://trainers-codex.pages.dev"
+ENVIRONMENT = "production"
+STRIPE_PRICE_ID = "price_REPLACE_AT_DEPLOY"
+PRINTFUL_STORE_ID = "REPLACE_AT_DEPLOY"
+
+# KV namespace for per-IP rate limiting.
+# Create with: wrangler kv:namespace create RATELIMIT_KV
+[[kv_namespaces]]
+binding = "RATELIMIT_KV"
+id = "REPLACE_AT_DEPLOY"
+
+# R2 bucket for hosting generated print PNGs (so Printful can reach them via URL).
+# Create with: wrangler r2 bucket create trainerscodex-prints
+[[r2_buckets]]
+binding = "PRINTS_BUCKET"
+bucket_name = "trainerscodex-prints"
+
+# Secrets — set via `wrangler secret put` after `wrangler deploy`.
+# DO NOT add these to [vars] — that commits them to git.
+# Required:
+#   STRIPE_SECRET_KEY        sk_live_... (or sk_test_... for staging)
+#   STRIPE_WEBHOOK_SECRET    whsec_... from Stripe Dashboard → Webhooks
+#   JWT_SIGNING_KEY          openssl rand -base64 32
+#   PRINTFUL_API_KEY         from Printful Dashboard → API → Create Token
+# Optional:
+#   SUPABASE_SERVICE_ROLE_KEY (only for cross-checking subscription on cloud sync)
+
+# Custom domain routing: point api.trainerscodex.com → this worker via Cloudflare DNS.
+# [[routes]]
+# pattern = "api.trainerscodex.com/*"
+# custom_domain = true
