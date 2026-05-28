@@ -3,7 +3,8 @@ import {
   Search, BarChart3, ArrowUpDown,
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
-  User, Wand2, ShoppingBag, LogIn, Cloud
+  User, Wand2, ShoppingBag, LogIn, Cloud,
+  Sun, Moon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,6 +70,23 @@ export default function App() {
   const [teamName, setTeamName] = useState('');
   const [trainer, setTrainer] = useState<TrainerProfile | null>(null);
   const [premium, setPremium] = useState(false);
+  // v6: light/dark mode. Default to dark (the original v5 brand vibe), persist
+  // in localStorage. We toggle the `.light` / `.dark` class on documentElement
+  // so the CSS variables in index.css switch palettes.
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'dark';
+    const stored = localStorage.getItem('trainerscodex.theme');
+    return (stored === 'light' ? 'light' : 'dark');
+  });
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(theme);
+    try { localStorage.setItem('trainerscodex.theme', theme); } catch {}
+  }, [theme]);
+  const toggleTheme = useCallback(() => {
+    setTheme(t => t === 'dark' ? 'light' : 'dark');
+  }, []);
 
   const [pendingTeam, setPendingTeam] = useState<(TeamMember | null)[] | null>(null);
   const [search, setSearch] = useState('');
@@ -398,6 +416,13 @@ export default function App() {
 
   // ---------- Library actions ----------
   const saveCurrentToLibrary = useCallback((name: string) => {
+    // v6: free tier capped at 3 saved teams. Premium unlimited.
+    // Reason: premium-revenue lever. Anyone building 4+ teams is a power
+    // user and the $4.99/mo conversion threshold is well-justified.
+    if (!premium && savedTeams.length >= 3) {
+      toast.error('saved-team limit · upgrade to Premium for unlimited');
+      return;
+    }
     const entry: SavedTeam = {
       id: genId(),
       name: name || teamName || 'Untitled',
@@ -407,7 +432,7 @@ export default function App() {
     setSavedTeams(s => [entry, ...s]);
     setTeamName(entry.name);
     toast.success(`saved "${entry.name}"`);
-  }, [members, teamName]);
+  }, [members, teamName, premium, savedTeams.length]);
 
   const loadFromLibrary = useCallback((entry: SavedTeam) => {
     pushUndo(members);
@@ -503,6 +528,14 @@ export default function App() {
                   <TooltipContent>Undo (⌘Z)</TooltipContent>
                 </Tooltip>
               )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={toggleTheme} className="w-8 h-8" aria-label="Toggle theme">
+                    {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

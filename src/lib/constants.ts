@@ -150,7 +150,9 @@ export type SpriteVariant =
   | 'home-default'
   | 'home-shiny'
   | 'home-female'
-  | 'home-shiny-female';
+  | 'home-shiny-female'
+  | 'animated-gen5'
+  | 'animated-gen5-shiny';
 
 export const SPRITE_VARIANT_LABELS: Record<SpriteVariant, string> = {
   'pixel-default':       'Pixel · Default',
@@ -161,7 +163,48 @@ export const SPRITE_VARIANT_LABELS: Record<SpriteVariant, string> = {
   'home-shiny':          '3D HOME · Shiny ⭐',
   'home-female':         '3D HOME · Female',
   'home-shiny-female':   '3D HOME · Female Shiny ⭐',
+  'animated-gen5':       'Animated Gen 5 (BW)',
+  'animated-gen5-shiny': 'Animated Gen 5 · Shiny ⭐',
 };
+
+// ============================================================
+// HELD ITEMS — common competitive selections (v6)
+// ============================================================
+// Curated from real meta usage on Smogon. Items are character-canonical
+// (real Pokémon items, not invented). Order is approximate usage frequency.
+
+export const HELD_ITEMS: { id: string; label: string; effect: string }[] = [
+  { id: 'leftovers',       label: 'Leftovers',       effect: 'Heals 1/16 HP each turn.' },
+  { id: 'choice-band',     label: 'Choice Band',     effect: '+50% Attack, but locked into one move.' },
+  { id: 'choice-specs',    label: 'Choice Specs',    effect: '+50% Sp. Atk, but locked into one move.' },
+  { id: 'choice-scarf',    label: 'Choice Scarf',    effect: '+50% Speed, but locked into one move.' },
+  { id: 'life-orb',        label: 'Life Orb',        effect: '+30% damage. Loses 10% HP per attack.' },
+  { id: 'focus-sash',      label: 'Focus Sash',      effect: 'Survives one OHKO at 1 HP. Consumed.' },
+  { id: 'assault-vest',    label: 'Assault Vest',    effect: '+50% Sp. Def. Cannot use status moves.' },
+  { id: 'heavy-duty-boots', label: 'Heavy-Duty Boots', effect: 'Ignores entry hazards on switch.' },
+  { id: 'eviolite',        label: 'Eviolite',        effect: '+50% Def & Sp. Def on non-fully-evolved.' },
+  { id: 'rocky-helmet',    label: 'Rocky Helmet',    effect: 'Contact attackers lose 1/6 HP.' },
+  { id: 'sitrus-berry',    label: 'Sitrus Berry',    effect: 'Heals 25% HP when below 50%. Consumed.' },
+  { id: 'lum-berry',       label: 'Lum Berry',       effect: 'Cures any major status. Consumed.' },
+  { id: 'black-sludge',    label: 'Black Sludge',    effect: 'Heals Poison-types; damages others.' },
+  { id: 'mental-herb',     label: 'Mental Herb',     effect: 'Cures attraction/taunt/encore. Consumed.' },
+  { id: 'power-herb',      label: 'Power Herb',      effect: 'Skips charge turn of a two-turn move.' },
+  { id: 'wide-lens',       label: 'Wide Lens',       effect: '+10% accuracy on all moves.' },
+  { id: 'expert-belt',     label: 'Expert Belt',     effect: '+20% damage on super-effective hits.' },
+  { id: 'air-balloon',     label: 'Air Balloon',     effect: 'Grants Ground immunity until hit.' },
+  { id: 'light-clay',      label: 'Light Clay',      effect: 'Light Screen/Reflect last 8 turns.' },
+  { id: 'mystic-water',    label: 'Mystic Water',    effect: '+20% damage on Water moves.' },
+  { id: 'charcoal',        label: 'Charcoal',        effect: '+20% damage on Fire moves.' },
+  { id: 'magnet',          label: 'Magnet',          effect: '+20% damage on Electric moves.' },
+  { id: 'soft-sand',       label: 'Soft Sand',       effect: '+20% damage on Ground moves.' },
+  { id: 'silver-powder',   label: 'Silver Powder',   effect: '+20% damage on Bug moves.' },
+  { id: 'twisted-spoon',   label: 'Twisted Spoon',   effect: '+20% damage on Psychic moves.' },
+  { id: 'black-belt',      label: 'Black Belt',      effect: '+20% damage on Fighting moves.' },
+  { id: 'spell-tag',       label: 'Spell Tag',       effect: '+20% damage on Ghost moves.' },
+  { id: 'sharp-beak',      label: 'Sharp Beak',      effect: '+20% damage on Flying moves.' },
+  { id: 'soothe-bell',     label: 'Soothe Bell',     effect: 'Speeds up friendship gain.' },
+  { id: 'lucky-egg',       label: 'Lucky Egg',       effect: '+50% XP gain.' },
+];
 
 // ============================================================
 // POSTER ART STYLES — for the generated team poster

@@ -24,7 +24,7 @@
 
 import type { TrainerProfile, SavedTeam } from './types';
 
-export type AuthProvider = 'google' | 'github' | 'discord' | 'facebook' | 'azure' | 'twitter';
+export type AuthProvider = 'google' | 'github' | 'discord' | 'facebook' | 'azure' | 'twitter' | 'apple';
 
 export interface AuthSession {
   userId: string;
@@ -291,6 +291,7 @@ export const AUTH_PROVIDERS: Array<{
   accent: string;
 }> = [
   { id: 'google',   label: 'Google',          accent: '#ea4335' },
+  { id: 'apple',    label: 'Apple',           accent: '#000000' },
   { id: 'azure',    label: 'Microsoft',       accent: '#0078d4' },
   { id: 'facebook', label: 'Facebook',        accent: '#1877f2' },
   { id: 'github',   label: 'GitHub',          accent: '#24292e' },

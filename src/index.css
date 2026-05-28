@@ -5,7 +5,8 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  /* DARK (default) — terminal-amber-on-black, the original v5 vibe */
+  :root, .dark {
     --background: 30 17% 4%;
     --foreground: 40 70% 95%;
     --card: 28 18% 9%;
@@ -27,19 +28,52 @@
     --ring: 36 89% 60%;
     --radius: 0.375rem;
   }
+
+  /* LIGHT — warm cream-and-deep-blue, retains the typographic editorial feel
+     while inverting the canvas. Same amber accent so the brand identity holds. */
+  .light {
+    --background: 40 35% 96%;
+    --foreground: 30 22% 14%;
+    --card: 40 30% 99%;
+    --card-foreground: 30 22% 14%;
+    --popover: 40 35% 96%;
+    --popover-foreground: 30 22% 14%;
+    --primary: 28 80% 45%;
+    --primary-foreground: 40 35% 96%;
+    --secondary: 40 25% 92%;
+    --secondary-foreground: 30 22% 14%;
+    --muted: 38 25% 88%;
+    --muted-foreground: 32 14% 38%;
+    --accent: 28 80% 45%;
+    --accent-foreground: 40 35% 96%;
+    --destructive: 0 65% 45%;
+    --destructive-foreground: 40 35% 98%;
+    --border: 38 20% 80%;
+    --input: 38 20% 90%;
+    --ring: 28 80% 45%;
+  }
 }
 
 @layer base {
   * { @apply border-border; }
   html, body, #root { @apply bg-background min-h-screen m-0 p-0; }
+  html { color-scheme: dark; }
+  html.light { color-scheme: light; }
   body {
     @apply text-foreground;
     font-family: 'Sora', system-ui, sans-serif;
-    color-scheme: dark;
     -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
+  }
+
+  /* Light-mode tweaks: skip the CRT scan lines and vignette (they were
+     designed for the dark theme; they read as smudges on the cream paper). */
+  html.light .crt-scan::before,
+  html.light .crt-vignette::after,
+  html.light .grain::before {
+    display: none;
   }
 }
 

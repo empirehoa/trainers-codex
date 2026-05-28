@@ -15,6 +15,7 @@ import { rateLimit } from './ratelimit';
 import { stripeCheckout, stripeVerify, stripeWebhook } from './stripe';
 import { licenseVerify } from './jwt';
 import { printfulOrder } from './printful';
+import { aiTrainerCard, aiTeamArt } from './ai';
 
 export interface Env {
   // KV
@@ -31,6 +32,9 @@ export interface Env {
   STRIPE_WEBHOOK_SECRET: string;
   JWT_SIGNING_KEY: string;
   PRINTFUL_API_KEY: string;
+  // v6: AI image generation
+  FAL_API_KEY?: string;
+  AI_QUOTA_KV?: KVNamespace;
 }
 
 interface Route {
@@ -47,6 +51,9 @@ const ROUTES: Route[] = [
   { method: 'POST', path: '/stripe/webhook',   handler: stripeWebhook,   ratePerMin: 0  },
   { method: 'POST', path: '/license/verify',   handler: licenseVerify,   ratePerMin: 60 },
   { method: 'POST', path: '/printful/order',   handler: printfulOrder,   ratePerMin: 6  },
+  // v6: AI image generation — premium-gated, stricter rate limit
+  { method: 'POST', path: '/ai/trainer-card',  handler: aiTrainerCard,   ratePerMin: 5  },
+  { method: 'POST', path: '/ai/team-art',      handler: aiTeamArt,       ratePerMin: 5  },
   { method: 'GET',  path: '/health',           handler: health,          ratePerMin: 120 },
 ];
 

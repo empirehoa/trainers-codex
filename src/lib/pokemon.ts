@@ -164,8 +164,26 @@ export function spriteUrl(id: number, kind: SpriteKind = 'pixel-default'): strin
     case 'home-shiny':        return `${base}/other/home/shiny/${id}.png`;
     case 'home-female':       return `${base}/other/home/female/${id}.png`;
     case 'home-shiny-female': return `${base}/other/home/shiny/female/${id}.png`;
+    // Gen 5 animated GIFs from Pokémon Showdown — premium-gated.
+    // These render the Black/White/B2W2 in-battle animated sprites.
+    case 'animated-gen5':       return animatedGen5Url(id, false);
+    case 'animated-gen5-shiny': return animatedGen5Url(id, true);
     default:                  return `${base}/${id}.png`;
   }
+}
+
+function animatedGen5Url(id: number, shiny: boolean): string {
+  // Showdown uses the lowercase species name. We look up our display name
+  // and slug it the same way Showdown does (strip diacritics + non-alnum).
+  const p = POKEMON_BY_ID[id];
+  if (!p) return spriteUrl(id, shiny ? 'pixel-shiny' : 'pixel-default');
+  const slug = p.name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9-]/g, '');
+  const dir = shiny ? 'ani-shiny' : 'ani';
+  return `https://play.pokemonshowdown.com/sprites/${dir}/${slug}.gif`;
 }
 
 export const pixelSprite = (id: number, shiny = false) =>

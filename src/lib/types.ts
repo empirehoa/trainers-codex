@@ -83,7 +83,9 @@ export type SpriteKind =
   | 'home-default'
   | 'home-shiny'
   | 'home-female'
-  | 'home-shiny-female';
+  | 'home-shiny-female'
+  | 'animated-gen5'
+  | 'animated-gen5-shiny';
 
 // A "team member" is a Pokémon with chosen customizations
 export interface TeamMember {
@@ -92,6 +94,7 @@ export interface TeamMember {
   nickname?: string;
   moves?: number[];              // up to 4 move IDs
   ability?: string;
+  heldItem?: string;             // common competitive held item (Leftovers, Choice Band, etc.)
   sprite?: SpriteKind;           // optional cosmetic variant
   teraType?: PokemonType;        // Terastallization type (Gen 9+)
 }

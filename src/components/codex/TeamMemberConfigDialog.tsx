@@ -13,10 +13,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
 import type { Pokemon, TeamMember, Move, SpriteKind, PokemonType } from '@/lib/types';
-import { TYPE_COLORS, SPRITE_VARIANT_LABELS, TYPES } from '@/lib/constants';
+import { TYPE_COLORS, SPRITE_VARIANT_LABELS, TYPES, HELD_ITEMS } from '@/lib/constants';
 import { spriteUrl, getLearnset, MOVES_BY_ID, suggestDefaultMoves } from '@/lib/pokemon';
 import { TypePill } from './TypePill';
 import { cn } from '@/lib/utils';
+
+const HELD_NONE = '_none';
 
 interface TeamMemberConfigDialogProps {
   open: boolean;
@@ -35,6 +37,10 @@ const SPRITE_VARIANTS: SpriteKind[] = [
   'artwork-shiny',
   'home-default',
   'home-shiny',
+  // v6: animated Gen 5 BW sprites (premium-gated). Showdown hosts these as
+  // CORS-friendly GIFs at /sprites/ani/{slug}.gif. They auto-loop in the DOM.
+  'animated-gen5',
+  'animated-gen5-shiny',
 ];
 
 export function TeamMemberConfigDialog({
@@ -46,6 +52,7 @@ export function TeamMemberConfigDialog({
   const [moves, setMoves] = useState<number[]>([]);
   const [sprite, setSprite] = useState<SpriteKind>('pixel-default');
   const [teraType, setTeraType] = useState<PokemonType | ''>('');
+  const [heldItem, setHeldItem] = useState<string>(HELD_NONE);
   const [moveSearch, setMoveSearch] = useState('');
   const [moveFilter, setMoveFilter] = useState<'all' | 'damaging' | 'status' | 'stab'>('all');
 
@@ -57,6 +64,7 @@ export function TeamMemberConfigDialog({
     setMoves(member?.moves?.slice(0, 4) ?? suggestDefaultMoves(pokemon.id));
     setSprite(member?.sprite ?? (member?.shiny ? 'pixel-shiny' : 'pixel-default'));
     setTeraType(member?.teraType ?? '');
+    setHeldItem(member?.heldItem ?? HELD_NONE);
     setMoveSearch('');
     setMoveFilter('all');
   }, [open, pokemon, member]);
@@ -96,6 +104,7 @@ export function TeamMemberConfigDialog({
       nickname: nickname.trim() || undefined,
       ability: ability || undefined,
       moves: moves.length ? moves : undefined,
+      heldItem: heldItem === HELD_NONE ? undefined : heldItem,
       sprite,
       teraType: teraType || undefined,
     });
@@ -308,7 +317,8 @@ export function TeamMemberConfigDialog({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {SPRITE_VARIANTS.map(v => {
                   const isPicked = sprite === v;
-                  const isPremium = v.startsWith('home') && !premium;
+                  // Premium-gated: 3D HOME sprites + Gen 5 animated GIFs
+                  const isPremium = (v.startsWith('home') || v.startsWith('animated-gen5')) && !premium;
                   return (
                     <button
                       key={v}
@@ -340,7 +350,7 @@ export function TeamMemberConfigDialog({
               </div>
               {!premium && (
                 <p className="text-[10px] font-mono text-muted-foreground mt-2">
-                  3D HOME sprites are part of the premium pack. Pixel + artwork are free.
+                  3D HOME sprites and Gen 5 animated GIFs are part of the premium pack. Pixel + artwork are free.
                 </p>
               )}
             </div>
@@ -361,6 +371,36 @@ export function TeamMemberConfigDialog({
                 className="font-mono"
               />
               <p className="text-[10px] font-mono text-muted-foreground mt-1">Max 12 characters · leave blank for default name</p>
+            </div>
+
+            <Separator />
+
+            {/* Held Item — v6 */}
+            <div>
+              <Label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1.5 block">
+                // held item
+              </Label>
+              <Select value={heldItem} onValueChange={setHeldItem}>
+                <SelectTrigger className="font-mono text-xs">
+                  <SelectValue placeholder="No held item" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={HELD_NONE} className="font-mono text-xs">No held item</SelectItem>
+                  {HELD_ITEMS.map(item => (
+                    <SelectItem key={item.id} value={item.id} className="font-mono text-xs">
+                      <div className="flex flex-col">
+                        <span>{item.label}</span>
+                        <span className="text-[9px] text-muted-foreground">{item.effect}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {heldItem !== HELD_NONE && (
+                <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                  {HELD_ITEMS.find(i => i.id === heldItem)?.effect}
+                </p>
+              )}
             </div>
 
             <Separator />

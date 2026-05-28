@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Check, ImageIcon, Star, Sparkles, Layers } from 'lucide-react';
+import { Plus, Check, ImageIcon, Star, Sparkles, Layers, X } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
@@ -32,9 +32,20 @@ export function PokemonDetailDialog({ pokemon, open, onClose, onAdd, onViewTCG, 
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md p-0 gap-0 border bg-card">
-        <DialogHeader className="px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2 flex-wrap">
+      <DialogContent className="max-w-md p-0 gap-0 border bg-card max-h-[94vh] overflow-y-auto scroll-y">
+        <DialogHeader className="px-4 py-3 border-b border-border sticky top-0 bg-card z-10">
+          {/* v6: explicit close button — the default shadcn X is too small to
+              tap reliably on mobile and was sometimes hidden behind the iOS
+              system gesture bar. */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-2 right-2 w-9 h-9 rounded-md border border-border bg-card flex items-center justify-center hover:bg-muted active:scale-95 transition z-20"
+          >
+            <X size={16} />
+          </button>
+          <div className="flex items-center gap-2 flex-wrap pr-10">
             <DialogTitle className="font-display text-lg" style={{ color: primary }}>
               {pokemon.display.toLowerCase()}
             </DialogTitle>

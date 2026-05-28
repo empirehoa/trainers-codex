@@ -37,3 +37,8 @@ tests/_screenshots/
 .env.local
 .dev.vars
 *.pem
+.supabase-db-password
+
+# Worker scaffolding
+worker/pnpm-lock.yaml
+worker/pnpm-workspace.yaml
