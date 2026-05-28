@@ -16,7 +16,8 @@ export type MerchDesign =
   | 'id-card'         // Trainer ID badge layout
   | 'banner'          // Vertical pennant banner
   | 'lineup'          // 6 mons in a line with stats below
-  | 'sigil';          // Single hero Pokémon in heraldic shield form
+  | 'sigil'           // Single hero Pokémon in heraldic shield form
+  | 'trainer-card';   // v6 — full trainer card with 8 gym badges + 6-mon team + signature
 
 export interface MerchRenderContext {
   team: (TeamMember | null)[];
@@ -30,9 +31,40 @@ export interface MerchRenderContext {
   region?: string;      // e.g. "FLORIDA"
   badgeText?: string;   // e.g. "GYM LEADER"
   year?: number;        // e.g. 2026
+  // v6 — trainer-card specific
+  badges?: string[];    // ids of claimed gym badges (see GYM_BADGES below)
+  signatureMonId?: number;  // hero mon highlighted at top of card
   // Apparel-only: transparent bg true; full-bleed products (mug/poster/mousepad) false
   transparentBg?: boolean;
 }
+
+// ============================================================
+// GYM BADGES — Kanto's 8 (v1). Later expand per region.
+// ============================================================
+//
+// Each badge is rendered as a vector shape (no external image dependency,
+// always available, scales to any print resolution). The color = the gym
+// type. The shape echoes the canonical badge silhouette.
+
+export interface GymBadgeInfo {
+  id: string;
+  label: string;     // gym leader name + city
+  type: string;      // the badge's affiliated Pokémon type
+  shape: 'octagon' | 'cascade' | 'thunder' | 'rainbow' | 'soul' | 'marsh' | 'volcano' | 'earth';
+  // Primary color from the gym type
+  color: string;
+}
+
+export const GYM_BADGES: GymBadgeInfo[] = [
+  { id: 'kanto-boulder',  label: 'Brock · Pewter City',    type: 'rock',     shape: 'octagon', color: '#afa981' },
+  { id: 'kanto-cascade',  label: 'Misty · Cerulean City',  type: 'water',    shape: 'cascade', color: '#2980ef' },
+  { id: 'kanto-thunder',  label: 'Surge · Vermillion City', type: 'electric', shape: 'thunder', color: '#fac000' },
+  { id: 'kanto-rainbow',  label: 'Erika · Celadon City',   type: 'grass',    shape: 'rainbow', color: '#3fa129' },
+  { id: 'kanto-soul',     label: 'Koga · Fuchsia City',    type: 'poison',   shape: 'soul',    color: '#9141cb' },
+  { id: 'kanto-marsh',    label: 'Sabrina · Saffron City', type: 'psychic',  shape: 'marsh',   color: '#ef4179' },
+  { id: 'kanto-volcano',  label: 'Blaine · Cinnabar Island', type: 'fire',   shape: 'volcano', color: '#e62829' },
+  { id: 'kanto-earth',    label: 'Giovanni · Viridian City', type: 'ground', shape: 'earth',   color: '#915121' },
+];
 
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
@@ -529,6 +561,287 @@ async function renderBanner(c: CanvasRenderingContext2D, region: { x: number; y:
 }
 
 // ============================================================
+// DESIGN 7 (v6) — TRAINER CARD
+// ============================================================
+// Layout (3:4 aspect, top-to-bottom):
+//   header band      — trainer name + region/title + year
+//   signature mon    — large hero artwork on the left, stats on the right
+//   gym badge row    — 8 slots, claimed badges colored, unclaimed dimmed
+//   6-mon team strip — sprites + nicknames + tera gems
+//   footer band      — motto or share code
+
+async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: number; y: number; w: number; h: number }, ctx: MerchRenderContext): Promise<void> {
+  const entries = await loadTeam(ctx.team);
+  const { x: rx, y: ry, w: rw, h: rh } = region;
+
+  // Background card
+  c.fillStyle = '#fffbf0';
+  c.fillRect(rx, ry, rw, rh);
+
+  // Top header band — trainer name + region + year
+  const headerH = rh * 0.10;
+  c.fillStyle = '#1b1a17';
+  c.fillRect(rx, ry, rw, headerH);
+  c.fillStyle = '#f4ae3c';
+  c.fillRect(rx, ry + headerH - rh * 0.005, rw, rh * 0.005); // gold accent line
+
+  c.fillStyle = '#fffbf0';
+  c.textAlign = 'left';
+  c.font = `bold ${headerH * 0.45}px "Major Mono Display", monospace`;
+  const trainerName = (ctx.trainer?.name || 'Trainer').toUpperCase();
+  c.fillText(trainerName, rx + rw * 0.04, ry + headerH * 0.62);
+
+  c.font = `${headerH * 0.22}px "JetBrains Mono", monospace`;
+  c.fillStyle = '#f4ae3c';
+  const subtitle = [
+    ctx.trainer?.title?.toUpperCase(),
+    ctx.region?.toUpperCase() || ctx.trainer?.region?.toUpperCase(),
+    ctx.year || ctx.trainer?.signaturePokemonId ? String(ctx.year || new Date().getFullYear()) : null,
+  ].filter(Boolean).join(' · ');
+  c.fillText(subtitle, rx + rw * 0.04, ry + headerH * 0.88);
+
+  // Trainer card stamp (top right)
+  c.fillStyle = '#fffbf0';
+  c.textAlign = 'right';
+  c.font = `${headerH * 0.20}px "JetBrains Mono", monospace`;
+  c.fillText("// TRAINER'S CODEX", rx + rw - rw * 0.04, ry + headerH * 0.38);
+  c.font = `bold ${headerH * 0.34}px "Major Mono Display", monospace`;
+  c.fillStyle = '#f4ae3c';
+  c.fillText('OFFICIAL', rx + rw - rw * 0.04, ry + headerH * 0.78);
+
+  // Signature mon band
+  const sigY = ry + headerH + rh * 0.02;
+  const sigH = rh * 0.30;
+  const sigMonId = ctx.signatureMonId ?? ctx.trainer?.signaturePokemonId ?? entries[0]?.pokemon.id;
+  if (sigMonId && POKEMON_BY_ID[sigMonId]) {
+    const sigMon = POKEMON_BY_ID[sigMonId];
+    const sigPrimary = TYPE_COLORS[sigMon.types[0]] || '#f4ae3c';
+
+    // Soft type-colored backdrop
+    c.fillStyle = sigPrimary + '20';
+    c.fillRect(rx + rw * 0.04, sigY, rw * 0.92, sigH);
+
+    // Try to load + draw the signature artwork
+    try {
+      const sigImg = await loadImg(spriteUrl(sigMon.id, 'artwork-default'));
+      const imgSize = sigH * 0.92;
+      c.drawImage(sigImg, rx + rw * 0.06, sigY + (sigH - imgSize) / 2, imgSize, imgSize);
+    } catch {}
+
+    // Signature info (right side)
+    const infoX = rx + rw * 0.06 + sigH * 1.0;
+    c.fillStyle = '#1b1a17';
+    c.textAlign = 'left';
+    c.font = `bold ${sigH * 0.16}px "Sora", system-ui`;
+    c.fillText('SIGNATURE', infoX, sigY + sigH * 0.22);
+
+    c.font = `bold ${sigH * 0.30}px "Major Mono Display", monospace`;
+    c.fillStyle = sigPrimary;
+    c.fillText(sigMon.display.toUpperCase(), infoX, sigY + sigH * 0.50);
+
+    c.fillStyle = '#3a342a';
+    c.font = `${sigH * 0.13}px "JetBrains Mono", monospace`;
+    c.fillText(`${sigMon.types.join(' · ').toUpperCase()}   BST ${sigMon.bst}`, infoX, sigY + sigH * 0.68);
+    c.fillText(padId(sigMon.id), infoX, sigY + sigH * 0.84);
+  }
+
+  // Gym badges row — 8 slots
+  const badgeY = sigY + sigH + rh * 0.03;
+  const badgeH = rh * 0.14;
+  const claimedSet = new Set(ctx.badges ?? []);
+  c.fillStyle = '#1b1a17';
+  c.textAlign = 'left';
+  c.font = `bold ${rh * 0.022}px "JetBrains Mono", monospace`;
+  c.fillText('// GYM BADGES', rx + rw * 0.04, badgeY - rh * 0.008);
+  c.textAlign = 'right';
+  c.fillStyle = '#3a342a';
+  c.fillText(`${claimedSet.size} / ${GYM_BADGES.length} EARNED`, rx + rw - rw * 0.04, badgeY - rh * 0.008);
+
+  const badgeSlotW = (rw * 0.92) / GYM_BADGES.length;
+  GYM_BADGES.forEach((badge, i) => {
+    const bx = rx + rw * 0.04 + i * badgeSlotW;
+    const claimed = claimedSet.has(badge.id);
+    drawBadge(c, bx + badgeSlotW * 0.10, badgeY, badgeSlotW * 0.80, badgeH, badge, claimed);
+  });
+
+  // 6-mon team strip
+  const teamY = badgeY + badgeH + rh * 0.04;
+  const teamH = rh * 0.24;
+  c.fillStyle = '#1b1a17';
+  c.textAlign = 'left';
+  c.font = `bold ${rh * 0.022}px "JetBrains Mono", monospace`;
+  c.fillText('// PARTY OF SIX', rx + rw * 0.04, teamY - rh * 0.008);
+
+  const slotW = (rw * 0.92) / 6;
+  for (let i = 0; i < 6; i++) {
+    const entry = entries[i];
+    const sx = rx + rw * 0.04 + i * slotW;
+    if (!entry) {
+      // Empty slot indicator
+      c.strokeStyle = '#cdc4ad';
+      c.lineWidth = 2;
+      c.setLineDash([6, 4]);
+      c.strokeRect(sx + slotW * 0.05, teamY, slotW * 0.90, teamH);
+      c.setLineDash([]);
+      continue;
+    }
+    const primary = TYPE_COLORS[entry.pokemon.types[0]] || '#f4ae3c';
+
+    // Slot background
+    c.fillStyle = primary + '15';
+    c.fillRect(sx + slotW * 0.05, teamY, slotW * 0.90, teamH);
+
+    // Sprite
+    const spriteSize = teamH * 0.70;
+    c.drawImage(entry.img, sx + (slotW - spriteSize) / 2, teamY + teamH * 0.05, spriteSize, spriteSize);
+
+    // Shiny + Tera indicators (top-right corner)
+    if (entry.member.shiny) {
+      c.fillStyle = '#fde047';
+      c.font = `bold ${teamH * 0.16}px "Sora", system-ui`;
+      c.textAlign = 'right';
+      c.fillText('★', sx + slotW * 0.93, teamY + teamH * 0.18);
+    }
+    if (entry.member.teraType) {
+      const teraColor = TYPE_COLORS[entry.member.teraType] || '#fffbf0';
+      c.fillStyle = teraColor;
+      c.beginPath();
+      c.arc(sx + slotW * 0.88, teamY + teamH * 0.28, teamH * 0.05, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = '#1b1a17';
+      c.lineWidth = 1;
+      c.stroke();
+    }
+
+    // Nickname (bottom)
+    c.fillStyle = '#1b1a17';
+    c.textAlign = 'center';
+    c.font = `bold ${teamH * 0.10}px "JetBrains Mono", monospace`;
+    const label = (entry.member.nickname || entry.pokemon.display).toUpperCase();
+    c.fillText(label.length > 10 ? label.slice(0, 9) + '…' : label, sx + slotW / 2, teamY + teamH * 0.86);
+
+    c.fillStyle = primary;
+    c.font = `${teamH * 0.08}px "JetBrains Mono", monospace`;
+    c.fillText(padId(entry.pokemon.id), sx + slotW / 2, teamY + teamH * 0.98);
+  }
+
+  // Footer band — motto / share code
+  const footerY = teamY + teamH + rh * 0.04;
+  const footerH = rh * 0.08;
+  c.fillStyle = '#1b1a17';
+  c.fillRect(rx, footerY, rw, footerH);
+
+  c.fillStyle = '#f4ae3c';
+  c.textAlign = 'center';
+  const motto = ctx.trainer?.motto || ctx.badgeText || 'Train. Battle. Become Champion.';
+  c.font = `${footerH * 0.30}px "JetBrains Mono", monospace`;
+  c.fillText(`"${motto}"`, rx + rw / 2, footerY + footerH * 0.5);
+
+  c.fillStyle = '#fffbf0';
+  c.font = `${footerH * 0.18}px "JetBrains Mono", monospace`;
+  c.fillText(`SHARE CODE · ${ctx.code}`, rx + rw / 2, footerY + footerH * 0.85);
+}
+
+/**
+ * Draw a single gym badge with the canonical Kanto shape silhouettes.
+ * Claimed = full-color filled; unclaimed = grey outline only.
+ */
+function drawBadge(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, badge: GymBadgeInfo, claimed: boolean): void {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const r = Math.min(w, h) * 0.42;
+
+  c.save();
+  if (!claimed) {
+    c.globalAlpha = 0.25;
+  }
+  c.fillStyle = claimed ? badge.color : '#cdc4ad';
+  c.strokeStyle = claimed ? '#1b1a17' : '#7d7560';
+  c.lineWidth = Math.max(1.5, w * 0.025);
+
+  c.beginPath();
+  switch (badge.shape) {
+    case 'octagon':
+      // Boulder Badge — flat octagon
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI * 2 * i) / 8 + Math.PI / 8;
+        const px = cx + Math.cos(a) * r;
+        const py = cy + Math.sin(a) * r;
+        i === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+      }
+      c.closePath();
+      break;
+    case 'cascade':
+      // Cascade Badge — water drop (teardrop)
+      c.moveTo(cx, cy - r);
+      c.bezierCurveTo(cx + r * 0.9, cy - r * 0.6, cx + r * 0.9, cy + r * 0.5, cx, cy + r);
+      c.bezierCurveTo(cx - r * 0.9, cy + r * 0.5, cx - r * 0.9, cy - r * 0.6, cx, cy - r);
+      c.closePath();
+      break;
+    case 'thunder':
+      // Thunder Badge — lightning bolt zigzag
+      c.moveTo(cx - r * 0.4, cy - r);
+      c.lineTo(cx + r * 0.3, cy - r * 0.2);
+      c.lineTo(cx - r * 0.1, cy);
+      c.lineTo(cx + r * 0.4, cy + r);
+      c.lineTo(cx - r * 0.3, cy + r * 0.2);
+      c.lineTo(cx + r * 0.1, cy);
+      c.closePath();
+      break;
+    case 'rainbow':
+      // Rainbow Badge — flower petals (5-point)
+      for (let i = 0; i < 5; i++) {
+        const a = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+        const px = cx + Math.cos(a) * r;
+        const py = cy + Math.sin(a) * r;
+        const next = (Math.PI * 2 * (i + 0.5)) / 5 - Math.PI / 2;
+        const ix = cx + Math.cos(next) * r * 0.5;
+        const iy = cy + Math.sin(next) * r * 0.5;
+        if (i === 0) c.moveTo(px, py);
+        c.lineTo(ix, iy);
+        const na = (Math.PI * 2 * (i + 1)) / 5 - Math.PI / 2;
+        c.lineTo(cx + Math.cos(na) * r, cy + Math.sin(na) * r);
+      }
+      c.closePath();
+      break;
+    case 'soul':
+      // Soul Badge — heart
+      c.moveTo(cx, cy - r * 0.3);
+      c.bezierCurveTo(cx, cy - r, cx - r, cy - r, cx - r, cy - r * 0.3);
+      c.bezierCurveTo(cx - r, cy + r * 0.3, cx, cy + r * 0.7, cx, cy + r);
+      c.bezierCurveTo(cx, cy + r * 0.7, cx + r, cy + r * 0.3, cx + r, cy - r * 0.3);
+      c.bezierCurveTo(cx + r, cy - r, cx, cy - r, cx, cy - r * 0.3);
+      c.closePath();
+      break;
+    case 'marsh':
+      // Marsh Badge — gold disc with center dot
+      c.arc(cx, cy, r, 0, Math.PI * 2);
+      break;
+    case 'volcano':
+      // Volcano Badge — flame (asymmetric)
+      c.moveTo(cx, cy + r);
+      c.bezierCurveTo(cx - r, cy + r * 0.3, cx - r * 0.6, cy - r * 0.5, cx, cy - r);
+      c.bezierCurveTo(cx + r * 0.3, cy - r * 0.4, cx + r * 0.4, cy + r * 0.2, cx, cy + r);
+      c.closePath();
+      break;
+    case 'earth':
+      // Earth Badge — sun / star burst (8 points)
+      for (let i = 0; i < 16; i++) {
+        const a = (Math.PI * 2 * i) / 16 - Math.PI / 2;
+        const radius = i % 2 === 0 ? r : r * 0.6;
+        const px = cx + Math.cos(a) * radius;
+        const py = cy + Math.sin(a) * radius;
+        i === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+      }
+      c.closePath();
+      break;
+  }
+  c.fill();
+  c.stroke();
+  c.restore();
+}
+
+// ============================================================
 // MAIN ENTRY POINT
 // ============================================================
 
@@ -552,13 +865,14 @@ export async function renderMerchDesign(ctx: MerchRenderContext): Promise<Blob> 
   const region = computeDesignRegion(product.printWidth, product.printHeight, isApparel);
 
   switch (ctx.design) {
-    case 'crest':   await renderCrest(c, region, ctx); break;
-    case 'roster':  await renderRoster(c, region, ctx); break;
-    case 'id-card': await renderIdCard(c, region, ctx); break;
-    case 'banner':  await renderBanner(c, region, ctx); break;
-    case 'lineup':  await renderRoster(c, region, ctx); break;   // alias of roster for now
-    case 'sigil':   await renderCrest(c, region, ctx); break;    // alias of crest until we add a hero-only sigil
-    default:        await renderCrest(c, region, ctx);
+    case 'crest':         await renderCrest(c, region, ctx); break;
+    case 'roster':        await renderRoster(c, region, ctx); break;
+    case 'id-card':       await renderIdCard(c, region, ctx); break;
+    case 'banner':        await renderBanner(c, region, ctx); break;
+    case 'lineup':        await renderRoster(c, region, ctx); break;
+    case 'sigil':         await renderCrest(c, region, ctx); break;
+    case 'trainer-card':  await renderTrainerCard(c, region, ctx); break;
+    default:              await renderCrest(c, region, ctx);
   }
 
   return toBlob(canvas);
@@ -610,8 +924,10 @@ export interface MerchDesignInfo {
 }
 
 export const MERCH_DESIGNS: MerchDesignInfo[] = [
-  { id: 'crest',   label: 'Team Crest',      desc: 'circular badge · gold ring · 6 sprites around a monogram', recommendedFor: ['shirt', 'hoodie', 'mug', 'sticker'] },
-  { id: 'roster',  label: 'Champion Roster', desc: 'horizontal sprite strip · trainer name + region',           recommendedFor: ['mug', 'mousepad', 'tee back'] },
-  { id: 'id-card', label: 'Trainer ID Card', desc: 'license-style badge · photo + region + party slot row',      recommendedFor: ['poster', 'sticker', 'phone case'] },
-  { id: 'banner',  label: 'Gym Banner',      desc: 'tall pennant · 6 typed blocks stacked vertically',           recommendedFor: ['poster', 'phone case'] },
+  { id: 'crest',         label: 'Team Crest',      desc: 'circular badge · gold ring · 6 sprites around a monogram', recommendedFor: ['shirt', 'hoodie', 'mug', 'sticker'] },
+  { id: 'roster',        label: 'Champion Roster', desc: 'horizontal sprite strip · trainer name + region',           recommendedFor: ['mug', 'mousepad', 'tee back'] },
+  { id: 'id-card',       label: 'Trainer ID Card', desc: 'license-style badge · photo + region + party slot row',     recommendedFor: ['poster', 'sticker', 'phone case'] },
+  { id: 'banner',        label: 'Gym Banner',      desc: 'tall pennant · 6 typed blocks stacked vertically',          recommendedFor: ['poster', 'phone case'] },
+  // v6 — full trainer card with gym badges
+  { id: 'trainer-card',  label: 'Trainer Card',    desc: 'signature mon + 8 gym badges + 6-mon party + motto',         recommendedFor: ['poster', 'sticker', 'phone case'] },
 ];
