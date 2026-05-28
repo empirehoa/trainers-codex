@@ -4,7 +4,7 @@ import {
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
   User, Wand2, ShoppingBag, LogIn, Cloud,
-  Sun, Moon
+  Sun, Moon, Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +49,7 @@ import { TrainerProfileDialog } from '@/components/codex/TrainerProfileDialog';
 import { TCGCardsDialog } from '@/components/codex/TCGCardsDialog';
 import { PosterStudioDialog } from '@/components/codex/PosterStudioDialog';
 import { MerchStudioDialog } from '@/components/codex/MerchStudioDialog';
+import { AIStudioDialog } from '@/components/codex/AIStudioDialog';
 import { SignInDialog } from '@/components/codex/SignInDialog';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
 import { auth, type AuthSession } from '@/lib/auth';
@@ -107,6 +108,7 @@ export default function App() {
   const [trainerOpen, setTrainerOpen] = useState(false);
   const [posterOpen, setPosterOpen] = useState(false);
   const [merchOpen, setMerchOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -610,6 +612,17 @@ export default function App() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
+                    variant="outline" size="icon" onClick={() => setAiOpen(true)}
+                    className={cn('w-8 h-8', premium && 'border-primary text-primary')}
+                  >
+                    <Sparkles size={14} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>AI Studio · trainer card + team art</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
                     variant="outline" size="icon" onClick={() => setShare(true)} disabled={teamCount === 0}
                     className={cn('w-8 h-8', teamCount > 0 && 'border-primary text-primary')}
                   >
@@ -906,6 +919,12 @@ export default function App() {
         open={merchOpen} onClose={() => setMerchOpen(false)}
         team={members} trainer={trainer} teamName={teamName}
         code={buildShareCode(members)}
+        premium={premium}
+        onTogglePremium={() => setPremium(p => !p)}
+      />
+      <AIStudioDialog
+        open={aiOpen} onClose={() => setAiOpen(false)}
+        trainer={trainer} team={members}
         premium={premium}
         onTogglePremium={() => setPremium(p => !p)}
       />
