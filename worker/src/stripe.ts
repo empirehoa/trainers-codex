@@ -40,9 +40,11 @@ interface StripeSession {
 }
 
 async function stripeFetch<T>(env: Env, method: 'GET' | 'POST', path: string, body?: Record<string, string>): Promise<T> {
+  // No explicit stripe-version header — uses the account's default API
+  // version (set in Stripe Dashboard → Developers → API). This avoids
+  // version-mismatch errors when Stripe rotates supported versions.
   const headers: HeadersInit = {
     'authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-    'stripe-version': '2025-09-30.acacia',
   };
   let init: RequestInit = { method, headers };
   if (body) {
@@ -93,8 +95,10 @@ export async function stripeCheckout(req: Request, env: Env): Promise<Response> 
   if (body.email) {
     params.customer_email = body.email;
   }
-  // Tax handling: let Stripe auto-calc once configured.
-  params['automatic_tax[enabled]'] = 'true';
+  // Automatic tax disabled by default. To enable: configure your origin
+  // address in Stripe Dashboard → Settings → Tax → Set up, then flip this
+  // flag back to 'true' and redeploy.
+  // params['automatic_tax[enabled]'] = 'true';
 
   const session = await stripeFetch<StripeSession>(env, 'POST', '/checkout/sessions', params);
   return jsonOk(req, env, { url: session.url, sessionId: session.id });
