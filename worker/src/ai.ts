@@ -77,7 +77,7 @@ export async function aiTrainerCard(req: Request, env: AIEnv): Promise<Response>
   const vibe = form.get('vibe')?.toString() || 'balanced';
   const starter = form.get('starter')?.toString() || 'fire';
 
-  if (!(photo instanceof File) && !(photo instanceof Blob)) {
+  if (!photo || typeof photo === 'string') {
     return jsonError(req, env, 400, 'photo_required');
   }
   if (photo.size > 8 * 1024 * 1024) {
@@ -141,7 +141,7 @@ export async function aiTeamArt(req: Request, env: AIEnv): Promise<Response> {
   let team: string[] = [];
   try { team = JSON.parse(teamRaw); } catch {}
 
-  if (!(photo instanceof File) && !(photo instanceof Blob)) {
+  if (!photo || typeof photo === 'string') {
     return jsonError(req, env, 400, 'photo_required');
   }
 

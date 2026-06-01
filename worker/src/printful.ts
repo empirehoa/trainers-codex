@@ -81,7 +81,7 @@ export async function printfulOrder(req: Request, env: Env): Promise<Response> {
   const metadataRaw = form.get('metadata')?.toString() || '{}';
   const file = form.get('file');
 
-  if (!(file instanceof File) && !(file instanceof Blob)) {
+  if (!file || typeof file === 'string') {
     return jsonError(req, env, 400, 'no_file');
   }
   if (file.size > 12 * 1024 * 1024) {
