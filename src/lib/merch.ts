@@ -266,3 +266,43 @@ export const MARKUP_OPTIONS = [
   { label: 'pro',     pct: 100, desc: 'standard POD markup' },
   { label: 'premium', pct: 150, desc: 'collector pricing' },
 ];
+
+// ============================================================
+// Legal bright-line: store-listing title sanitizer
+// ============================================================
+// The legal line (CLAUDE.md): public store listings must never carry the
+// "Pokémon" trademark or any species name. User-supplied fragments (team
+// name, gym name) flow into the Printful product title, so they pass through
+// here first. In-app reference art is fine; a public commercial *listing* is
+// not. This mirrors the server-side strip in worker/src/printful.ts.
+
+const TRADEMARK_RE: RegExp[] = [
+  /\bpok[ée]mons?\b/gi,
+  /\bpok[ée]\s?balls?\b/gi,
+  // Bare "Poké"/"Poke": a trailing \b can't anchor after the accented "é"
+  // (é is non-word in ASCII regex), so assert "not followed by a letter".
+  /\bpok[ée](?![a-z])/gi,
+];
+
+function stripWord(haystack: string, word: string): string {
+  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return haystack.replace(new RegExp(`\\b${esc}\\b`, 'gi'), ' ');
+}
+
+/**
+ * Remove the Pokémon trademark and any provided species name from a string
+ * destined for a public store listing. Word-boundary + case-insensitive.
+ * Collapses leftover separators/whitespace. Returns '' when nothing survives —
+ * callers should fall back to a generic label.
+ */
+export function sanitizeListingTitle(raw: string | null | undefined, speciesNames: Iterable<string> = []): string {
+  if (!raw) return '';
+  let out = String(raw);
+  for (const re of TRADEMARK_RE) out = out.replace(re, ' ');
+  for (const name of speciesNames) {
+    if (name && name.length >= 3) out = stripWord(out, name);
+  }
+  // Collapse leftover join separators (·, |, comma, slash) into spaces, but
+  // keep in-word hyphens/underscores so "T-Shirt" survives intact.
+  return out.replace(/[·|,/]+/g, ' ').replace(/\s+/g, ' ').trim();
+}

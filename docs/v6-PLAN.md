@@ -257,3 +257,59 @@ The narrative: **free is generous, premium removes friction**. Every premium fea
 ```
 
 Hold the heavy-investment items (C2 battle sim, native apps) until you've validated demand with the lower-cost upgrades.
+
+---
+
+## v6 Engineering Sprints — Execution Log (updated 2026-06-01)
+
+The four-sprint "competitively credible + legally bulletproof" pass before the
+Worlds window (hard launch 2026-08-26). Worked in order; each gate = build clean
+→ inline bundle → all existing tests pass → new tests added → committed.
+
+| Sprint | Scope | Status | Commit |
+|---|---|---|---|
+| 1 | PokePaste/Showdown import-export + round-trip tests | ✅ green | `3b4a203` |
+| 2 | Pokémon Champions format + Champions Megas + Mega gating | ✅ green | `a001134` |
+| 3 | @smogon/calc matchup preview (damage ranges + speed tiers) | ✅ green | `f819a61` |
+| 4 | Public trainer/team profiles — `/u/<handle>`, strict RLS, moderation | ✅ green | `0c4e922` |
+
+**Test suite:** 12 suites, all green (`tests/run-all.mjs`). Sprint 4 added
+`test-profiles.mjs` (10 tests); legal hardening added `test-merch-legal.mjs` (4).
+
+### Legal hardening (shipped this run)
+
+- **AI prompts (`worker/src/ai.ts`)** now carry an `LEGAL_ART_DIRECTION` block on
+  both templates: original anime-inspired art, no copying/tracing of official
+  artwork, logos, trade dress, or game UI. Prompts are server-authored only
+  (never client-supplied) and persisted to R2 object metadata as an audit trail.
+- **Image moderation hook** screens every uploaded photo before fal.ai when
+  `MODERATION_API_URL` is set; flagged → 422, provider outage → 503 (fails
+  closed). Skipped when unconfigured (optional-service pattern).
+- **Merch bright-line** (`src/lib/merch.ts` `sanitizeListingTitle`): strips the
+  Pokémon trademark + any species name from anything that becomes a public store
+  listing. Enforced client-side in Merch Studio (full species list) and backed
+  by a trademark strip server-side in `worker/src/printful.ts`.
+- **Legal pages verified:** `public/legal.html` (ToS + privacy + "not affiliated"
+  disclaimer) and `public/dmca.html` (takedown + counter-notice + designated
+  agent → legal@trainerscodex.com) are present and current.
+
+### Discipline gate
+
+- **AI Studio degrades gracefully.** With no Worker/fal.ai key configured,
+  `isWorkerConfigured()` is false → the generate button is disabled and a
+  "requires the Cloudflare Worker… set FAL_API_KEY" notice shows. The feature is
+  visibly gated, never broken — satisfying "wire fal.ai OR feature-flag-hide".
+
+### Blocked on Jose (not shippable from code)
+
+1. **fal.ai API key** — set `FAL_API_KEY` as a Worker secret to switch AI Studio live.
+2. **R2 bucket** (Task #28) — create `trainerscodex-prints` + public subdomain
+   `cdn.trainerscodex.com`; required for AI photo upload + merch print hosting.
+   Add a 24-hour lifecycle rule on the `trainer-cards/` and `team-art/` prefixes
+   (R2 has no per-object TTL; this is a bucket lifecycle policy, set in Cloudflare).
+3. **Image-moderation provider** — stand up `MODERATION_API_URL` (+ key) so photo
+   screening enforces rather than skips.
+4. **DMCA designated agent** — register the agent with the U.S. Copyright Office
+   DMCA Designated Agent Directory (dmca.copyright.gov, $6) using
+   legal@trainerscodex.com; safe-harbor protection isn't perfected until filed.
+5. **Stripe live** — flip from preview-unlock toggle to live Checkout when ready.

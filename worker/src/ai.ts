@@ -28,6 +28,13 @@ const PREMIUM_MONTHLY_QUOTA = 5;
 interface AIEnv extends Env {
   FAL_API_KEY?: string;
   AI_QUOTA_KV?: KVNamespace;
+  // Optional image-moderation provider. When set, every uploaded photo is
+  // screened before it reaches fal.ai; a flagged image is rejected and a
+  // provider outage fails CLOSED (we do not silently pass unscreened uploads).
+  // When unset, screening is skipped — same optional-service pattern as the
+  // quota KV. Provider returns JSON with a boolean `flagged` (or `nsfw`).
+  MODERATION_API_URL?: string;
+  MODERATION_API_KEY?: string;
 }
 
 interface FalResponse {
@@ -77,12 +84,21 @@ export async function aiTrainerCard(req: Request, env: AIEnv): Promise<Response>
     return jsonError(req, env, 413, 'photo_too_large', { max_mb: 8 });
   }
 
-  const photoUrl = await uploadToR2(env, photo, `trainer-cards/${crypto.randomUUID()}.png`);
+  const mod = await moderateUpload(req, env, photo);
+  if (!mod.ok) return mod.response;
 
   // Prompt template inspired by @kingbulljs — strict no-invention rules,
   // preserves face, picks a starter, builds a cohesive 6-mon team with one
   // Mega Evolution, embeds trainer stats.
   const prompt = buildTrainerCardPrompt({ name, year, vibe, starter });
+
+  // Persist the exact server-authored prompt on the R2 object for an audit
+  // trail (DMCA / abuse review can see what was asked of the model).
+  const photoUrl = await uploadToR2(env, photo, `trainer-cards/${crypto.randomUUID()}.png`, {
+    kind: 'trainer-card',
+    prompt: prompt.slice(0, 2048),
+    by: license.email,
+  });
 
   const result = await falImageEdit(env, {
     image_url: photoUrl,
@@ -129,8 +145,15 @@ export async function aiTeamArt(req: Request, env: AIEnv): Promise<Response> {
     return jsonError(req, env, 400, 'photo_required');
   }
 
-  const photoUrl = await uploadToR2(env, photo, `team-art/${crypto.randomUUID()}.png`);
+  const mod = await moderateUpload(req, env, photo);
+  if (!mod.ok) return mod.response;
+
   const prompt = buildTeamArtPrompt({ teamMembers: team.slice(0, 6) });
+  const photoUrl = await uploadToR2(env, photo, `team-art/${crypto.randomUUID()}.png`, {
+    kind: 'team-art',
+    prompt: prompt.slice(0, 2048),
+    by: license.email,
+  });
 
   const result = await falImageEdit(env, {
     image_url: photoUrl,
@@ -146,8 +169,26 @@ export async function aiTeamArt(req: Request, env: AIEnv): Promise<Response> {
 }
 
 // ============================================================
-// PROMPTS — kept in source so they can be tuned without redeploying
+// PROMPTS — kept in source (server-side) so they can be tuned without
+// redeploying the client and can never be supplied by the caller. The client
+// sends only structured fields (name/vibe/starter/team); the prompt text is
+// authored here and persisted to R2 object metadata for an audit trail.
 // ============================================================
+
+// Legal art-direction guard appended to every prompt. The output must read as
+// an original, stylized interpretation — not a reproduction of, or trace over,
+// official Pokémon artwork, logos, or trade dress. This is the model-facing
+// half of the same bright line the merch + listing code enforces.
+const LEGAL_ART_DIRECTION = `
+ART DIRECTION & ORIGINALITY (REQUIRED):
+- Produce ORIGINAL, anime-inspired art direction. Do NOT copy, trace, or
+  reproduce official Pokémon artwork, promotional renders, the Pokémon logo,
+  trainer-card layouts from the games, or any official trade dress.
+- Creature designs are generic, original interpretations in this art style —
+  not pixel- or line-faithful copies of official sprites or models.
+- No official logos, wordmarks, watermarks, copyright lines, or game UI chrome.
+- This is fan-made, transformative art and must look distinct from first-party
+  Pokémon media.`;
 
 function buildTrainerCardPrompt(opts: { name: string; year: string; vibe: string; starter: string }): string {
   const { name, year, vibe, starter } = opts;
@@ -201,7 +242,8 @@ DESIGN:
 
 EXCLUDE:
 - Hometown, rival, trainer-type random profile sections
-- Any section not listed above`;
+- Any section not listed above
+${LEGAL_ART_DIRECTION}`;
 }
 
 function buildTeamArtPrompt(opts: { teamMembers: string[] }): string {
@@ -233,7 +275,8 @@ VISUAL STYLE:
 
 CRITICAL:
 - Preserve the subject's facial features strictly
-- Do not alter or replace the face`;
+- Do not alter or replace the face
+${LEGAL_ART_DIRECTION}`;
 }
 
 // ============================================================
@@ -269,14 +312,45 @@ async function falImageEdit(env: AIEnv, opts: { image_url: string; prompt: strin
 // R2 helpers
 // ============================================================
 
-async function uploadToR2(env: AIEnv, blob: Blob | File, key: string): Promise<string> {
+async function uploadToR2(env: AIEnv, blob: Blob | File, key: string, meta?: Record<string, string>): Promise<string> {
   const buf = await blob.arrayBuffer();
   await env.PRINTS_BUCKET.put(key, buf, {
     httpMetadata: { contentType: blob.type || 'image/png' },
+    customMetadata: meta,
   });
   const base = (env as unknown as { PRINTS_PUBLIC_BASE?: string }).PRINTS_PUBLIC_BASE
     || 'https://cdn.trainerscodex.com';
   return `${base}/${key}`;
+}
+
+// ============================================================
+// Image moderation (optional provider)
+// ============================================================
+// Screen the user's uploaded photo before it reaches fal.ai. Enforced only
+// when MODERATION_API_URL is configured; otherwise skipped (optional-service
+// pattern). A flagged image → 422; a provider outage → 503 (fail closed — a
+// configured gate must not silently pass unscreened uploads).
+
+async function moderateUpload(
+  req: Request, env: AIEnv, blob: Blob | File,
+): Promise<{ ok: true } | { ok: false; response: Response }> {
+  const url = env.MODERATION_API_URL;
+  if (!url) return { ok: true };
+  try {
+    const headers: Record<string, string> = { 'content-type': blob.type || 'image/png' };
+    if (env.MODERATION_API_KEY) headers['authorization'] = `Bearer ${env.MODERATION_API_KEY}`;
+    const resp = await fetch(url, { method: 'POST', headers, body: await blob.arrayBuffer() });
+    if (!resp.ok) {
+      return { ok: false, response: jsonError(req, env, 503, 'moderation_unavailable') };
+    }
+    const verdict = await resp.json() as { flagged?: boolean; nsfw?: boolean; reason?: string };
+    if (verdict.flagged || verdict.nsfw) {
+      return { ok: false, response: jsonError(req, env, 422, 'image_rejected', { reason: verdict.reason || 'flagged' }) };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, response: jsonError(req, env, 503, 'moderation_unavailable') };
+  }
 }
 
 // ============================================================

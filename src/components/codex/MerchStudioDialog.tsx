@@ -11,8 +11,10 @@ import { toast } from 'sonner';
 import type { TeamMember, TrainerProfile } from '@/lib/types';
 import {
   MERCH_PRODUCTS, MERCH_SLOGANS, MARKUP_OPTIONS, buildVendorOrderUrl, computeRetail,
+  sanitizeListingTitle,
   type MerchProduct, type MerchCategory
 } from '@/lib/merch';
+import { POKEMON_BY_ID } from '@/lib/pokemon';
 import {
   renderMerchDesign, renderMerchPreview, MERCH_DESIGNS,
   type MerchDesign
@@ -109,6 +111,16 @@ export function MerchStudioDialog({
   const retail = computeRetail(selectedProduct.baseCostUSD, markupPct);
   const margin = retail - selectedProduct.baseCostUSD;
 
+  // Legal bright-line: anything that becomes a public Printful listing title
+  // must not carry the Pokémon trademark or a species name. We hold the full
+  // species list here, so we sanitize free-text fragments before they leave
+  // the browser; the worker applies a trademark backstop server-side.
+  const speciesNames = useMemo(() => Object.values(POKEMON_BY_ID).map(p => p.display), []);
+  const cleanListing = (raw: string | undefined): string | undefined => {
+    const s = sanitizeListingTitle(raw, speciesNames);
+    return s || undefined;
+  };
+
   // Generate full-resolution print PNG on demand (download / order)
   const generatePrintBlob = async (): Promise<Blob | null> => {
     try {
@@ -169,10 +181,10 @@ export function MerchStudioDialog({
           design,
           markup: markupPct,
           metadata: {
-            teamName: teamName || undefined,
-            gymName: gymName || undefined,
-            region: region || undefined,
-            trainer: trainer?.name || undefined,
+            teamName: cleanListing(teamName),
+            gymName: cleanListing(gymName),
+            region: cleanListing(region),
+            trainer: cleanListing(trainer?.name),
           },
           pngBlob: blob,
         });

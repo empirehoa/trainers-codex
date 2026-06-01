@@ -196,11 +196,31 @@ function designLabel(design: string): string {
   return map[design] || 'Trainer Codex';
 }
 
+// Legal bright-line backstop: a public Printful listing title must never carry
+// the Pokémon trademark, even if a stale/modified client skips its own strip.
+// The client (which holds the full species list) sanitizes species names; here
+// we guarantee the trademark token is gone server-side. Mirrors
+// src/lib/merch.ts `sanitizeListingTitle`.
+const TRADEMARK_RE: RegExp[] = [
+  /\bpok[ée]mons?\b/gi,
+  /\bpok[ée]\s?balls?\b/gi,
+  /\bpok[ée](?![a-z])/gi,
+];
+
+function stripTrademark(raw: string): string {
+  let out = raw;
+  for (const re of TRADEMARK_RE) out = out.replace(re, ' ');
+  return out.replace(/[·|,/]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function composeProductName(parts: { designLabel: string; teamName?: string; gymName?: string; region?: string }): string {
   const fragments: string[] = [parts.designLabel];
-  if (parts.gymName) fragments.push(parts.gymName);
-  else if (parts.teamName) fragments.push(parts.teamName);
-  if (parts.region) fragments.push(parts.region);
+  const gym = parts.gymName ? stripTrademark(parts.gymName) : '';
+  const team = parts.teamName ? stripTrademark(parts.teamName) : '';
+  const region = parts.region ? stripTrademark(parts.region) : '';
+  if (gym) fragments.push(gym);
+  else if (team) fragments.push(team);
+  if (region) fragments.push(region);
   return fragments.join(' · ');
 }
 

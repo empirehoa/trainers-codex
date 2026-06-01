@@ -65,6 +65,7 @@ import {
   type ProfileClient,
 } from '@/lib/profiles';
 import { getProfileClient } from '@/lib/profiles-client';
+import { sanitizeListingTitle } from '@/lib/merch';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
 import { auth, type AuthSession } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -107,12 +108,14 @@ export default function App() {
   // real compiled bundle instead of a mirror: Showdown round-trip + the
   // game-compatibility layer (Champions / Mega gating).
   useEffect(() => {
+    const speciesNames = Object.values(POKEMON_BY_ID).map(p => p.display);
     (window as unknown as { __tc?: unknown }).__tc = {
       parsePokePaste, exportPokePaste,
       analyzeTeamCompatibility, recommendTargetGame, isPokemonAvailableIn,
       computeMatchup, bestMove,
       validateHandle, parseProfileRoute, profileUrl,
       shapeProfilePayload, shapeTeamPayload, shapeReportPayload, sanitizeText,
+      sanitizeListingTitle: (raw: string | null | undefined) => sanitizeListingTitle(raw, speciesNames),
       POKEMON_BY_ID, MAINLINE_GAMES,
       // Test seams: inject an in-memory ProfileClient + drive the /u route
       // without a real backend (the harness aborts all external requests).
