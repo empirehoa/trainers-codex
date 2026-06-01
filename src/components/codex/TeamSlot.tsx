@@ -1,7 +1,7 @@
 import { X, Sparkles, Settings2, Gem } from 'lucide-react';
-import type { Pokemon, TeamMember } from '@/lib/types';
+import type { Pokemon, TeamMember, SpriteKind } from '@/lib/types';
 import { TYPE_COLORS } from '@/lib/constants';
-import { pixelSprite } from '@/lib/pokemon';
+import { pixelSprite, spriteUrl } from '@/lib/pokemon';
 
 interface TeamSlotProps {
   p: Pokemon | null;
@@ -39,13 +39,23 @@ export function TeamSlot({ p, member, onRemove, onOpen, onConfigure }: TeamSlotP
     >
       <button onClick={onConfigure} className="w-full h-full" title={`Configure ${p.display}${tera ? ` · Tera ${tera}` : ''}`}>
         <img
-          src={pixelSprite(p.id, shiny)}
+          src={resolveSlotSprite(p.id, member?.sprite, shiny)}
           alt={p.display}
-          className="pixel-img w-full h-full object-contain p-0.5"
+          className={spriteIsPixel(member?.sprite) ? 'pixel-img w-full h-full object-contain p-0.5' : 'w-full h-full object-contain p-0.5'}
           onError={(e) => {
+            // Fallback chain: animated/home/artwork → pixel-shiny → pixel-default.
+            // Showdown 404s for ~30% of forms (Gmax, Pikachu caps, fake Megas), and
+            // PokeAPI 403s some shiny variants — both have to degrade gracefully.
             const img = e.currentTarget as HTMLImageElement;
-            // Fall back to non-shiny if shiny missing
-            if (shiny) img.src = pixelSprite(p.id, false);
+            const current = img.src;
+            const pixel = pixelSprite(p.id, shiny);
+            const fallback = pixelSprite(p.id, false);
+            if (current !== pixel) {
+              img.classList.add('pixel-img');
+              img.src = pixel;
+            } else if (current !== fallback) {
+              img.src = fallback;
+            }
           }}
         />
       </button>
@@ -80,11 +90,27 @@ export function TeamSlot({ p, member, onRemove, onOpen, onConfigure }: TeamSlotP
       <button
         onClick={onRemove}
         aria-label={`Remove ${p.display}`}
-        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 group-focus-within:opacity-100 transition"
         style={{ background: 'hsl(var(--destructive))', color: 'white' }}
       >
         <X size={9} />
       </button>
     </div>
   );
+}
+
+function resolveSlotSprite(id: number, sprite: SpriteKind | undefined, shiny: boolean | undefined): string {
+  if (!sprite || sprite === 'pixel-default' || sprite === 'pixel-shiny') {
+    return pixelSprite(id, shiny);
+  }
+  // Honor explicit shiny-aware choice; otherwise apply shiny on top of the
+  // selected sprite family.
+  if (sprite === 'animated-gen5' && shiny) return spriteUrl(id, 'animated-gen5-shiny');
+  if (sprite === 'home-default' && shiny) return spriteUrl(id, 'home-shiny');
+  if (sprite === 'artwork-default' && shiny) return spriteUrl(id, 'artwork-shiny');
+  return spriteUrl(id, sprite);
+}
+
+function spriteIsPixel(sprite: SpriteKind | undefined): boolean {
+  return !sprite || sprite.startsWith('pixel');
 }

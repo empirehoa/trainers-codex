@@ -62,9 +62,24 @@ const injected = bundle.replace(moduleRe, `${injection}\n    <script type="modul
 
 mkdirSync('/tmp/tc-deploy', { recursive: true });
 writeFileSync('/tmp/tc-deploy/index.html', injected);
-copyFileSync(join(PROJECT_ROOT, 'public/_headers'), '/tmp/tc-deploy/_headers');
-copyFileSync(join(PROJECT_ROOT, 'public/robots.txt'), '/tmp/tc-deploy/robots.txt');
-copyFileSync(join(PROJECT_ROOT, 'public/favicon.svg'), '/tmp/tc-deploy/favicon.svg');
+const staticAssets = ['_headers', 'robots.txt', 'favicon.svg', 'sitemap.xml', 'legal.html', 'dmca.html'];
+for (const asset of staticAssets) {
+  const src = join(PROJECT_ROOT, 'public', asset);
+  try {
+    copyFileSync(src, `/tmp/tc-deploy/${asset}`);
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      console.warn(`  skip ${asset} (not present in public/)`);
+    } else {
+      throw e;
+    }
+  }
+}
+
+// og-image.png is optional — staged separately from screenshots/ when present
+try {
+  copyFileSync(join(PROJECT_ROOT, 'deploy/og-image.png'), '/tmp/tc-deploy/og-image.png');
+} catch {}
 
 console.log(`✓ Wrote /tmp/tc-deploy/index.html (${(injected.length / 1024).toFixed(1)} KB)`);
 console.log(`  Supabase: ${cfg.supabase.url}`);

@@ -1,6 +1,15 @@
 User-agent: *
 Allow: /
 
-# We don't have private routes — single static HTML.
-# But we do want crawlers to know where the canonical lives.
+# AI training opt-out
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+# Indexable
 Sitemap: https://trainerscodex.com/sitemap.xml

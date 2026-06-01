@@ -90,6 +90,19 @@ export async function verifyLicense(env: Env, jwt: string): Promise<LicenseClaim
   const parts = jwt.split('.');
   if (parts.length !== 3) return null;
   const [headerB64, bodyB64, sigB64] = parts;
+
+  // Pin the algorithm before trusting the signature. Without this an attacker
+  // who can swap the verify path (or a future refactor to a permissive library)
+  // could present alg:none / RS256-confusion tokens and forge premium. We only
+  // ever mint HS256, so reject anything else outright.
+  let header: { alg?: string; typ?: string };
+  try {
+    header = JSON.parse(new TextDecoder().decode(b64urlDecode(headerB64)));
+  } catch {
+    return null;
+  }
+  if (header.alg !== 'HS256' || header.typ !== 'JWT') return null;
+
   const signingInput = `${headerB64}.${bodyB64}`;
 
   const key = await getHmacKey(env.JWT_SIGNING_KEY);

@@ -173,17 +173,94 @@ export function spriteUrl(id: number, kind: SpriteKind = 'pixel-default'): strin
 }
 
 function animatedGen5Url(id: number, shiny: boolean): string {
-  // Showdown uses the lowercase species name. We look up our display name
-  // and slug it the same way Showdown does (strip diacritics + non-alnum).
+  // Showdown's sprite slug is `<species>-<formslug>` where the form portion
+  // collapses internal hyphens (mega-x → megax, dusk-mane → duskmane) and
+  // a few species names themselves collapse (mr-mime → mrmime). Hand-tuned.
   const p = POKEMON_BY_ID[id];
   if (!p) return spriteUrl(id, shiny ? 'pixel-shiny' : 'pixel-default');
-  const slug = p.name
+  const dir = shiny ? 'ani-shiny' : 'ani';
+  const raw = p.name
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9-]/g, '');
-  const dir = shiny ? 'ani-shiny' : 'ani';
-  return `https://play.pokemonshowdown.com/sprites/${dir}/${slug}.gif`;
+  return `https://play.pokemonshowdown.com/sprites/${dir}/${showdownSlug(raw)}.gif`;
+}
+
+// Species whose canonical name is multi-token but Showdown collapses to one.
+// (Some of these — the Gen 9 paradox mons — have no animated sprite on Showdown
+// at all; the slug is still correct so the fallback chain probes the right URL.)
+const SHOWDOWN_SPECIES_ALIASES: Record<string, string> = {
+  'mr-mime': 'mrmime', 'mr-rime': 'mrrime', 'mime-jr': 'mimejr',
+  'type-null': 'typenull', 'ho-oh': 'hooh', 'porygon-z': 'porygonz',
+  'jangmo-o': 'jangmoo', 'hakamo-o': 'hakamoo', 'kommo-o': 'kommoo',
+  'tapu-koko': 'tapukoko', 'tapu-lele': 'tapulele', 'tapu-bulu': 'tapubulu', 'tapu-fini': 'tapufini',
+  'wo-chien': 'wochien', 'chien-pao': 'chienpao', 'ting-lu': 'tinglu', 'chi-yu': 'chiyu',
+  'great-tusk': 'greattusk', 'scream-tail': 'screamtail', 'brute-bonnet': 'brutebonnet',
+  'flutter-mane': 'fluttermane', 'slither-wing': 'slitherwing', 'sandy-shocks': 'sandyshocks',
+  'iron-treads': 'irontreads', 'iron-bundle': 'ironbundle', 'iron-hands': 'ironhands',
+  'iron-jugulis': 'ironjugulis', 'iron-moth': 'ironmoth', 'iron-thorns': 'ironthorns',
+  'roaring-moon': 'roaringmoon', 'iron-valiant': 'ironvaliant', 'walking-wake': 'walkingwake',
+  'iron-leaves': 'ironleaves', 'gouging-fire': 'gougingfire', 'raging-bolt': 'ragingbolt',
+  'iron-boulder': 'ironboulder', 'iron-crown': 'ironcrown',
+};
+
+// Full-name (species+form) overrides where neither the default-collapse rule
+// nor mechanical hyphen-collapse produces Showdown's actual slug. Verified by
+// HEAD-probing the live ani host (see tests/validate-showdown-slugs.mjs).
+const SHOWDOWN_FORM_OVERRIDES: Record<string, string> = {
+  // Gendered species where the gender IS the slug identity (no dash)
+  'nidoran-f': 'nidoranf', 'nidoran-m': 'nidoranm',
+  // Necrozma stub entries map to the fused sprite names
+  'necrozma-dusk': 'necrozma-duskmane', 'necrozma-dawn': 'necrozma-dawnwings',
+  // Galarian Darmanitan default drops the trailing "standard"
+  'darmanitan-galar-standard': 'darmanitan-galar',
+  // Ash-Greninja (Battle Bond) has its own animated sprite
+  'greninja-battle-bond': 'greninja-ash',
+  // Every Minior meteor shell shares one sprite; the red core has none either
+  'minior-red-meteor': 'minior', 'minior-orange-meteor': 'minior',
+  'minior-yellow-meteor': 'minior', 'minior-green-meteor': 'minior',
+  'minior-blue-meteor': 'minior', 'minior-indigo-meteor': 'minior',
+  'minior-violet-meteor': 'minior', 'minior-red': 'minior',
+};
+
+// Form tokens that denote the in-game DEFAULT form — Showdown serves these
+// under the bare species name (deoxys-normal → deoxys, meowstic-male → meowstic).
+const SHOWDOWN_DEFAULT_FORMS = new Set([
+  'normal', 'plant', 'altered', 'land', 'red-striped', 'standard',
+  'incarnate', 'ordinary', 'aria', 'shield', 'average', 'baile',
+  'midday', 'solo', 'disguised', 'amped', 'ice', 'full-belly',
+  'single-strike', 'zero', 'curly', 'two-segment', 'family-of-four',
+  'green-plumage', '50', 'male', 'own-tempo',
+]);
+
+export function showdownSlug(raw: string): string {
+  if (SHOWDOWN_FORM_OVERRIDES[raw]) return SHOWDOWN_FORM_OVERRIDES[raw];
+
+  // Multi-token species: alias the species, then resolve the trailing form.
+  for (const [from, to] of Object.entries(SHOWDOWN_SPECIES_ALIASES)) {
+    if (raw === from) return to;
+    if (raw.startsWith(from + '-')) {
+      const form = raw.slice(from.length + 1);
+      return SHOWDOWN_DEFAULT_FORMS.has(form) ? to : to + '-' + collapseFormSlug(form);
+    }
+  }
+
+  const dashIdx = raw.indexOf('-');
+  if (dashIdx === -1) return raw;
+  const species = raw.slice(0, dashIdx);
+  const form = raw.slice(dashIdx + 1);
+  if (SHOWDOWN_DEFAULT_FORMS.has(form)) return species;
+  return species + '-' + collapseFormSlug(form);
+}
+
+function collapseFormSlug(form: string): string {
+  if (form === 'female') return 'f';
+  if (form === 'male') return 'm';
+  // Showdown omits the "plumage" descriptor (squawkabilly-blue, not -blueplumage)
+  form = form.replace(/-plumage$/, '');
+  // Collapse internal dashes: mega-x → megax, rapid-strike → rapidstrike
+  return form.replace(/-/g, '');
 }
 
 export const pixelSprite = (id: number, shiny = false) =>

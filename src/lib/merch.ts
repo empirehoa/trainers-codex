@@ -224,46 +224,33 @@ export const MERCH_SLOGANS: { id: string; label: string; text: string }[] = [
 ];
 
 /**
- * Generate a Printful product URL with a prefilled mockup using their public
- * Mockup Generator URL parameters. This lets the user click "Order on Printful"
- * and land on a product page with the design preview already showing.
+ * Open the vendor's "create your own" design maker as the FALLBACK order path.
  *
- * Printful URL spec (as of June 2026):
- *   https://www.printful.com/custom/{slug}/{vendorProductCode}?design_url=...
+ * The public POD maker pages do NOT accept a design through a query string — the
+ * artwork has to be uploaded in their UI — so we deliberately do not append a
+ * `design_url` param (an earlier version passed a process-local `blob:` URL,
+ * which is dead the moment it leaves the tab and produced broken links). The
+ * caller (`MerchStudioDialog.handleOrder`) has already downloaded the print-ready
+ * PNG for the user to drop onto the uploader.
  *
- * Note: For a real production flow this is replaced by the Printful API
- *   POST /sync/products  with the design uploaded to their file library.
- *   The URL-param flow shown here is a public no-account-required path.
+ * The real one-click flow runs server-side via `submitPrintfulOrder` (uploads the
+ * PNG, creates a Printful sync product, returns a dashboard URL) and never reaches
+ * this fallback. This path only fires on self-host deploys or when that API call
+ * fails. `designPngUrl` is still honored for the `custom` self-hosted-CDN case.
  */
 export function buildVendorOrderUrl(product: MerchProduct, designPngUrl: string): string {
   switch (product.vendor) {
     case 'printful':
-      // The "make your own" public URL accepts a design_url query param.
-      // If the user has an account, they get pushed to their dashboard.
-      return `https://www.printful.com/custom/${categorySlug(product.category)}?product_id=${product.vendorProductCode}&design_url=${encodeURIComponent(designPngUrl)}`;
+      return 'https://www.printful.com/custom-products';
     case 'printify':
-      // Printify uses a similar approach but requires a logged-in dashboard for true API submission.
-      return `https://printify.com/app/products?product_id=${product.vendorProductCode}&design_url=${encodeURIComponent(designPngUrl)}`;
+      return 'https://printify.com/app/products';
     case 'gelato':
-      return `https://www.gelato.com/create?product=${product.vendorProductCode}&image=${encodeURIComponent(designPngUrl)}`;
+      return 'https://www.gelato.com/products';
     case 'stickermule':
-      // Sticker Mule actually requires upload (no URL pre-fill). We open the upload page.
       return 'https://www.stickermule.com/products/custom-stickers';
     default:
       return designPngUrl;
   }
-}
-
-function categorySlug(cat: MerchCategory): string {
-  return {
-    apparel: 't-shirts',
-    mug: 'mugs',
-    mousepad: 'gaming-mouse-pads',
-    sticker: 'stickers',
-    poster: 'posters',
-    tote: 'tote-bags',
-    'phone-case': 'phone-cases',
-  }[cat];
 }
 
 /**

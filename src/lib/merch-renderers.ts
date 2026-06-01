@@ -907,6 +907,7 @@ export async function renderMerchPreview(ctx: MerchRenderContext): Promise<Blob>
     case 'banner':  await renderBanner(c, region, ctx); break;
     case 'lineup':  await renderRoster(c, region, ctx); break;
     case 'sigil':   await renderCrest(c, region, ctx); break;
+    case 'trainer-card': await renderTrainerCard(c, region, ctx); break;
     default:        await renderCrest(c, region, ctx);
   }
   return toBlob(canvas);

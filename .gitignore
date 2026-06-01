@@ -38,6 +38,8 @@ tests/_screenshots/
 .dev.vars
 *.pem
 .supabase-db-password
+.deploy-creds
+*.bak
 
 # Worker scaffolding
 worker/pnpm-lock.yaml
