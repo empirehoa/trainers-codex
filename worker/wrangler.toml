@@ -26,9 +26,9 @@ id = "faa46f7250d24e2ea7f7f7f06741dbd4"
 # To enable: visit https://dash.cloudflare.com/c3562f59e9b068eaf3ba440f50c1ac6f/r2,
 # accept ToS, run `wrangler r2 bucket create trainerscodex-prints`, then
 # uncomment the binding below and redeploy.
-# [[r2_buckets]]
-# binding = "PRINTS_BUCKET"
-# bucket_name = "trainerscodex-prints"
+[[r2_buckets]]
+binding = "PRINTS_BUCKET"
+bucket_name = "trainerscodex"
 
 # Secrets — set via `wrangler secret put` after `wrangler deploy`.
 # DO NOT add these to [vars] — that commits them to git.
