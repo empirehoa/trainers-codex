@@ -16,6 +16,7 @@ const SUITES = [
   'test-stripe-printful.mjs',
   'test-team-sprites.mjs',
   'test-showdown.mjs',
+  'test-champions.mjs',
 ];
 
 let totalPassed = 0;

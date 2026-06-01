@@ -22,8 +22,11 @@ import {
   getGen
 } from '@/lib/pokemon';
 import {
-  TYPES, GENERATIONS, ROLES, STARTER_TEAMS, THEMED_TEAMS
+  TYPES, GENERATIONS, ROLES, STARTER_TEAMS, THEMED_TEAMS, MAINLINE_GAMES
 } from '@/lib/constants';
+import {
+  analyzeTeamCompatibility, recommendTargetGame, isPokemonAvailableIn
+} from '@/lib/compatibility';
 import {
   computeDefensive, computeOffensive, computeStats,
   computeThreats, computeUncovered, suggestFillers,
@@ -91,10 +94,15 @@ export default function App() {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
 
-  // Expose the Showdown round-trip helpers for the test harness (pure functions,
-  // no secrets) so tests exercise the real compiled bundle instead of a mirror.
+  // Expose pure helpers for the test harness (no secrets) so tests exercise the
+  // real compiled bundle instead of a mirror: Showdown round-trip + the
+  // game-compatibility layer (Champions / Mega gating).
   useEffect(() => {
-    (window as unknown as { __tc?: unknown }).__tc = { parsePokePaste, exportPokePaste };
+    (window as unknown as { __tc?: unknown }).__tc = {
+      parsePokePaste, exportPokePaste,
+      analyzeTeamCompatibility, recommendTargetGame, isPokemonAvailableIn,
+      POKEMON_BY_ID, MAINLINE_GAMES,
+    };
   }, []);
 
   const [pendingTeam, setPendingTeam] = useState<(TeamMember | null)[] | null>(null);

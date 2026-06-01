@@ -15,8 +15,9 @@ export interface CompatibilityResult {
  *
  * For base species: matched against the game's supported gen list.
  * For alternate forms: layered rules apply.
- *   - Mega Evolutions: only in Gen 6 (XY/ORAS) and Gen 7 (SM/USUM). Not in any current Switch-era game.
- *   - Primal forms (Kyogre/Groudon): Gen 6 ORAS only. Not in Switch-era games.
+ *   - Mega Evolutions: Gen 6-7 historically, gone in the Switch era, and back in
+ *     Pokémon Champions (the only game in this list that holds them).
+ *   - Primal forms (Kyogre/Groudon): Gen 6 ORAS, otherwise treated like Megas.
  *   - Gigantamax: only Sword/Shield. Cannot transfer to other games (form is lost).
  *   - Regional forms (Alolan/Galarian/Hisuian/Paldean): require their introduction generation
  *     game to be available, and propagate forward via HOME.
@@ -29,8 +30,10 @@ export function isPokemonAvailableIn(p: Pokemon, game: GameInfo): boolean {
 
   // Form-specific gating
   if (p.form === 'mega' || p.form === 'primal') {
-    // Megas and Primals don't exist as form in any Switch-era game.
-    return false;
+    // Megas/Primals vanished in the Switch era — Pokémon Champions is the one
+    // game that brings Mega Evolution back (and introduces the new Champions
+    // Megas). Available there, nowhere else in this list.
+    return game.id === 'champions';
   }
   if (p.form === 'gigantamax') {
     // Only Sword/Shield retain Gigantamax forms.
@@ -97,13 +100,31 @@ export function analyzeTeamCompatibility(team: (TeamMember | Pokemon | null)[]):
 export function recommendTargetGame(
   results: CompatibilityResult[]
 ): { result: CompatibilityResult; instructions: string[] } {
-  // Prefer fully-playable, latest-first
-  const fullyPlayable = results
-    .filter(r => r.playable)
+  // Prefer a mainline game for the headline recommendation, latest-first.
+  // Pokémon Champions is a competitive battle title, not a collection game, so
+  // it only wins the headline when it's the *only* fully-playable option — i.e.
+  // the team carries a Mega/Primal that exists nowhere else.
+  const fullyPlayable = results.filter(r => r.playable);
+  const mainlineFull = fullyPlayable
+    .filter(r => r.game.id !== 'champions')
     .sort((a, b) => b.game.releaseYear - a.game.releaseYear);
+  const championsFull = fullyPlayable.filter(r => r.game.id === 'champions');
+  const ordered = [...mainlineFull, ...championsFull];
 
-  if (fullyPlayable.length > 0) {
-    const target = fullyPlayable[0];
+  if (ordered.length > 0) {
+    const target = ordered[0];
+    if (target.game.id === 'champions') {
+      // A team only fully playable in Champions is carrying Megas/Primals.
+      const megas = target.available.filter(p => p.form === 'mega' || p.form === 'primal');
+      const instructions = [
+        `All 6 of your Pokémon are battle-legal in ${target.game.label}.`,
+        megas.length
+          ? `${megas.map(p => p.display).join(', ')}: Mega Evolution returns in Champions — these can't be used in any mainline Switch-era game.`
+          : `Champions is HOME-linked: bring each Pokémon in through Pokémon HOME.`,
+        `Champions is a competitive battle title, so there's no overworld to catch in — teams are built from your HOME boxes.`,
+      ];
+      return { result: target, instructions };
+    }
     const isLatest = target.game.id === LATEST_GAME_ID;
     const instructions = [
       `All 6 of your Pokémon are transferable to ${target.game.label}.`,
@@ -133,7 +154,7 @@ export function recommendTargetGame(
   instructions.push(`${target.game.label} holds the most (${target.available.length}/6).`);
 
   if (megaIssues.length) {
-    instructions.push(`${megaIssues.map(p => p.display).join(', ')}: Mega/Primal forms only exist in Gen 6-7 games (ORAS, SM, USUM). They cannot be obtained in any current Switch-era mainline game.`);
+    instructions.push(`${megaIssues.map(p => p.display).join(', ')}: Mega/Primal forms exist in Gen 6-7 games (ORAS, SM, USUM) and return in Pokémon Champions. They cannot be obtained in any Switch-era mainline game.`);
   }
   if (gmaxIssues.length) {
     instructions.push(`${gmaxIssues.map(p => p.display).join(', ')}: Gigantamax forms only exist in Sword/Shield. The base species can transfer, but the G-Max factor is lost.`);
