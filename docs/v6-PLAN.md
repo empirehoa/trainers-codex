@@ -300,16 +300,27 @@ Worlds window (hard launch 2026-08-26). Worked in order; each gate = build clean
   "requires the Cloudflare Worker… set FAL_API_KEY" notice shows. The feature is
   visibly gated, never broken — satisfying "wire fal.ai OR feature-flag-hide".
 
-### Blocked on Jose (not shippable from code)
+### Infra activation (resolved 2026-06-01)
 
-1. **fal.ai API key** — set `FAL_API_KEY` as a Worker secret to switch AI Studio live.
-2. **R2 bucket** (Task #28) — create `trainerscodex-prints` + public subdomain
-   `cdn.trainerscodex.com`; required for AI photo upload + merch print hosting.
-   Add a 24-hour lifecycle rule on the `trainer-cards/` and `team-art/` prefixes
-   (R2 has no per-object TTL; this is a bucket lifecycle policy, set in Cloudflare).
-3. **Image-moderation provider** — stand up `MODERATION_API_URL` (+ key) so photo
-   screening enforces rather than skips.
-4. **DMCA designated agent** — register the agent with the U.S. Copyright Office
-   DMCA Designated Agent Directory (dmca.copyright.gov, $6) using
-   legal@trainerscodex.com; safe-harbor protection isn't perfected until filed.
-5. **Stripe live** — flip from preview-unlock toggle to live Checkout when ready.
+1. ✅ **fal.ai API key** — `FAL_API_KEY` set as a Worker secret; AI Studio live.
+   Verified: `POST /ai/trainer-card` returns `401 license_required` (past the
+   config gate), not `503 ai_not_configured`.
+2. ✅ **R2 bucket** (Task #28) — R2 enabled; bucket `trainerscodex` created and
+   bound as `PRINTS_BUCKET`; custom domain `cdn.trainerscodex.com` connected
+   (cert provisioning); 1-day expiry lifecycle rules on `trainer-cards/` and
+   `team-art/` (R2 min granularity is 1 day, not sub-day). Worker deployed
+   (version `fbe1f1e3`). Note: bucket name is `trainerscodex`, not the originally
+   planned `trainerscodex-prints`.
+3. ✅ **Printful + Stripe secrets** — `PRINTFUL_API_KEY`, `STRIPE_SECRET_KEY`,
+   `STRIPE_WEBHOOK_SECRET`, `JWT_SIGNING_KEY` all already set on the Worker.
+
+### Still blocked on Jose
+
+1. **Image-moderation provider** (optional) — stand up `MODERATION_API_URL`
+   (+ key) so photo screening enforces rather than skips. Launch-safe without it.
+2. **DMCA designated agent** — register with the U.S. Copyright Office DMCA
+   Designated Agent Directory (dmca.copyright.gov, $6) using
+   legal@trainerscodex.com; safe-harbor isn't perfected until filed.
+3. **Stripe go-live** (code, not credential) — secrets are set; remaining work
+   is swapping the preview-unlock toggle for a live Checkout redirect in
+   `PosterStudioDialog` + `MerchStudioDialog`. Doable on request.
