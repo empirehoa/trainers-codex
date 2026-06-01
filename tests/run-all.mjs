@@ -18,6 +18,7 @@ const SUITES = [
   'test-showdown.mjs',
   'test-champions.mjs',
   'test-matchup.mjs',
+  'test-profiles.mjs',
 ];
 
 let totalPassed = 0;

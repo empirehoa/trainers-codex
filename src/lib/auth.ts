@@ -191,6 +191,16 @@ async function getClient(): Promise<SupabaseClientLike | null> {
   return loadingPromise;
 }
 
+/**
+ * Resolve the live Supabase client (CDN-loaded) for feature modules beyond
+ * auth/cloud-sync — e.g. public profiles. Returns null when auth isn't
+ * configured or the SDK failed to load, so callers degrade to offline. Typed as
+ * `unknown` here so each consumer narrows to just the query surface it needs.
+ */
+export async function getSupabaseClient(): Promise<unknown | null> {
+  return getClient();
+}
+
 function mapUser(u: SupabaseUser, provider?: string): AuthSession {
   const meta = u.user_metadata || {};
   return {

@@ -11,6 +11,7 @@
 --   - team_follows        : follower → team relationships
 --   - game_badges         : canonical list of gym leaders + Elite 4 + Champions
 --   - user_badges         : claimed badges (with photo proof + verification status)
+--   - reports             : community moderation queue (authed-insert, self-read)
 --
 -- All tables have RLS enabled. Public reads are scoped to `is_public = true`
 -- rows; writes are user-scoped.
@@ -195,6 +196,38 @@ create policy "user_badges_self_resubmit" on user_badges
   for update using (auth.uid() = user_id and status != 'approved');
 
 -- ============================================================
+-- REPORTS — community moderation queue
+-- ============================================================
+-- Any authed user can file a report against a profile or a public team. Only
+-- the reporter can see their own filings; a service-role/admin tool reads the
+-- full queue out-of-band (service role bypasses RLS). We deliberately do NOT
+-- expose a broad admin SELECT policy here — moderation runs server-side with
+-- the service key, never from the static client.
+create table if not exists reports (
+  id          uuid primary key default gen_random_uuid(),
+  reporter    uuid references auth.users(id) on delete set null,
+  target_kind text not null check (target_kind in ('profile', 'team')),
+  target_id   text not null,                       -- handle (profile) or team uuid
+  reason      text not null check (reason in ('spam', 'abuse', 'impersonation', 'nsfw', 'copyright', 'other')),
+  detail      text check (length(detail) <= 500),
+  status      text not null default 'open' check (status in ('open', 'reviewing', 'resolved', 'dismissed')),
+  created_at  timestamptz default now()
+);
+
+create index if not exists reports_status_idx on reports(status, created_at desc);
+create index if not exists reports_target_idx on reports(target_kind, target_id);
+
+alter table reports enable row level security;
+
+drop policy if exists "reports_self_insert" on reports;
+create policy "reports_self_insert" on reports
+  for insert with check (auth.uid() = reporter);
+
+drop policy if exists "reports_self_read" on reports;
+create policy "reports_self_read" on reports
+  for select using (auth.uid() = reporter);
+
+-- ============================================================
 -- Trigger: update updated_at on profile/team mutations
 -- ============================================================
 create or replace function set_updated_at() returns trigger as $$
@@ -219,5 +252,5 @@ select table_name, row_security
 from information_schema.tables t
 join pg_tables p on p.tablename = t.table_name
 where t.table_schema = 'public'
-  and t.table_name in ('profiles', 'friendships', 'public_teams', 'team_follows', 'game_badges', 'user_badges')
+  and t.table_name in ('profiles', 'friendships', 'public_teams', 'team_follows', 'game_badges', 'user_badges', 'reports')
 order by t.table_name;

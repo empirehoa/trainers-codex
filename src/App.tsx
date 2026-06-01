@@ -4,7 +4,7 @@ import {
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
   User, Wand2, ShoppingBag, LogIn, Cloud,
-  Sun, Moon, Sparkles, ClipboardList
+  Sun, Moon, Sparkles, ClipboardList, Globe
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,6 +57,14 @@ import { ShowdownImportDialog } from '@/components/codex/ShowdownImportDialog';
 import { SignInDialog } from '@/components/codex/SignInDialog';
 import { parsePokePaste, exportPokePaste } from '@/lib/showdown';
 import { computeMatchup, bestMove } from '@/lib/matchup';
+import { PublicProfileView } from '@/components/codex/PublicProfileView';
+import { PublishProfileDialog } from '@/components/codex/PublishProfileDialog';
+import {
+  validateHandle, parseProfileRoute, profileUrl,
+  shapeProfilePayload, shapeTeamPayload, shapeReportPayload, sanitizeText,
+  type ProfileClient,
+} from '@/lib/profiles';
+import { getProfileClient } from '@/lib/profiles-client';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
 import { auth, type AuthSession } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -103,8 +111,44 @@ export default function App() {
       parsePokePaste, exportPokePaste,
       analyzeTeamCompatibility, recommendTargetGame, isPokemonAvailableIn,
       computeMatchup, bestMove,
+      validateHandle, parseProfileRoute, profileUrl,
+      shapeProfilePayload, shapeTeamPayload, shapeReportPayload, sanitizeText,
       POKEMON_BY_ID, MAINLINE_GAMES,
+      // Test seams: inject an in-memory ProfileClient + drive the /u route
+      // without a real backend (the harness aborts all external requests).
+      __setProfileClient: (c: ProfileClient | null) => setProfileClient(c),
+      __openProfile: (h: string, viewerId?: string | null) => {
+        if (viewerId !== undefined) setViewerOverride(viewerId);
+        setRouteHandle(h);
+      },
     };
+  }, []);
+
+  // ---------- Public profiles: route + client ----------
+  useEffect(() => {
+    const sync = () => setRouteHandle(parseProfileRoute());
+    window.addEventListener('hashchange', sync);
+    window.addEventListener('popstate', sync);
+    return () => {
+      window.removeEventListener('hashchange', sync);
+      window.removeEventListener('popstate', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getProfileClient().then(c => { if (!cancelled) setProfileClient(prev => prev || c); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const exitProfile = useCallback(() => {
+    setRouteHandle(null);
+    try {
+      // Drop any /u/<handle> path or hash so the back-action returns to the app.
+      const clean = window.location.pathname.replace(/\/u\/[^/?#]+/i, '/') || '/';
+      const hash = /(?:^#|[#&])\/?u[/=]/i.test(window.location.hash) ? '' : window.location.hash;
+      history.replaceState(null, '', clean + window.location.search + hash);
+    } catch {}
   }, []);
 
   const [pendingTeam, setPendingTeam] = useState<(TeamMember | null)[] | null>(null);
@@ -129,7 +173,14 @@ export default function App() {
   const [aiOpen, setAiOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null);
+  // v6 public profiles: which /u/<handle> route is active (null = the app), and
+  // the resolved ProfileClient (null until the cloud SDK loads, or forever when
+  // auth isn't configured). Tests can inject a stub via window.__tc.
+  const [routeHandle, setRouteHandle] = useState<string | null>(() => parseProfileRoute());
+  const [profileClient, setProfileClient] = useState<ProfileClient | null>(null);
+  const [viewerOverride, setViewerOverride] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [showFilters, setSF] = useState(false);
@@ -502,6 +553,18 @@ export default function App() {
     if (members[idx]) setConfigSlot(idx);
   };
 
+  // ---------- Public profile route takes over the whole screen ----------
+  if (routeHandle) {
+    return (
+      <PublicProfileView
+        handle={routeHandle}
+        client={profileClient}
+        viewerId={viewerOverride ?? session?.userId ?? null}
+        onExit={exitProfile}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen w-full text-foreground relative bg-background crt-scan crt-vignette grain">
       <Toaster
@@ -585,6 +648,18 @@ export default function App() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{session ? `Signed in as ${session.name || session.email}` : 'Sign in for cloud sync'}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline" size="icon" onClick={() => setPublishOpen(true)}
+                    className="w-8 h-8 hidden sm:flex"
+                    aria-label="Publish public profile"
+                  >
+                    <Globe size={13} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Publish a public profile</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -976,6 +1051,15 @@ export default function App() {
         onSync={handleManualSync}
         syncing={syncing}
         lastSyncAt={lastSyncAt}
+      />
+      <PublishProfileDialog
+        open={publishOpen} onClose={() => setPublishOpen(false)}
+        client={profileClient}
+        userId={session?.userId ?? null}
+        onRequestSignIn={() => { setPublishOpen(false); setSignInOpen(true); }}
+        trainer={trainer}
+        teamName={teamName}
+        members={members}
       />
       <LibraryDialog
         open={libraryOpen} onClose={() => setLibrary(false)}
