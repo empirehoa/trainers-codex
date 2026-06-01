@@ -11,6 +11,16 @@ export interface Stats {
   hp: number; atk: number; def: number; spa: number; spd: number; spe: number;
 }
 
+// The 25 competitive natures. Each boosts one stat 10% and lowers another 10%,
+// except the five neutral ones (Hardy/Docile/Serious/Bashful/Quirky). Stat
+// modifiers live in NATURE_EFFECTS (constants.ts) for the Sprint 3 damage calc.
+export type Nature =
+  | 'Hardy' | 'Lonely' | 'Brave' | 'Adamant' | 'Naughty'
+  | 'Bold' | 'Docile' | 'Relaxed' | 'Impish' | 'Lax'
+  | 'Timid' | 'Hasty' | 'Serious' | 'Jolly' | 'Naive'
+  | 'Modest' | 'Mild' | 'Quiet' | 'Bashful' | 'Rash'
+  | 'Calm' | 'Gentle' | 'Sassy' | 'Careful' | 'Quirky';
+
 export type Category = 'normal' | 'legendary' | 'mythical' | 'ub' | 'paradox' | 'pseudo' | 'baby';
 
 export type FormCategory =
@@ -97,6 +107,11 @@ export interface TeamMember {
   heldItem?: string;             // common competitive held item (Leftovers, Choice Band, etc.)
   sprite?: SpriteKind;           // optional cosmetic variant
   teraType?: PokemonType;        // Terastallization type (Gen 9+)
+  // Competitive spread (Sprint 1 — Showdown/PokePaste round-trip). EVs default
+  // to 0 and IVs to 31 for any stat omitted, matching Showdown's text format.
+  evs?: Partial<Stats>;
+  ivs?: Partial<Stats>;
+  nature?: Nature;
 }
 
 export interface SavedTeam {

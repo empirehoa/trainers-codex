@@ -1,4 +1,4 @@
-import type { PokemonType, Role, Stats } from './types';
+import type { PokemonType, Role, Stats, Nature } from './types';
 
 export const TYPES: PokemonType[] = [
   'normal', 'fire', 'water', 'electric', 'grass', 'ice',
@@ -53,6 +53,43 @@ export const GENERATIONS = [
   { num: 8, label: 'Galar',   range: [810, 905]  as [number, number] },
   { num: 9, label: 'Paldea',  range: [906, 1025] as [number, number] },
 ];
+
+// ============================================================
+// NATURES — competitive stat modifiers (Gen 3+)
+// ============================================================
+// null = neutral nature (no stat change). Otherwise the nature raises `plus`
+// by 10% and lowers `minus` by 10%. Used by the Showdown round-trip (Sprint 1)
+// and the @smogon/calc matchup preview (Sprint 3).
+
+export const NATURE_EFFECTS: Record<Nature, { plus: keyof Stats; minus: keyof Stats } | null> = {
+  Hardy:   null,
+  Lonely:  { plus: 'atk', minus: 'def' },
+  Brave:   { plus: 'atk', minus: 'spe' },
+  Adamant: { plus: 'atk', minus: 'spa' },
+  Naughty: { plus: 'atk', minus: 'spd' },
+  Bold:    { plus: 'def', minus: 'atk' },
+  Docile:  null,
+  Relaxed: { plus: 'def', minus: 'spe' },
+  Impish:  { plus: 'def', minus: 'spa' },
+  Lax:     { plus: 'def', minus: 'spd' },
+  Timid:   { plus: 'spe', minus: 'atk' },
+  Hasty:   { plus: 'spe', minus: 'def' },
+  Serious: null,
+  Jolly:   { plus: 'spe', minus: 'spa' },
+  Naive:   { plus: 'spe', minus: 'spd' },
+  Modest:  { plus: 'spa', minus: 'atk' },
+  Mild:    { plus: 'spa', minus: 'def' },
+  Quiet:   { plus: 'spa', minus: 'spe' },
+  Bashful: null,
+  Rash:    { plus: 'spa', minus: 'spd' },
+  Calm:    { plus: 'spd', minus: 'atk' },
+  Gentle:  { plus: 'spd', minus: 'def' },
+  Sassy:   { plus: 'spd', minus: 'spe' },
+  Careful: { plus: 'spd', minus: 'spa' },
+  Quirky:  null,
+};
+
+export const NATURES: Nature[] = Object.keys(NATURE_EFFECTS) as Nature[];
 
 export const ROLES: Role[] = ['sweeper', 'wall', 'tank', 'speedster'];
 

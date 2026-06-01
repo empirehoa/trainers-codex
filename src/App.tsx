@@ -4,7 +4,7 @@ import {
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
   User, Wand2, ShoppingBag, LogIn, Cloud,
-  Sun, Moon, Sparkles
+  Sun, Moon, Sparkles, ClipboardList
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +50,9 @@ import { TCGCardsDialog } from '@/components/codex/TCGCardsDialog';
 import { PosterStudioDialog } from '@/components/codex/PosterStudioDialog';
 import { MerchStudioDialog } from '@/components/codex/MerchStudioDialog';
 import { AIStudioDialog } from '@/components/codex/AIStudioDialog';
+import { ShowdownImportDialog } from '@/components/codex/ShowdownImportDialog';
 import { SignInDialog } from '@/components/codex/SignInDialog';
+import { parsePokePaste, exportPokePaste } from '@/lib/showdown';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
 import { auth, type AuthSession } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -89,6 +91,12 @@ export default function App() {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
 
+  // Expose the Showdown round-trip helpers for the test harness (pure functions,
+  // no secrets) so tests exercise the real compiled bundle instead of a mirror.
+  useEffect(() => {
+    (window as unknown as { __tc?: unknown }).__tc = { parsePokePaste, exportPokePaste };
+  }, []);
+
   const [pendingTeam, setPendingTeam] = useState<(TeamMember | null)[] | null>(null);
   const [search, setSearch] = useState('');
   const [filterTypes, setFType] = useState<PokemonType[]>([]);
@@ -109,6 +117,7 @@ export default function App() {
   const [posterOpen, setPosterOpen] = useState(false);
   const [merchOpen, setMerchOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -391,6 +400,13 @@ export default function App() {
     setTeamName(starter.label);
   }, [members, pushUndo]);
 
+  const importShowdownTeam = useCallback((parsed: TeamMember[]) => {
+    pushUndo(members);
+    const next: (TeamMember | null)[] = parsed.slice(0, 6);
+    while (next.length < 6) next.push(null);
+    setMembers(next);
+  }, [members, pushUndo]);
+
   const loadRandom = useCallback(() => {
     pushUndo(members);
     const picks = generateRandomTeam(POKEMON_BY_ID);
@@ -619,6 +635,17 @@ export default function App() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>AI Studio · trainer card + team art</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline" size="icon" onClick={() => setImportOpen(true)}
+                    className="w-8 h-8" data-testid="showdown-btn"
+                  >
+                    <ClipboardList size={14} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Import / export · Showdown · PokePaste</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -927,6 +954,11 @@ export default function App() {
         trainer={trainer} team={members}
         premium={premium}
         onTogglePremium={() => setPremium(p => !p)}
+      />
+      <ShowdownImportDialog
+        open={importOpen} onClose={() => setImportOpen(false)}
+        members={members}
+        onImport={importShowdownTeam}
       />
       <SignInDialog
         open={signInOpen} onClose={() => setSignInOpen(false)}
