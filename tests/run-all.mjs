@@ -17,6 +17,7 @@ const SUITES = [
   'test-team-sprites.mjs',
   'test-showdown.mjs',
   'test-champions.mjs',
+  'test-matchup.mjs',
 ];
 
 let totalPassed = 0;

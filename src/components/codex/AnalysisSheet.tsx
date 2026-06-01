@@ -19,6 +19,7 @@ import { TYPE_COLORS, STAT_KEYS, STAT_LABELS } from '@/lib/constants';
 import { pixelSprite } from '@/lib/pokemon';
 import { TypePill } from './TypePill';
 import { GameCompatibilitySection } from './GameCompatibilitySection';
+import { MatchupSection } from './MatchupSection';
 
 interface AnalysisSheetProps {
   open: boolean;
@@ -181,6 +182,10 @@ export function AnalysisSheet({
 
           {filled.length > 0 && (
             <GameCompatibilitySection team={members} />
+          )}
+
+          {filled.length > 0 && (
+            <MatchupSection team={members} />
           )}
 
           {filled.length > 0 && (

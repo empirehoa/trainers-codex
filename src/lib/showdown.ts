@@ -233,7 +233,9 @@ export function parsePokePaste(text: string): TeamMember[] {
 
 // Internal lowercase-hyphen name → Showdown Title-Case-Hyphen species token.
 // "charizard-mega-x" → "Charizard-Mega-X", "ho-oh" → "Ho-Oh".
-function speciesToken(name: string): string {
+// Exported so the @smogon/calc matchup layer feeds it the same Showdown-style
+// species names it already validates on PokePaste export.
+export function speciesToken(name: string): string {
   return name
     .split('-')
     .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))

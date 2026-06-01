@@ -56,6 +56,7 @@ import { AIStudioDialog } from '@/components/codex/AIStudioDialog';
 import { ShowdownImportDialog } from '@/components/codex/ShowdownImportDialog';
 import { SignInDialog } from '@/components/codex/SignInDialog';
 import { parsePokePaste, exportPokePaste } from '@/lib/showdown';
+import { computeMatchup, bestMove } from '@/lib/matchup';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
 import { auth, type AuthSession } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -101,6 +102,7 @@ export default function App() {
     (window as unknown as { __tc?: unknown }).__tc = {
       parsePokePaste, exportPokePaste,
       analyzeTeamCompatibility, recommendTargetGame, isPokemonAvailableIn,
+      computeMatchup, bestMove,
       POKEMON_BY_ID, MAINLINE_GAMES,
     };
   }, []);
