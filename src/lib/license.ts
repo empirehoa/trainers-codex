@@ -19,11 +19,13 @@
 
 import type { Pokemon } from './types';
 
+export type LicensePlan = 'premium' | 'credits';
+
 export interface LicenseClaims {
   iss: string;
   sub: string;
   email: string;
-  plan: 'premium';
+  plan: LicensePlan;
   stripe_session: string;
   iat: number;
   exp: number;
@@ -34,6 +36,15 @@ export interface LicenseClaims {
 // what we need here.
 
 export const LICENSE_KEY = 'trainerscodex.license';
+// The legacy/preview premium flag. Set by the in-app preview toggle on no-worker
+// deploys, and by the owner quick-unlock below. Read on boot in App.tsx.
+export const PREVIEW_PREMIUM_KEY = 'trainerscodex.premium';
+// Credits live as a separate long-lived token: a Premium subscriber and a
+// credit-pack buyer are independent entitlements, so we never overwrite one
+// with the other. The KV balance is authoritative; this token only names the
+// email-bucket to spend against.
+export const CREDITS_TOKEN_KEY = 'trainerscodex.credits';
+export const CREDITS_BALANCE_KEY = 'trainerscodex.credits.balance';
 
 function getWorkerUrl(): string | null {
   const cfg = typeof window !== 'undefined' ? window.TRAINERS_CODEX_CONFIG : undefined;
@@ -92,13 +103,67 @@ export function clearLicense(): void {
   try { localStorage.removeItem(LICENSE_KEY); } catch {}
 }
 
+// ── Credits token lifecycle ──────────────────────────────────────────────
+// A credits token is shape-valid when it's unexpired and carries plan:'credits'.
+// Unlike premium, an expired/invalid credits token is harmless to keep around,
+// but we prune it so the UI doesn't show a stale "buy more" affordance.
+
+export function isCreditsTokenValid(claims: LicenseClaims | null): boolean {
+  if (!claims) return false;
+  return claims.exp * 1000 > Date.now() && claims.plan === 'credits';
+}
+
+export function getStoredCreditsToken(): { jwt: string; claims: LicenseClaims } | null {
+  try {
+    const raw = localStorage.getItem(CREDITS_TOKEN_KEY);
+    if (!raw) return null;
+    const claims = decodeLicense(raw);
+    if (!isCreditsTokenValid(claims)) {
+      localStorage.removeItem(CREDITS_TOKEN_KEY);
+      return null;
+    }
+    return { jwt: raw, claims: claims! };
+  } catch {
+    return null;
+  }
+}
+
+export function storeCreditsToken(jwt: string): LicenseClaims | null {
+  const claims = decodeLicense(jwt);
+  if (!isCreditsTokenValid(claims)) return null;
+  try { localStorage.setItem(CREDITS_TOKEN_KEY, jwt); } catch {}
+  return claims;
+}
+
+export function clearCreditsToken(): void {
+  try {
+    localStorage.removeItem(CREDITS_TOKEN_KEY);
+    localStorage.removeItem(CREDITS_BALANCE_KEY);
+  } catch {}
+}
+
+/** Cached balance so the UI has a number to show before /credits/balance returns. */
+export function getCachedCreditBalance(): number {
+  try {
+    const raw = localStorage.getItem(CREDITS_BALANCE_KEY);
+    const n = raw ? parseInt(raw, 10) : 0;
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setCachedCreditBalance(balance: number): void {
+  try { localStorage.setItem(CREDITS_BALANCE_KEY, String(Math.max(0, Math.floor(balance)))); } catch {}
+}
+
 /**
  * Redirect the browser to Stripe Checkout for the Premium Pack.
  * Throws if the worker isn't configured.
  * On the way back, the browser will hit /?session_id=cs_... — handled by
  * `bootstrapFromCheckoutReturn()`.
  */
-export async function redirectToCheckout(email?: string): Promise<void> {
+export async function redirectToCheckout(email?: string, term: 'monthly' | 'annual' = 'monthly'): Promise<void> {
   const workerUrl = getWorkerUrl();
   if (!workerUrl) {
     throw new Error('Stripe checkout is not available — this deploy has no worker configured.');
@@ -109,7 +174,7 @@ export async function redirectToCheckout(email?: string): Promise<void> {
     method: 'POST',
     credentials: 'include',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ returnUrl, email }),
+    body: JSON.stringify({ returnUrl, email, term }),
   });
   if (!resp.ok) {
     const text = await resp.text();
@@ -118,6 +183,59 @@ export async function redirectToCheckout(email?: string): Promise<void> {
   const { url } = await resp.json() as { url: string };
   if (!url) throw new Error('Checkout response missing URL');
   window.location.href = url;
+}
+
+/**
+ * Redirect to Stripe Checkout for a one-time AI-credit pack (no subscription).
+ * `pack` is one of the catalog ids: 'single' | 'five' | 'twenty'.
+ * On return the browser hits /?session_id=cs_...&credits=success — handled by
+ * `bootstrapFromCheckoutReturn()`.
+ */
+export async function redirectToCreditsCheckout(pack: 'single' | 'five' | 'twenty', email?: string): Promise<void> {
+  const workerUrl = getWorkerUrl();
+  if (!workerUrl) {
+    throw new Error('Credit purchases are not available — this deploy has no worker configured.');
+  }
+
+  const returnUrl = window.location.origin + window.location.pathname;
+  const resp = await fetch(`${workerUrl}/credits/checkout`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pack, returnUrl, email }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Credit checkout failed (${resp.status}): ${text.slice(0, 200)}`);
+  }
+  const { url } = await resp.json() as { url: string };
+  if (!url) throw new Error('Credit checkout response missing URL');
+  window.location.href = url;
+}
+
+/**
+ * Fetch the live credit balance for a stored credits token. Premium tokens
+ * report `balance: null` (their entitlement is the monthly quota). Updates the
+ * cached balance as a side effect. Returns null if no balance is applicable.
+ */
+export async function fetchCreditBalance(jwt: string): Promise<number | null> {
+  const workerUrl = getWorkerUrl();
+  if (!workerUrl) return null;
+  try {
+    const resp = await fetch(`${workerUrl}/credits/balance`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${jwt}` },
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json() as { plan: string; balance: number | null };
+    if (typeof data.balance === 'number') {
+      setCachedCreditBalance(data.balance);
+      return data.balance;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -130,11 +248,42 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get('session_id');
     const checkoutFlag = params.get('checkout');
-    if (!sessionId || checkoutFlag !== 'success') return null;
+    const creditsFlag = params.get('credits');
+    if (!sessionId || (checkoutFlag !== 'success' && creditsFlag !== 'success')) return null;
 
     const workerUrl = getWorkerUrl();
     if (!workerUrl) return null;
 
+    const cleanReturnUrl = () => {
+      // Drop the one-time return params so a refresh doesn't re-verify.
+      params.delete('session_id');
+      params.delete('checkout');
+      params.delete('credits');
+      const cleanUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '') + window.location.hash;
+      window.history.replaceState(null, '', cleanUrl);
+    };
+
+    // Credit-pack return → /credits/verify mints a credits token + balance.
+    if (creditsFlag === 'success') {
+      const resp = await fetch(`${workerUrl}/credits/verify`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!resp.ok) {
+        console.warn('[license] credits verify failed', await resp.text());
+        cleanReturnUrl();
+        return null;
+      }
+      const { token, balance } = await resp.json() as { token: string; balance: number };
+      const claims = storeCreditsToken(token);
+      if (typeof balance === 'number') setCachedCreditBalance(balance);
+      cleanReturnUrl();
+      return claims;
+    }
+
+    // Premium subscription return → /stripe/verify mints the license JWT.
     const resp = await fetch(`${workerUrl}/stripe/verify`, {
       method: 'POST',
       credentials: 'include',
@@ -143,18 +292,12 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
     });
     if (!resp.ok) {
       console.warn('[license] verify failed', await resp.text());
+      cleanReturnUrl();
       return null;
     }
     const { license } = await resp.json() as { license: string };
     const claims = storeLicense(license);
-
-    // Clean the URL — drop the session_id and checkout params so a refresh
-    // doesn't try to re-verify a one-time token.
-    params.delete('session_id');
-    params.delete('checkout');
-    const cleanUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '') + window.location.hash;
-    window.history.replaceState(null, '', cleanUrl);
-
+    cleanReturnUrl();
     return claims;
   } catch (e) {
     console.warn('[license] bootstrap failed', e);
@@ -182,6 +325,60 @@ export async function verifyServerSide(jwt: string): Promise<boolean> {
     return valid;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Owner/dev quick-unlock. Reads a `unlock=` directive from either the query
+ * string (`?unlock=premium`) or the hash (`#unlock=premium`) and flips the
+ * local preview-premium flag accordingly — independent of whether a Stripe
+ * Worker is configured. This lets the owner exercise every premium-gated
+ * surface (poster styles, merch designs, HOME sprites) without a purchase, and
+ * `unlock=off` locks back down to compare the free experience.
+ *
+ * Returns 'unlocked' | 'locked' when a directive was applied (so the caller can
+ * toast + flip React state), or null when no directive was present. The token
+ * is stripped from the URL either way so a refresh doesn't re-trigger it.
+ *
+ * This is a deliberate soft backdoor for pre-launch testing. It only grants the
+ * *client-side* preview flag — it cannot mint a server-signed license, so it
+ * never unlocks Worker-gated AI generation (that still needs real credits).
+ */
+export function hasOwnerUnlock(): boolean {
+  try { return localStorage.getItem(PREVIEW_PREMIUM_KEY) === 'true'; } catch { return false; }
+}
+
+export function applyOwnerUnlock(): 'unlocked' | 'locked' | null {
+  try {
+    const search = new URLSearchParams(window.location.search);
+    const hash = window.location.hash || '';
+    const hashMatch = hash.match(/(?:^#|[#&])unlock=([a-z0-9]+)/i);
+    const directive = (search.get('unlock') || hashMatch?.[1] || '').toLowerCase();
+    if (!directive) return null;
+
+    const strip = () => {
+      search.delete('unlock');
+      const newHash = hash.replace(/(^#|[#&])unlock=[a-z0-9]+/i, (_m, p1) => (p1 === '#' ? '#' : p1 === '&' ? '' : ''))
+        .replace(/#&/, '#').replace(/#$/, '');
+      const qs = search.toString();
+      const url = window.location.pathname + (qs ? `?${qs}` : '') + (newHash && newHash !== '#' ? newHash : '');
+      window.history.replaceState(null, '', url);
+    };
+
+    if (directive === 'off' || directive === 'lock' || directive === 'free') {
+      try {
+        localStorage.removeItem(PREVIEW_PREMIUM_KEY);
+        localStorage.removeItem(LICENSE_KEY);
+      } catch { /* ignore */ }
+      strip();
+      return 'locked';
+    }
+    // Any other value (premium / pro / on / 1 …) unlocks the preview flag.
+    try { localStorage.setItem(PREVIEW_PREMIUM_KEY, 'true'); } catch { /* ignore */ }
+    strip();
+    return 'unlocked';
+  } catch {
+    return null;
   }
 }
 

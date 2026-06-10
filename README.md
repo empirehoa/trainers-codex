@@ -12,6 +12,12 @@ Drag-drop the file onto any web server and it just runs. Auth and cloud sync
 unlock if you paste a Supabase config block; Stripe-gated premium and
 real Printful integration unlock if you paste a Worker URL.
 
+Deployed over HTTPS it's also an **installable PWA** — "Add to Home Screen" on
+iOS/iPadOS or the install prompt on Android/desktop Chrome give a standalone
+app backed by a service worker that caches the shell for offline launch. The
+install metadata ships in `public/` (`manifest.webmanifest`, `sw.js`, and the
+icon set), so deploying the `public/` folder alongside the bundle is all it takes.
+
 **Demo:** https://trainerscodex.com
 
 ---

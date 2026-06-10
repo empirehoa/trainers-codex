@@ -25,11 +25,17 @@
 import type { Env } from './index';
 import { applyCORS } from './cors';
 
+export type LicensePlan = 'premium' | 'credits';
+
 export interface LicenseClaims {
   iss: string;
   sub: string;
   email: string;
-  plan: 'premium';
+  // 'premium' = active subscription (monthly/annual) with a monthly AI quota.
+  // 'credits' = a token that merely identifies an email so the Worker can look
+  // up that buyer's server-side credit balance. The token grants nothing on its
+  // own — the KV balance is the source of truth.
+  plan: LicensePlan;
   stripe_session: string;
   iat: number;
   exp: number;
@@ -61,14 +67,14 @@ async function getHmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
-export async function mintLicense(env: Env, claims: Omit<LicenseClaims, 'iss' | 'iat' | 'exp' | 'plan'> & { ttlSeconds?: number }): Promise<string> {
+export async function mintLicense(env: Env, claims: Omit<LicenseClaims, 'iss' | 'iat' | 'exp' | 'plan'> & { plan?: LicensePlan; ttlSeconds?: number }): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const ttl = claims.ttlSeconds ?? 31 * 24 * 3600;
   const body: LicenseClaims = {
     iss: 'trainerscodex.com',
     sub: claims.sub,
     email: claims.email,
-    plan: 'premium',
+    plan: claims.plan ?? 'premium',
     stripe_session: claims.stripe_session,
     iat: now,
     exp: now + ttl,

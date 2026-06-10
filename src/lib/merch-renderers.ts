@@ -32,6 +32,7 @@ export interface MerchRenderContext {
   badgeText?: string;   // e.g. "GYM LEADER"
   year?: number;        // e.g. 2026
   // v6 — trainer-card specific
+  badgeRegion?: string; // region id whose badge set is shown (default 'kanto')
   badges?: string[];    // ids of claimed gym badges (see GYM_BADGES below)
   signatureMonId?: number;  // hero mon highlighted at top of card
   // Apparel-only: transparent bg true; full-bleed products (mug/poster/mousepad) false
@@ -39,32 +40,152 @@ export interface MerchRenderContext {
 }
 
 // ============================================================
-// GYM BADGES — Kanto's 8 (v1). Later expand per region.
+// GYM BADGES — every main-series region.
 // ============================================================
 //
 // Each badge is rendered as a vector shape (no external image dependency,
 // always available, scales to any print resolution). The color = the gym
-// type. The shape echoes the canonical badge silhouette.
+// type. We reuse a vocabulary of eight canonical silhouettes, cycled per
+// region — so a Hoenn or Galar card reads as a badge row without us hand-
+// drawing 60+ unique silhouettes. The leader, city, and type are accurate to
+// each region; the recipient picks which region's set to display on the card
+// (and which badges are "earned").
 
 export interface GymBadgeInfo {
   id: string;
-  label: string;     // gym leader name + city
+  region: string;    // region id, e.g. 'kanto'
+  label: string;     // "Leader · City"
   type: string;      // the badge's affiliated Pokémon type
   shape: 'octagon' | 'cascade' | 'thunder' | 'rainbow' | 'soul' | 'marsh' | 'volcano' | 'earth';
-  // Primary color from the gym type
-  color: string;
+  color: string;     // primary color from the gym type
 }
 
-export const GYM_BADGES: GymBadgeInfo[] = [
-  { id: 'kanto-boulder',  label: 'Brock · Pewter City',    type: 'rock',     shape: 'octagon', color: '#afa981' },
-  { id: 'kanto-cascade',  label: 'Misty · Cerulean City',  type: 'water',    shape: 'cascade', color: '#2980ef' },
-  { id: 'kanto-thunder',  label: 'Surge · Vermillion City', type: 'electric', shape: 'thunder', color: '#fac000' },
-  { id: 'kanto-rainbow',  label: 'Erika · Celadon City',   type: 'grass',    shape: 'rainbow', color: '#3fa129' },
-  { id: 'kanto-soul',     label: 'Koga · Fuchsia City',    type: 'poison',   shape: 'soul',    color: '#9141cb' },
-  { id: 'kanto-marsh',    label: 'Sabrina · Saffron City', type: 'psychic',  shape: 'marsh',   color: '#ef4179' },
-  { id: 'kanto-volcano',  label: 'Blaine · Cinnabar Island', type: 'fire',   shape: 'volcano', color: '#e62829' },
-  { id: 'kanto-earth',    label: 'Giovanni · Viridian City', type: 'ground', shape: 'earth',   color: '#915121' },
+// The eight silhouettes, cycled by gym index within a region.
+const BADGE_SHAPES: GymBadgeInfo['shape'][] = [
+  'octagon', 'cascade', 'thunder', 'rainbow', 'soul', 'marsh', 'volcano', 'earth',
 ];
+
+// Per-region gym data: [badgeName, leader, city, type]. Order = in-game order.
+const REGION_DEFS: Array<{ id: string; name: string; gyms: Array<[string, string, string, string]> }> = [
+  { id: 'kanto', name: 'Kanto', gyms: [
+    ['Boulder', 'Brock', 'Pewter City', 'rock'],
+    ['Cascade', 'Misty', 'Cerulean City', 'water'],
+    ['Thunder', 'Surge', 'Vermillion City', 'electric'],
+    ['Rainbow', 'Erika', 'Celadon City', 'grass'],
+    ['Soul', 'Koga', 'Fuchsia City', 'poison'],
+    ['Marsh', 'Sabrina', 'Saffron City', 'psychic'],
+    ['Volcano', 'Blaine', 'Cinnabar Island', 'fire'],
+    ['Earth', 'Giovanni', 'Viridian City', 'ground'],
+  ]},
+  { id: 'johto', name: 'Johto', gyms: [
+    ['Zephyr', 'Falkner', 'Violet City', 'flying'],
+    ['Hive', 'Bugsy', 'Azalea Town', 'bug'],
+    ['Plain', 'Whitney', 'Goldenrod City', 'normal'],
+    ['Fog', 'Morty', 'Ecruteak City', 'ghost'],
+    ['Storm', 'Chuck', 'Cianwood City', 'fighting'],
+    ['Mineral', 'Jasmine', 'Olivine City', 'steel'],
+    ['Glacier', 'Pryce', 'Mahogany Town', 'ice'],
+    ['Rising', 'Clair', 'Blackthorn City', 'dragon'],
+  ]},
+  { id: 'hoenn', name: 'Hoenn', gyms: [
+    ['Stone', 'Roxanne', 'Rustboro City', 'rock'],
+    ['Knuckle', 'Brawly', 'Dewford Town', 'fighting'],
+    ['Dynamo', 'Wattson', 'Mauville City', 'electric'],
+    ['Heat', 'Flannery', 'Lavaridge Town', 'fire'],
+    ['Balance', 'Norman', 'Petalburg City', 'normal'],
+    ['Feather', 'Winona', 'Fortree City', 'flying'],
+    ['Mind', 'Tate & Liza', 'Mossdeep City', 'psychic'],
+    ['Rain', 'Wallace', 'Sootopolis City', 'water'],
+  ]},
+  { id: 'sinnoh', name: 'Sinnoh', gyms: [
+    ['Coal', 'Roark', 'Oreburgh City', 'rock'],
+    ['Forest', 'Gardenia', 'Eterna City', 'grass'],
+    ['Cobble', 'Maylene', 'Veilstone City', 'fighting'],
+    ['Fen', 'Crasher Wake', 'Pastoria City', 'water'],
+    ['Relic', 'Fantina', 'Hearthome City', 'ghost'],
+    ['Mine', 'Byron', 'Canalave City', 'steel'],
+    ['Icicle', 'Candice', 'Snowpoint City', 'ice'],
+    ['Beacon', 'Volkner', 'Sunyshore City', 'electric'],
+  ]},
+  { id: 'unova', name: 'Unova', gyms: [
+    ['Trio', 'Cilan', 'Striaton City', 'grass'],
+    ['Basic', 'Lenora', 'Nacrene City', 'normal'],
+    ['Insect', 'Burgh', 'Castelia City', 'bug'],
+    ['Bolt', 'Elesa', 'Nimbasa City', 'electric'],
+    ['Quake', 'Clay', 'Driftveil City', 'ground'],
+    ['Jet', 'Skyla', 'Mistralton City', 'flying'],
+    ['Freeze', 'Brycen', 'Icirrus City', 'ice'],
+    ['Legend', 'Drayden', 'Opelucid City', 'dragon'],
+  ]},
+  { id: 'kalos', name: 'Kalos', gyms: [
+    ['Bug', 'Viola', 'Santalune City', 'bug'],
+    ['Cliff', 'Grant', 'Cyllage City', 'rock'],
+    ['Rumble', 'Korrina', 'Shalour City', 'fighting'],
+    ['Plant', 'Ramos', 'Coumarine City', 'grass'],
+    ['Voltage', 'Clemont', 'Lumiose City', 'electric'],
+    ['Fairy', 'Valerie', 'Laverre City', 'fairy'],
+    ['Psychic', 'Olympia', 'Anistar City', 'psychic'],
+    ['Iceberg', 'Wulfric', 'Snowbelle City', 'ice'],
+  ]},
+  { id: 'alola', name: 'Alola', gyms: [
+    ['Melemele', 'Hala', 'Melemele Island', 'fighting'],
+    ['Akala', 'Olivia', 'Akala Island', 'rock'],
+    ["Ula'ula", 'Nanu', "Ula'ula Island", 'dark'],
+    ['Poni', 'Hapu', 'Poni Island', 'ground'],
+  ]},
+  { id: 'galar', name: 'Galar', gyms: [
+    ['Grass', 'Milo', 'Turffield', 'grass'],
+    ['Water', 'Nessa', 'Hulbury', 'water'],
+    ['Fire', 'Kabu', 'Motostoke', 'fire'],
+    ['Fighting', 'Bea', 'Stow-on-Side', 'fighting'],
+    ['Fairy', 'Opal', 'Ballonlea', 'fairy'],
+    ['Rock', 'Gordie', 'Circhester', 'rock'],
+    ['Dark', 'Piers', 'Spikemuth', 'dark'],
+    ['Dragon', 'Raihan', 'Hammerlocke', 'dragon'],
+  ]},
+  { id: 'paldea', name: 'Paldea', gyms: [
+    ['Bug', 'Katy', 'Cortondo', 'bug'],
+    ['Grass', 'Brassius', 'Artazon', 'grass'],
+    ['Electric', 'Iono', 'Levincia', 'electric'],
+    ['Water', 'Kofu', 'Cascarrafa', 'water'],
+    ['Normal', 'Larry', 'Medali', 'normal'],
+    ['Ghost', 'Ryme', 'Montenevera', 'ghost'],
+    ['Psychic', 'Tulip', 'Alfornada', 'psychic'],
+    ['Ice', 'Grusha', 'Glaseado', 'ice'],
+  ]},
+];
+
+function buildBadges(): GymBadgeInfo[] {
+  const out: GymBadgeInfo[] = [];
+  for (const r of REGION_DEFS) {
+    r.gyms.forEach(([badge, leader, city, type], i) => {
+      out.push({
+        id: `${r.id}-${badge.toLowerCase().replace(/[^a-z0-9]+/g, '')}`,
+        region: r.id,
+        label: `${leader} · ${city}`,
+        type,
+        shape: BADGE_SHAPES[i % BADGE_SHAPES.length],
+        color: TYPE_COLORS[type as keyof typeof TYPE_COLORS] || '#f4ae3c',
+      });
+    });
+  }
+  return out;
+}
+
+// Every badge across every region.
+export const GYM_BADGES_ALL: GymBadgeInfo[] = buildBadges();
+
+// Region directory for the picker UI.
+export const BADGE_REGIONS: Array<{ id: string; name: string; count: number }> =
+  REGION_DEFS.map(r => ({ id: r.id, name: r.name, count: r.gyms.length }));
+
+export function badgesForRegion(region: string): GymBadgeInfo[] {
+  return GYM_BADGES_ALL.filter(b => b.region === region.toLowerCase());
+}
+
+// Back-compat default: the original Kanto eight, for any caller that still
+// references GYM_BADGES without a region.
+export const GYM_BADGES: GymBadgeInfo[] = badgesForRegion('kanto');
 
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
@@ -645,7 +766,8 @@ async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: numbe
     c.fillText(padId(sigMon.id), infoX, sigY + sigH * 0.84);
   }
 
-  // Gym badges row — 8 slots
+  // Gym badges row — region-selectable badge set
+  const regionBadges = badgesForRegion(ctx.badgeRegion || 'kanto');
   const badgeY = sigY + sigH + rh * 0.03;
   const badgeH = rh * 0.14;
   const claimedSet = new Set(ctx.badges ?? []);
@@ -655,10 +777,10 @@ async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: numbe
   c.fillText('// GYM BADGES', rx + rw * 0.04, badgeY - rh * 0.008);
   c.textAlign = 'right';
   c.fillStyle = '#3a342a';
-  c.fillText(`${claimedSet.size} / ${GYM_BADGES.length} EARNED`, rx + rw - rw * 0.04, badgeY - rh * 0.008);
+  c.fillText(`${claimedSet.size} / ${regionBadges.length} EARNED`, rx + rw - rw * 0.04, badgeY - rh * 0.008);
 
-  const badgeSlotW = (rw * 0.92) / GYM_BADGES.length;
-  GYM_BADGES.forEach((badge, i) => {
+  const badgeSlotW = (rw * 0.92) / regionBadges.length;
+  regionBadges.forEach((badge, i) => {
     const bx = rx + rw * 0.04 + i * badgeSlotW;
     const claimed = claimedSet.has(badge.id);
     drawBadge(c, bx + badgeSlotW * 0.10, badgeY, badgeSlotW * 0.80, badgeH, badge, claimed);

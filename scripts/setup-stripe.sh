@@ -1,25 +1,43 @@
 #!/usr/bin/env bash
-# setup-stripe-live.sh — provision the LIVE Stripe resources for Trainer's Codex.
+# setup-stripe.sh — provision the Stripe resources for Trainer's Codex in either
+# TEST or LIVE mode. Idempotent: re-running reuses an existing product/price/
+# webhook when it finds a match, and only creates what's missing.
 #
-# Idempotent: re-running reuses an existing product/price/webhook when it finds
-# a match, and only creates what's missing.
+# Usage:
+#   scripts/setup-stripe.sh test     # uses the CLI's test-mode key (default)
+#   scripts/setup-stripe.sh live     # uses the CLI's live-mode key
 #
 # Prerequisites:
 #   1. `stripe login` completed (authorizes this CLI against the account)
-#   2. The Stripe account is ACTIVATED for live payments (business onboarding
-#      done in Dashboard: bank account + identity). Live API calls fail otherwise.
+#   2. For live: the account is ACTIVATED for live payments (bank + identity).
 #
-# What it does:
-#   - Finds-or-creates the "Trainer's Codex Premium Pack" live product
-#   - Finds-or-creates a $4.99/mo recurring USD live price
-#   - Finds-or-creates the live webhook endpoint → the API Worker, subscribed to
-#     the 4 events the worker handles
-#   - Prints STRIPE_PRICE_ID and (on first webhook creation) STRIPE_WEBHOOK_SECRET
+# What it provisions in the chosen mode:
+#   - "Trainer's Codex Premium Pack" product
+#   - $4.99/mo and $39/yr recurring prices
+#   - "Trainer's Codex AI Credits" product + three one-time prices (1/5/20)
+#   - The webhook endpoint → the API Worker, subscribed to the 4 handled events
+#   - Prints every price id and (on first webhook creation) the signing secret
 #
-# It does NOT touch your sk_live_ secret key — Stripe never exposes it; you set
-# that one yourself (see the printed instructions at the end).
+# It does NOT set STRIPE_SECRET_KEY on the Worker — Stripe never exposes the
+# secret key; set that one yourself (see the printed instructions at the end).
 
 set -euo pipefail
+
+MODE="${1:-test}"
+case "$MODE" in
+  test) FLAG="" ;;            # stripe CLI defaults to test mode
+  live) FLAG="--live" ;;
+  *) printf '\033[31mERROR: mode must be "test" or "live" (got %s)\033[0m\n' "$MODE" >&2; exit 1 ;;
+esac
+
+# The CLI's `stripe login` token may be a RESTRICTED key (rk_live_…) that lacks
+# Products/Prices/Webhook write scope — live writes then fail with a permissions
+# error even though reads succeed. To unblock, run with an explicitly-scoped key:
+#   STRIPE_API_KEY=sk_live_… scripts/setup-stripe.sh live
+# When set, the key itself selects live/test, so --api-key REPLACES the mode flag.
+if [ -n "${STRIPE_API_KEY:-}" ]; then
+  FLAG="--api-key $STRIPE_API_KEY"
+fi
 
 WEBHOOK_URL="https://trainers-codex-api.jrriestra.workers.dev/stripe/webhook"
 PRODUCT_NAME="Trainer's Codex Premium Pack"
@@ -36,26 +54,25 @@ CREDIT_PACKS=(
   "twenty|20|1999|20 AI Credits"
 )
 
-say() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
+say() { printf '\n\033[1m== [%s] %s ==\033[0m\n' "$MODE" "$1"; }
 die() { printf '\033[31mERROR: %s\033[0m\n' "$1" >&2; exit 1; }
 
 command -v stripe >/dev/null || die "stripe CLI not found. brew install stripe/stripe-cli/stripe"
 
-say "Verifying live access"
-if ! stripe products list --live --limit 1 >/dev/null 2>&1; then
-  die "Live API not accessible. Either 'stripe login' isn't done, or the account
-  isn't activated for live payments yet. Activate live mode in the Dashboard
-  (bank + identity) and re-run."
+say "Verifying $MODE access"
+if ! stripe products list $FLAG --limit 1 >/dev/null 2>&1; then
+  die "$MODE API not accessible. Either 'stripe login' isn't done, or (live only)
+  the account isn't activated for live payments yet."
 fi
-echo "Live API reachable."
+echo "$MODE API reachable."
 
 say "Find-or-create product: $PRODUCT_NAME"
-PROD_ID=$(stripe products list --live --limit 100 \
+PROD_ID=$(stripe products list $FLAG --limit 100 \
   | jq -r --arg n "$PRODUCT_NAME" '.data[] | select(.name==$n and .active==true) | .id' | head -1)
 if [ -z "$PROD_ID" ]; then
-  PROD_ID=$(stripe products create --live \
+  PROD_ID=$(stripe products create $FLAG \
     -d "name=$PRODUCT_NAME" \
-    -d "description=Premium Pack — unlocks premium poster styles, merch designs, and 3D HOME sprites." \
+    -d "description=Premium Pack — 5 AI generations per kind each month, plus all premium poster styles, merch designs, and 3D HOME sprites." \
     | jq -r '.id')
   echo "Created product: $PROD_ID"
 else
@@ -63,11 +80,11 @@ else
 fi
 
 say "Find-or-create price: \$4.99/mo recurring"
-PRICE_ID=$(stripe prices list --live --product "$PROD_ID" --limit 100 \
+PRICE_ID=$(stripe prices list $FLAG --product "$PROD_ID" --limit 100 \
   | jq -r --argjson amt "$PRICE_AMOUNT" --arg cur "$PRICE_CURRENCY" \
     '.data[] | select(.active==true and .unit_amount==$amt and .currency==$cur and .recurring.interval=="month") | .id' | head -1)
 if [ -z "$PRICE_ID" ]; then
-  PRICE_ID=$(stripe prices create --live \
+  PRICE_ID=$(stripe prices create $FLAG \
     -d "product=$PROD_ID" \
     -d "unit_amount=$PRICE_AMOUNT" \
     -d "currency=$PRICE_CURRENCY" \
@@ -80,11 +97,11 @@ else
 fi
 
 say "Find-or-create price: \$39/yr recurring (annual)"
-PRICE_ANNUAL_ID=$(stripe prices list --live --product "$PROD_ID" --limit 100 \
+PRICE_ANNUAL_ID=$(stripe prices list $FLAG --product "$PROD_ID" --limit 100 \
   | jq -r --argjson amt "$PRICE_ANNUAL_AMOUNT" --arg cur "$PRICE_CURRENCY" \
     '.data[] | select(.active==true and .unit_amount==$amt and .currency==$cur and .recurring.interval=="year") | .id' | head -1)
 if [ -z "$PRICE_ANNUAL_ID" ]; then
-  PRICE_ANNUAL_ID=$(stripe prices create --live \
+  PRICE_ANNUAL_ID=$(stripe prices create $FLAG \
     -d "product=$PROD_ID" \
     -d "unit_amount=$PRICE_ANNUAL_AMOUNT" \
     -d "currency=$PRICE_CURRENCY" \
@@ -97,10 +114,10 @@ else
 fi
 
 say "Find-or-create product: $CREDITS_PRODUCT_NAME"
-CREDITS_PROD_ID=$(stripe products list --live --limit 100 \
+CREDITS_PROD_ID=$(stripe products list $FLAG --limit 100 \
   | jq -r --arg n "$CREDITS_PRODUCT_NAME" '.data[] | select(.name==$n and .active==true) | .id' | head -1)
 if [ -z "$CREDITS_PROD_ID" ]; then
-  CREDITS_PROD_ID=$(stripe products create --live \
+  CREDITS_PROD_ID=$(stripe products create $FLAG \
     -d "name=$CREDITS_PRODUCT_NAME" \
     -d "description=One-time AI generation credits. Each credit makes one AI image (trainer card, team art, or codex card)." \
     | jq -r '.id')
@@ -115,11 +132,11 @@ declare -a CREDIT_PRICE_OUT
 for entry in "${CREDIT_PACKS[@]}"; do
   IFS='|' read -r pack credits cents nickname <<<"$entry"
   say "Find-or-create credit price: \$$(printf '%.2f' "$(echo "$cents/100" | bc -l)") → $credits credits ($pack)"
-  CP_ID=$(stripe prices list --live --product "$CREDITS_PROD_ID" --limit 100 \
+  CP_ID=$(stripe prices list $FLAG --product "$CREDITS_PROD_ID" --limit 100 \
     | jq -r --argjson amt "$cents" --arg cur "$PRICE_CURRENCY" \
       '.data[] | select(.active==true and .unit_amount==$amt and .currency==$cur and (.recurring|not)) | .id' | head -1)
   if [ -z "$CP_ID" ]; then
-    CP_ID=$(stripe prices create --live \
+    CP_ID=$(stripe prices create $FLAG \
       -d "product=$CREDITS_PROD_ID" \
       -d "unit_amount=$cents" \
       -d "currency=$PRICE_CURRENCY" \
@@ -135,12 +152,12 @@ for entry in "${CREDIT_PACKS[@]}"; do
 done
 
 say "Find-or-create webhook endpoint → $WEBHOOK_URL"
-EXISTING_WH=$(stripe webhook_endpoints list --live --limit 100 \
+EXISTING_WH=$(stripe webhook_endpoints list $FLAG --limit 100 \
   | jq -r --arg u "$WEBHOOK_URL" '.data[] | select(.url==$u) | .id' | head -1)
 WH_SECRET=""
 if [ -z "$EXISTING_WH" ]; then
   # shellcheck disable=SC2086
-  CREATE_OUT=$(stripe webhook_endpoints create --live \
+  CREATE_OUT=$(stripe webhook_endpoints create $FLAG \
     -d "url=$WEBHOOK_URL" \
     $(for e in $EVENTS; do printf -- "-d enabled_events[]=%s " "$e"; done))
   WH_ID=$(echo "$CREATE_OUT" | jq -r '.id')
@@ -153,7 +170,7 @@ else
   echo " roll it in the Dashboard or delete + re-run this script.)"
 fi
 
-say "RESULTS"
+say "RESULTS ($MODE)"
 echo "STRIPE_PRICE_ID=$PRICE_ID"
 echo "STRIPE_PRICE_ANNUAL=$PRICE_ANNUAL_ID"
 for kv in "${CREDIT_PRICE_OUT[@]}"; do
@@ -170,6 +187,7 @@ fi
 
 # Emit machine-readable lines the deploy automation can parse.
 {
+  echo "MODE=$MODE"
   echo "PRICE_ID=$PRICE_ID"
   echo "PRICE_ANNUAL=$PRICE_ANNUAL_ID"
   for kv in "${CREDIT_PRICE_OUT[@]}"; do
@@ -182,16 +200,6 @@ fi
   done
   echo "WEBHOOK_ID=$WH_ID"
   [ -n "$WH_SECRET" ] && echo "WEBHOOK_SECRET=$WH_SECRET"
-} > /tmp/stripe-live-result.env
+} > "/tmp/stripe-${MODE}-result.env"
 
-say "NEXT (the one secret this script can't set for you)"
-cat <<'EOF'
-Set your LIVE secret key on the Worker yourself (Stripe never prints sk_live_):
-
-  1. Dashboard → Developers → API keys → toggle to "Live mode" → reveal Secret key
-  2. Run (from the worker/ dir, with your Cloudflare token exported):
-       wrangler secret put STRIPE_SECRET_KEY
-     paste the sk_live_... value when prompted.
-
-Results saved to /tmp/stripe-live-result.env
-EOF
+say "Saved → /tmp/stripe-${MODE}-result.env"

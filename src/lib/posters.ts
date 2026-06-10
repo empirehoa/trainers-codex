@@ -62,7 +62,41 @@ function setupCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext
   return { canvas, ctx };
 }
 
+// Attribution watermark stamped on every poster, regardless of style, right
+// before export. Shared chokepoint so all 12 renderers brand consistently and
+// shared images drive traffic back. The translucent dark chip + cream text
+// reads on both the dark (CRT/arcade) and cream-paper (zine/polaroid) styles.
+const WATERMARK = 'trainerscodex.com';
+function stampWatermark(canvas: HTMLCanvasElement): void {
+  const c = canvas.getContext('2d');
+  if (!c) return;
+  c.save();
+  c.font = '600 22px "JetBrains Mono", ui-monospace, monospace';
+  c.textBaseline = 'middle';
+  c.textAlign = 'left';
+  const padX = 14, padY = 9, margin = 26;
+  const textW = c.measureText(WATERMARK).width;
+  const chipW = textW + padX * 2;
+  const chipH = 22 + padY * 2;
+  const x = canvas.width - margin - chipW;
+  const y = canvas.height - margin - chipH;
+  c.globalAlpha = 1;
+  c.fillStyle = 'rgba(10,8,6,0.55)';
+  if (typeof (c as { roundRect?: unknown }).roundRect === 'function') {
+    c.beginPath();
+    (c as CanvasRenderingContext2D & { roundRect: (x: number, y: number, w: number, h: number, r: number) => void })
+      .roundRect(x, y, chipW, chipH, 8);
+    c.fill();
+  } else {
+    c.fillRect(x, y, chipW, chipH);
+  }
+  c.fillStyle = 'rgba(245,234,210,0.95)';
+  c.fillText(WATERMARK, x + padX, y + chipH / 2 + 1);
+  c.restore();
+}
+
 function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  stampWatermark(canvas);
   return new Promise((res, rej) => {
     canvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png');
   });

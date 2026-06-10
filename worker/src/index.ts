@@ -13,9 +13,10 @@
 import { applyCORS, preflight, originAllowed } from './cors';
 import { rateLimit } from './ratelimit';
 import { stripeCheckout, stripeVerify, stripeWebhook } from './stripe';
+import { creditsCheckout, creditsVerify, creditsBalance } from './credits';
 import { licenseVerify } from './jwt';
 import { printfulOrder } from './printful';
-import { aiTrainerCard, aiTeamArt } from './ai';
+import { aiTrainerCard, aiTeamArt, aiCodexCard } from './ai';
 
 export interface Env {
   // KV
@@ -25,7 +26,12 @@ export interface Env {
   // Vars
   ALLOWED_ORIGINS: string;
   ENVIRONMENT: string;
-  STRIPE_PRICE_ID: string;
+  STRIPE_PRICE_ID: string;            // $4.99/mo Premium (subscription)
+  STRIPE_PRICE_ANNUAL?: string;       // $39/yr Premium (subscription)
+  // One-time credit packs (mode: payment). Each maps a pack id → Stripe price.
+  STRIPE_PRICE_CREDITS_1?: string;    // $1.99 → 1 credit
+  STRIPE_PRICE_CREDITS_5?: string;    // $6.99 → 5 credits
+  STRIPE_PRICE_CREDITS_20?: string;   // $19.99 → 20 credits
   PRINTFUL_STORE_ID: string;
   // Secrets
   STRIPE_SECRET_KEY: string;
@@ -49,11 +55,16 @@ const ROUTES: Route[] = [
   { method: 'POST', path: '/stripe/checkout',  handler: stripeCheckout,  ratePerMin: 10 },
   { method: 'POST', path: '/stripe/verify',    handler: stripeVerify,    ratePerMin: 30 },
   { method: 'POST', path: '/stripe/webhook',   handler: stripeWebhook,   ratePerMin: 0  },
+  // One-time AI credit packs (no subscription).
+  { method: 'POST', path: '/credits/checkout', handler: creditsCheckout, ratePerMin: 10 },
+  { method: 'POST', path: '/credits/verify',   handler: creditsVerify,   ratePerMin: 30 },
+  { method: 'POST', path: '/credits/balance',  handler: creditsBalance,  ratePerMin: 60 },
   { method: 'POST', path: '/license/verify',   handler: licenseVerify,   ratePerMin: 60 },
   { method: 'POST', path: '/printful/order',   handler: printfulOrder,   ratePerMin: 6  },
   // v6: AI image generation — premium-gated, stricter rate limit
   { method: 'POST', path: '/ai/trainer-card',  handler: aiTrainerCard,   ratePerMin: 5  },
   { method: 'POST', path: '/ai/team-art',      handler: aiTeamArt,       ratePerMin: 5  },
+  { method: 'POST', path: '/ai/codex-card',    handler: aiCodexCard,     ratePerMin: 5  },
   { method: 'GET',  path: '/health',           handler: health,          ratePerMin: 120 },
 ];
 

@@ -11,6 +11,10 @@ interface PokemonCardProps {
   onAdd: () => void;
   inTeam: boolean;
   teamFull: boolean;
+  // When set, the mon is banned by the active format. It stays visible (so the
+  // user can still inspect it) but is dimmed, badged, and not addable.
+  illegal?: boolean;
+  illegalReason?: string;
 }
 
 // Form badge: short label + accent color for the corner ribbon
@@ -32,19 +36,22 @@ const FORM_BADGES: Record<string, { label: string; color: string }> = {
   form:        { label: 'FORM',   color: '#64748b' },
 };
 
-export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull }: PokemonCardProps) {
+export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, illegalReason }: PokemonCardProps) {
   const primary = TYPE_COLORS[p.types[0]];
-  const disabled = inTeam || teamFull;
+  const disabled = inTeam || teamFull || !!illegal;
   const badge = p.form ? FORM_BADGES[p.form] : null;
 
   return (
     <div
+      data-illegal={illegal ? 'true' : undefined}
+      title={illegal ? `banned · ${illegalReason || 'illegal in this format'}` : undefined}
       className={cn(
         'group relative rounded-md border overflow-hidden transition fade-up',
-        'hover:border-primary/60'
+        'hover:border-primary/60',
+        illegal && 'opacity-45 grayscale'
       )}
       style={{
-        borderColor: inTeam ? primary : 'hsl(var(--border))',
+        borderColor: inTeam ? primary : illegal ? 'hsl(var(--destructive))' : 'hsl(var(--border))',
         background: `linear-gradient(180deg, ${primary}11 0%, hsl(var(--card)) 80%)`,
       }}
     >
@@ -77,6 +84,14 @@ export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull }: PokemonCar
               style={{ background: badge.color, color: '#fff' }}
             >
               {badge.label}
+            </span>
+          )}
+          {illegal && (
+            <span
+              className="absolute top-0 right-0 px-1 py-0.5 text-[8px] font-mono font-bold uppercase tracking-wider rounded-bl"
+              style={{ background: 'hsl(var(--destructive))', color: '#fff' }}
+            >
+              BANNED
             </span>
           )}
         </div>

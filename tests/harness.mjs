@@ -55,7 +55,13 @@ export async function newPage() {
   });
 
   await page.goto(BUNDLE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('header', { timeout: 10_000 });
+  // The inlined bundle is ~1.7MB of JS; under CPU contention (the full runner
+  // launches a fresh context per test across 14 suites) the React mount can
+  // take well past 10s, which previously caused intermittent "Waiting for
+  // selector `header`" failures. A generous ceiling keeps the runner
+  // deterministic without masking a genuinely broken bundle (which never
+  // mounts `header` at all).
+  await page.waitForSelector('header', { timeout: 45_000 });
   await sleep(120);
   return page;
 }

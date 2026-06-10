@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Download, Loader2, Wand2, Lock, Check } from 'lucide-react';
+import { Download, Loader2, Wand2, Lock, Check, Share2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
@@ -9,6 +10,7 @@ import { ART_STYLES } from '@/lib/constants';
 import type { ArtStyle } from '@/lib/constants';
 import { buildShareCode } from '@/lib/analysis';
 import { renderPoster } from '@/lib/posters';
+import { canShareFiles, shareImage } from '@/lib/share';
 import { PremiumControl, PremiumUnlockCTA } from './PremiumControl';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +30,7 @@ export function PosterStudioDialog({
 }: PosterStudioDialogProps) {
   const [style, setStyle] = useState<ArtStyle>('pixel-crt');
   const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [posterBlob, setPosterBlob] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +46,7 @@ export function PosterStudioDialog({
     // Cleanup old URL
     if (posterUrl) URL.revokeObjectURL(posterUrl);
     setPosterUrl(null);
+    setPosterBlob(null);
     try {
       const blob = await renderPoster({
         team: members,
@@ -51,6 +55,7 @@ export function PosterStudioDialog({
         code,
         style,
       });
+      setPosterBlob(blob);
       setPosterUrl(URL.createObjectURL(blob));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'render failed');
@@ -76,6 +81,19 @@ export function PosterStudioDialog({
   const downloadName = teamName
     ? `${teamName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${style}.png`
     : `team-${code}-${style}.png`;
+
+  const shareSupported = canShareFiles();
+  const sharePoster = useCallback(async () => {
+    if (!posterBlob) return;
+    const label = teamName ? `"${teamName}"` : 'my team';
+    const res = await shareImage({
+      blob: posterBlob,
+      filename: downloadName,
+      title: 'Trainer\'s Codex',
+      text: `Built ${label} on Trainer's Codex — build yours at trainerscodex.com`,
+    });
+    if (res === 'unsupported') toast.error('Sharing not available — download instead.');
+  }, [posterBlob, downloadName, teamName]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -131,10 +149,15 @@ export function PosterStudioDialog({
             </div>
 
             {posterUrl && !busy && !isLocked && (
-              <div className="grid grid-cols-2 gap-2 mt-3">
-                <Button asChild>
+              <div className={cn('grid gap-2 mt-3', shareSupported ? 'grid-cols-3' : 'grid-cols-2')}>
+                {shareSupported && (
+                  <Button onClick={sharePoster} className="font-mono text-xs">
+                    <Share2 size={12} className="mr-1.5" /> share
+                  </Button>
+                )}
+                <Button asChild variant={shareSupported ? 'outline' : 'default'}>
                   <a href={posterUrl} download={downloadName} className="font-mono text-xs">
-                    <Download size={12} className="mr-1.5" /> download PNG
+                    <Download size={12} className="mr-1.5" /> download
                   </a>
                 </Button>
                 <Button variant="outline" onClick={generate} className="font-mono text-xs">

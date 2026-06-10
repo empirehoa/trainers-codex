@@ -61,7 +61,9 @@ const tests = [
       await openFilters(page);
       await page.evaluate(() => {
         const btns = [...document.querySelectorAll('button')];
-        const t = btns.find(b => /gigantamax/i.test(b.innerText));
+        // Anchor the match: a "No Gigantamax" format preset also contains the
+        // word, and renders first — match only the exact category chip.
+        const t = btns.find(b => /^gigantamax$/i.test(b.innerText.trim()));
         if (t) t.click();
       });
       await sleep(300);

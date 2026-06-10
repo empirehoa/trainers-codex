@@ -20,15 +20,18 @@
 import type { Env } from './index';
 import { jsonOk, jsonError } from './index';
 import { mintLicense } from './jwt';
+import { grantCredits } from './credit-store';
 
 const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 
 interface StripeCheckoutBody {
   returnUrl?: string;
   email?: string;
+  // 'monthly' (default) → $4.99/mo · 'annual' → $39/yr. Both subscriptions.
+  term?: 'monthly' | 'annual';
 }
 
-interface StripeSession {
+export interface StripeSession {
   id: string;
   payment_status: 'paid' | 'unpaid' | 'no_payment_required';
   status: 'open' | 'complete' | 'expired';
@@ -36,10 +39,11 @@ interface StripeSession {
   customer_email: string | null;
   customer_details?: { email?: string | null };
   subscription: string | null;
+  metadata?: Record<string, string>;
   url: string;
 }
 
-async function stripeFetch<T>(env: Env, method: 'GET' | 'POST', path: string, body?: Record<string, string>): Promise<T> {
+export async function stripeFetch<T>(env: Env, method: 'GET' | 'POST', path: string, body?: Record<string, string>): Promise<T> {
   // No explicit stripe-version header — uses the account's default API
   // version (set in Stripe Dashboard → Developers → API). This avoids
   // version-mismatch errors when Stripe rotates supported versions.
@@ -83,14 +87,24 @@ export async function stripeCheckout(req: Request, env: Env): Promise<Response> 
   const successUrl = appendQuery(body.returnUrl, { session_id: '{CHECKOUT_SESSION_ID}', checkout: 'success' });
   const cancelUrl = appendQuery(body.returnUrl, { checkout: 'cancel' });
 
+  // Annual ($39/yr) falls back to monthly if no annual price is configured.
+  const annual = body.term === 'annual';
+  const price = annual && env.STRIPE_PRICE_ANNUAL ? env.STRIPE_PRICE_ANNUAL : env.STRIPE_PRICE_ID;
+  const term = annual && env.STRIPE_PRICE_ANNUAL ? 'annual' : 'monthly';
+
   const params: Record<string, string> = {
     mode: 'subscription',
-    'line_items[0][price]': env.STRIPE_PRICE_ID,
+    'line_items[0][price]': price,
     'line_items[0][quantity]': '1',
     success_url: successUrl,
     cancel_url: cancelUrl,
     allow_promotion_codes: 'true',
+    // Session-level metadata is echoed back by GET /checkout/sessions so
+    // /verify can pick the right license TTL without re-reading the price.
+    'metadata[source]': 'trainerscodex_premium_pack',
+    'metadata[term]': term,
     'subscription_data[metadata][source]': 'trainerscodex_premium_pack',
+    'subscription_data[metadata][term]': term,
   };
   if (body.email) {
     params.customer_email = body.email;
@@ -134,13 +148,18 @@ export async function stripeVerify(req: Request, env: Env): Promise<Response> {
     return jsonError(req, env, 422, 'no_customer_email');
   }
 
+  // Annual subscriptions mint a 366-day license; monthly stays 31 days.
+  const annual = session.metadata?.term === 'annual';
+  const ttlSeconds = (annual ? 366 : 31) * 24 * 3600;
+
   const jwt = await mintLicense(env, {
     sub,
     email,
     stripe_session: session.id,
+    ttlSeconds,
   });
 
-  return jsonOk(req, env, { license: jwt, email, expiresInDays: 31 });
+  return jsonOk(req, env, { license: jwt, email, expiresInDays: annual ? 366 : 31 });
 }
 
 /**
@@ -164,9 +183,23 @@ export async function stripeWebhook(req: Request, env: Env): Promise<Response> {
   switch (event.type) {
     case 'checkout.session.completed': {
       const obj = event.data.object as Record<string, unknown>;
-      console.log(`[stripe] checkout completed sub=${obj.customer} session=${obj.id} email=${obj.customer_email}`);
-      // The /verify endpoint will mint the JWT when the browser comes back.
-      // This webhook is for telemetry + future server-side license storage.
+      const meta = (obj.metadata as Record<string, string> | undefined) || {};
+      console.log(`[stripe] checkout completed sub=${obj.customer} session=${obj.id} email=${obj.customer_email} source=${meta.source}`);
+      // Credit-pack purchases are granted here (the authoritative path — the
+      // browser may never return). grantCredits is idempotent on session id, so
+      // a later /credits/verify from the browser won't double-credit.
+      if (meta.source === 'trainerscodex_credits' && env.AI_QUOTA_KV) {
+        const email = (obj.customer_email as string)
+          || ((obj.customer_details as { email?: string } | undefined)?.email)
+          || '';
+        const credits = parseInt(meta.credits || '0', 10);
+        if (email && credits > 0) {
+          const bal = await grantCredits(env.AI_QUOTA_KV, email, credits, String(obj.id));
+          console.log(`[stripe] granted ${credits} credits to ${email} (balance=${bal})`);
+        }
+      }
+      // Premium /verify mints the JWT when the browser comes back; this webhook
+      // is otherwise telemetry + future server-side license storage.
       break;
     }
     case 'customer.subscription.deleted':
@@ -218,7 +251,7 @@ async function verifyStripeSignature(rawBody: string, sigHeader: string, secret:
   return diff === 0;
 }
 
-function isAllowedReturnUrl(url: string, env: Env): boolean {
+export function isAllowedReturnUrl(url: string, env: Env): boolean {
   try {
     const u = new URL(url);
     const allowed = env.ALLOWED_ORIGINS.split(',').map(s => s.trim());
@@ -228,7 +261,7 @@ function isAllowedReturnUrl(url: string, env: Env): boolean {
   }
 }
 
-function appendQuery(url: string, params: Record<string, string>): string {
+export function appendQuery(url: string, params: Record<string, string>): string {
   const u = new URL(url);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
   return u.toString();

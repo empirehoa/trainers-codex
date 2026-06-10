@@ -21,6 +21,14 @@ PRINTFUL_STORE_ID = "18253803"
 binding = "RATELIMIT_KV"
 id = "faa46f7250d24e2ea7f7f7f06741dbd4"
 
+# Workers AI binding — used to screen every user-uploaded photo before it
+# reaches fal.ai (see worker/src/ai.ts `moderateWithWorkersAI`). No signup or
+# external key required; runs in-account. When this binding is present the
+# upload gate is active and fails CLOSED on error; remove it (self-host) and
+# screening is skipped unless MODERATION_API_URL is set instead.
+[ai]
+binding = "AI"
+
 # R2 bucket for hosting generated print PNGs (so Printful can reach them via URL).
 # DISABLED until R2 is enabled in the Cloudflare Dashboard for this account.
 # To enable: visit https://dash.cloudflare.com/c3562f59e9b068eaf3ba440f50c1ac6f/r2,

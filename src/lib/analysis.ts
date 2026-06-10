@@ -56,6 +56,100 @@ export function computeStats(team: Team): StatAggregate {
   return { total, avg, bst: filled.reduce((s, p) => s + p.bst, 0) };
 }
 
+// ============================================================
+// TEAM-vs-TEAM MATCHUP (type + base speed)
+// ============================================================
+// A shared link only carries species + shiny (the share code), not movesets or
+// EV spreads — so a full @smogon/calc damage matchup isn't possible from a link
+// alone. Instead we give the recipient a *type-coverage* head-to-head: for each
+// of their mons, how many of the opposing six it threatens with STAB
+// (best own-type multiplier ≥ 2×), how many threaten it back, and base-speed
+// control. That's a credible, well-understood lens (it's how players eyeball a
+// matchup) and it needs nothing beyond the species in the link.
+
+export interface MonMatchup {
+  id: number;
+  display: string;
+  types: PokemonType[];
+  spe: number;
+  threatens: number;     // opposing mons this one hits ≥2× with a STAB type
+  threatenedBy: number;  // opposing mons that hit this one ≥2× with their STAB
+  fasterThan: number;    // opposing mons it outspeeds on base Speed
+}
+
+export interface TeamMatchup {
+  mine: MonMatchup[];
+  theirs: MonMatchup[];
+  myThreatScore: number;    // Σ threatens across my team
+  theirThreatScore: number;
+  mySpeedScore: number;     // Σ fasterThan across my team
+  theirSpeedScore: number;
+  verdict: 'mine' | 'theirs' | 'even';
+  summary: string;
+}
+
+// Best STAB multiplier of `attacker` into `defender` (max over attacker's types).
+function stabPressure(attacker: Pokemon, defender: Pokemon): number {
+  return Math.max(...attacker.types.map(t => eff(t, defender.types)));
+}
+
+function sideMatchup(side: Pokemon[], foe: Pokemon[]): MonMatchup[] {
+  return side.map(p => {
+    let threatens = 0, threatenedBy = 0, fasterThan = 0;
+    foe.forEach(o => {
+      if (stabPressure(p, o) >= 2) threatens++;
+      if (stabPressure(o, p) >= 2) threatenedBy++;
+      if (p.stats.spe > o.stats.spe) fasterThan++;
+    });
+    return {
+      id: p.id, display: p.display, types: p.types, spe: p.stats.spe,
+      threatens, threatenedBy, fasterThan,
+    };
+  });
+}
+
+/**
+ * Head-to-head matchup of `myTeam` against `theirTeam` (either order works).
+ * Empty slots are ignored. The verdict weighs offensive type pressure heavily
+ * and uses base-speed control as the tiebreak.
+ */
+export function computeTeamMatchup(myTeam: Team, theirTeam: Team): TeamMatchup {
+  const mineP = myTeam.filter(Boolean) as Pokemon[];
+  const theirsP = theirTeam.filter(Boolean) as Pokemon[];
+
+  const mine = sideMatchup(mineP, theirsP);
+  const theirs = sideMatchup(theirsP, mineP);
+
+  const myThreatScore = mine.reduce((s, m) => s + m.threatens, 0);
+  const theirThreatScore = theirs.reduce((s, m) => s + m.threatens, 0);
+  const mySpeedScore = mine.reduce((s, m) => s + m.fasterThan, 0);
+  const theirSpeedScore = theirs.reduce((s, m) => s + m.fasterThan, 0);
+
+  let verdict: TeamMatchup['verdict'] = 'even';
+  const threatDiff = myThreatScore - theirThreatScore;
+  if (threatDiff > 1) verdict = 'mine';
+  else if (threatDiff < -1) verdict = 'theirs';
+  else {
+    // Coverage is close — let speed control decide.
+    if (mySpeedScore - theirSpeedScore > 2) verdict = 'mine';
+    else if (theirSpeedScore - mySpeedScore > 2) verdict = 'theirs';
+  }
+
+  const summary =
+    verdict === 'mine'
+      ? `Your team has the type edge — ${myThreatScore} offensive threats vs ${theirThreatScore}.`
+      : verdict === 'theirs'
+        ? `Their team pressures yours — ${theirThreatScore} offensive threats vs your ${myThreatScore}.`
+        : `Dead even on coverage (${myThreatScore} vs ${theirThreatScore}) — it comes down to the player.`;
+
+  return {
+    mine, theirs,
+    myThreatScore, theirThreatScore,
+    mySpeedScore, theirSpeedScore,
+    verdict, summary,
+  };
+}
+
 export function computeThreats(_team: Team, defRows: DefRow[]): ThreatInfo[] {
   return defRows
     .filter(r => (r.weak2 + r.weak4) >= 2 && (r.resist2 + r.resist4 + r.immune) <= 1)

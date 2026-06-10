@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ShoppingBag, Download, ExternalLink, Loader2, Sparkles, Lock } from 'lucide-react';
+import { ShoppingBag, Download, ExternalLink, Loader2, Sparkles } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
@@ -17,6 +17,7 @@ import {
 import { POKEMON_BY_ID } from '@/lib/pokemon';
 import {
   renderMerchDesign, renderMerchPreview, MERCH_DESIGNS,
+  BADGE_REGIONS, badgesForRegion,
   type MerchDesign
 } from '@/lib/merch-renderers';
 import { PremiumControl } from './PremiumControl';
@@ -52,6 +53,8 @@ export function MerchStudioDialog({
   const [gymName, setGymName] = useState<string>('');
   const [region, setRegion] = useState<string>('');
   const [badgeText, setBadgeText] = useState<string>('');
+  const [badgeRegion, setBadgeRegion] = useState<string>('kanto');
+  const [badges, setBadges] = useState<string[]>([]);
   const [year, setYear] = useState<string>(String(new Date().getFullYear()));
   const [markupPct, setMarkupPct] = useState<number>(100);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -86,6 +89,8 @@ export function MerchStudioDialog({
           gymName: gymName || undefined,
           region: region || undefined,
           badgeText: badgeText || undefined,
+          badgeRegion,
+          badges,
           year: year ? parseInt(year, 10) : undefined,
           transparentBg: selectedProduct.category === 'apparel' || selectedProduct.category === 'tote' || selectedProduct.category === 'phone-case',
         });
@@ -100,7 +105,7 @@ export function MerchStudioDialog({
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [open, team, trainer, teamName, code, selectedProduct, design, gymName, region, badgeText, year]);
+  }, [open, team, trainer, teamName, code, selectedProduct, design, gymName, region, badgeText, badgeRegion, badges, year]);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -131,6 +136,8 @@ export function MerchStudioDialog({
         gymName: gymName || undefined,
         region: region || undefined,
         badgeText: badgeText || undefined,
+        badgeRegion,
+        badges,
         year: year ? parseInt(year, 10) : undefined,
         transparentBg: selectedProduct.category === 'apparel' || selectedProduct.category === 'tote' || selectedProduct.category === 'phone-case',
       });
@@ -215,8 +222,8 @@ export function MerchStudioDialog({
     return groups;
   }, []);
 
-  const designIsPremium = (d: MerchDesign) => d === 'id-card' || d === 'banner';
-  const designLocked = (d: MerchDesign) => designIsPremium(d) && !premium;
+  // Printing is open to everyone — no design is premium-gated. (Merch is the
+  // primary monetization path via POD markup; AI generation is the paid tier.)
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -370,25 +377,18 @@ export function MerchStudioDialog({
                 <div className="grid grid-cols-2 gap-1.5">
                   {MERCH_DESIGNS.map(d => {
                     const active = design === d.id;
-                    const locked = designLocked(d.id);
                     return (
                       <button
                         key={d.id}
-                        onClick={() => { if (!locked) setDesign(d.id); }}
-                        disabled={locked}
-                        title={locked ? 'Premium design — toggle preview to try' : d.desc}
+                        onClick={() => setDesign(d.id)}
+                        title={d.desc}
                         className={cn(
                           'p-2 rounded border transition text-left relative',
-                          active ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/60',
-                          locked && 'opacity-60 cursor-not-allowed'
+                          active ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/60'
                         )}
                       >
                         <div className="font-mono text-[11px] font-semibold flex items-center gap-1">
                           {d.label}
-                          {designIsPremium(d.id) && (
-                            <span className="font-mono text-[8px] px-1 py-0.5 rounded bg-primary/20 text-primary uppercase">pro</span>
-                          )}
-                          {locked && <Lock size={9} className="ml-auto" />}
                         </div>
                         <div className="font-mono text-[9px] text-muted-foreground leading-tight mt-0.5">{d.desc}</div>
                       </button>
@@ -460,6 +460,69 @@ export function MerchStudioDialog({
                     className="font-mono text-xs"
                   />
                 </div>
+
+                {/* Gym-badge picker — only meaningful on the trainer-card layout */}
+                {design === 'trainer-card' && (
+                  <div className="pt-1">
+                    <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1 block">gym badges · region</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {BADGE_REGIONS.map(r => {
+                        const active = badgeRegion === r.id;
+                        return (
+                          <button
+                            key={r.id}
+                            onClick={() => { setBadgeRegion(r.id); setBadges([]); }}
+                            className={cn(
+                              'font-mono text-[9px] px-1.5 py-0.5 rounded border transition',
+                              active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary/60'
+                            )}
+                          >
+                            {r.name} · {r.count}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-between mt-2 mb-1">
+                      <span className="font-mono text-[9px] text-muted-foreground">tap badges you've earned</span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setBadges(badgesForRegion(badgeRegion).map(b => b.id))}
+                          className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
+                        >all</button>
+                        <button
+                          onClick={() => setBadges([])}
+                          className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
+                        >none</button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      {badgesForRegion(badgeRegion).map(b => {
+                        const earned = badges.includes(b.id);
+                        return (
+                          <button
+                            key={b.id}
+                            onClick={() => setBadges(prev => prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id])}
+                            title={b.label}
+                            className={cn(
+                              'flex items-center gap-1.5 p-1.5 rounded border transition text-left',
+                              earned ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/60 opacity-70'
+                            )}
+                          >
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ background: earned ? b.color : 'transparent', border: `1.5px solid ${b.color}` }}
+                            />
+                            <span className="min-w-0">
+                              <span className="font-mono text-[10px] font-semibold block truncate">{b.label.split(' · ')[0]}</span>
+                              <span className="font-mono text-[8px] text-muted-foreground block truncate">{b.label.split(' · ')[1] || ''}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <Separator />

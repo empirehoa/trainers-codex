@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Copy, Check, ExternalLink, Wand2 } from 'lucide-react';
+import { Copy, Check, ExternalLink, Wand2, Share2 } from 'lucide-react';
+import { canShareLink, shareLink } from '@/lib/share';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
@@ -27,10 +28,17 @@ export function ShareDialog({
 }: ShareDialogProps) {
   const filled = team.filter(Boolean) as Pokemon[];
   const code = useMemo(() => buildShareCode(members), [members]);
+  // The shareable link uses `#team=` (not the app's own `#t=` resume hash) so a
+  // recipient lands on a "someone shared a team with you" page — with the team
+  // name and sharer carried along — instead of silently loading it in. App.tsx
+  // parses `#team=` on boot and shows SharedTeamLanding.
   const shareUrl = useMemo(() => {
-    try { return `${window.location.origin}${window.location.pathname}#t=${code}`; }
-    catch { return `#t=${code}`; }
-  }, [code]);
+    const extra =
+      (teamName ? `&tn=${encodeURIComponent(teamName)}` : '') +
+      (trainer?.name ? `&by=${encodeURIComponent(trainer.name)}` : '');
+    try { return `${window.location.origin}${window.location.pathname}#team=${code}${extra}`; }
+    catch { return `#team=${code}${extra}`; }
+  }, [code, teamName, trainer]);
   const teamText = useMemo(() => {
     const ownerLine = trainer?.name ? `${trainer.name}${trainer.title ? ` (${trainer.title})` : ''}'s` : 'My';
     const header = teamName
@@ -87,6 +95,18 @@ export function ShareDialog({
                   <span className="ml-1.5">{copied === 'url' ? 'copied' : 'copy'}</span>
                 </Button>
               </div>
+              {canShareLink() && (
+                <Button
+                  onClick={() => shareLink({
+                    title: "Trainer's Codex",
+                    text: teamName ? `Check out my team "${teamName}" on Trainer's Codex` : 'Check out my Trainer\'s Codex team',
+                    url: shareUrl,
+                  })}
+                  className="w-full font-mono text-xs"
+                >
+                  <Share2 size={12} className="mr-1.5" /> share link…
+                </Button>
+              )}
               <div className="text-[10px] font-mono text-muted-foreground">
                 opens this team when visited · shiny status preserved in URL
               </div>

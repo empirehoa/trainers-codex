@@ -4,7 +4,7 @@ import {
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
   User, Wand2, ShoppingBag, LogIn, Cloud,
-  Sun, Moon, Sparkles, ClipboardList, Globe
+  Sun, Moon, Sparkles, ClipboardList, Globe, MoreHorizontal
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 import type { Pokemon, SavedTeam, PokemonType, Role, Stats, TeamMember, TrainerProfile } from '@/lib/types';
 import {
@@ -31,11 +35,17 @@ import {
   computeDefensive, computeOffensive, computeStats,
   computeThreats, computeUncovered, suggestFillers,
   suggestCounterTeam, generateRandomTeam,
-  buildShareCode, parseShareCode
+  buildShareCode, parseShareCode, computeTeamMatchup
 } from '@/lib/analysis';
+import { BADGE_REGIONS, badgesForRegion } from '@/lib/merch-renderers';
 import { loadStorage, saveStorage, genId } from '@/lib/storage';
 import {
+  type Ruleset, UNRESTRICTED, FORMAT_PRESETS, presetById,
+  checkLegality, teamLegality, isUnrestricted, isLegal,
+} from '@/lib/formats';
+import {
   getStoredLicense, bootstrapFromCheckoutReturn, isWorkerConfigured,
+  applyOwnerUnlock, hasOwnerUnlock, clearLicense,
 } from '@/lib/license';
 
 import { PokemonCard } from '@/components/codex/PokemonCard';
@@ -55,6 +65,7 @@ import { MerchStudioDialog } from '@/components/codex/MerchStudioDialog';
 import { AIStudioDialog } from '@/components/codex/AIStudioDialog';
 import { ShowdownImportDialog } from '@/components/codex/ShowdownImportDialog';
 import { SignInDialog } from '@/components/codex/SignInDialog';
+import { SharedTeamLanding } from '@/components/codex/SharedTeamLanding';
 import { parsePokePaste, exportPokePaste } from '@/lib/showdown';
 import { computeMatchup, bestMove } from '@/lib/matchup';
 import { PublicProfileView } from '@/components/codex/PublicProfileView';
@@ -113,9 +124,13 @@ export default function App() {
       parsePokePaste, exportPokePaste,
       analyzeTeamCompatibility, recommendTargetGame, isPokemonAvailableIn,
       computeMatchup, bestMove,
+      computeTeamMatchup, buildShareCode, parseShareCode,
+      BADGE_REGIONS, badgesForRegion,
       validateHandle, parseProfileRoute, profileUrl,
       shapeProfilePayload, shapeTeamPayload, shapeReportPayload, sanitizeText,
       sanitizeListingTitle: (raw: string | null | undefined) => sanitizeListingTitle(raw, speciesNames),
+      checkLegality, teamLegality, isUnrestricted, isLegal, FORMAT_PRESETS, presetById, UNRESTRICTED,
+      suggestCounterTeam, generateRandomTeam,
       POKEMON_BY_ID, MAINLINE_GAMES,
       // Test seams: inject an in-memory ProfileClient + drive the /u route
       // without a real backend (the harness aborts all external requests).
@@ -155,11 +170,35 @@ export default function App() {
   }, []);
 
   const [pendingTeam, setPendingTeam] = useState<(TeamMember | null)[] | null>(null);
+  // Incoming shared team (`#team=` link). When set, a landing page takes over
+  // the screen so the recipient sees what was shared and can battle it against
+  // their own team — instead of the team silently loading into the builder.
+  const [sharedIncoming, setSharedIncoming] = useState<
+    { members: (TeamMember | null)[]; teamName?: string; by?: string } | null
+  >(null);
   const [search, setSearch] = useState('');
   const [filterTypes, setFType] = useState<PokemonType[]>([]);
   const [filterGens, setFGens] = useState<number[]>([]);
   const [filterRoles, setFRoles] = useState<Role[]>([]);
   const [filterCategory, setFCategory] = useState<CategoryFilter>('all');
+  // v6: active team-building format (ruleset). Persisted under its own key so the
+  // storage v2 schema stays untouched (same pattern as theme).
+  const [ruleset, setRuleset] = useState<Ruleset>(() => {
+    if (typeof window === 'undefined') return UNRESTRICTED;
+    try {
+      const raw = localStorage.getItem('trainerscodex.format');
+      if (raw) return { ...UNRESTRICTED, ...JSON.parse(raw) } as Ruleset;
+    } catch {}
+    return UNRESTRICTED;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('trainerscodex.format', JSON.stringify(ruleset)); } catch {}
+  }, [ruleset]);
+  const formatActive = useMemo(() => !isUnrestricted(ruleset), [ruleset]);
+  const applyPreset = useCallback((id: string) => setRuleset(presetById(id)), []);
+  const toggleRule = useCallback((key: keyof Ruleset) => {
+    setRuleset(r => ({ ...r, id: 'custom', label: 'Custom', [key]: !r[key] }));
+  }, []);
   const [sortBy, setSortBy] = useState<'id' | 'name' | 'bst' | keyof Stats>('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [selected, setSelected] = useState<Pokemon | null>(null);
@@ -197,11 +236,42 @@ export default function App() {
   const teamCount = team.filter(Boolean).length;
   const teamFull = team.every(Boolean);
   const teamIds = useMemo(() => new Set(team.filter(Boolean).map(p => p!.id)), [team]);
+  // Legality of the current team under the active format. Surfaced as a banner
+  // in the team bar so a format change after building flags the offenders.
+  const teamLegal = useMemo(() => teamLegality(team, ruleset), [team, ruleset]);
+  // Candidate pool for every recommender, narrowed to the active format. When
+  // unrestricted we reuse POKEMON_BY_ID by reference (no allocation). Filler /
+  // counter / random suggestions all draw from this so they never propose a mon
+  // the user couldn't legally add.
+  const legalPool = useMemo<Record<number, Pokemon>>(() => {
+    if (isUnrestricted(ruleset)) return POKEMON_BY_ID;
+    const out: Record<number, Pokemon> = {};
+    for (const p of Object.values(POKEMON_BY_ID)) {
+      if (isLegal(p, ruleset)) out[p.id] = p;
+    }
+    return out;
+  }, [ruleset]);
 
   // ---------- Parse URL hash on mount ----------
   useEffect(() => {
     try {
       const hash = window.location.hash || '';
+      // `#team=` is an INCOMING SHARE: show the landing, don't auto-load.
+      const shared = hash.match(/(?:^#|&)team=([0-9a-z,\-]+)/);
+      if (shared) {
+        const parsed = parseShareCode(shared[1]);
+        if (parsed && parsed.some(Boolean)) {
+          const tn = hash.match(/(?:^#|&)tn=([^&]+)/);
+          const by = hash.match(/(?:^#|&)by=([^&]+)/);
+          const dec = (s: string | undefined) => {
+            if (!s) return undefined;
+            try { return decodeURIComponent(s) || undefined; } catch { return undefined; }
+          };
+          setSharedIncoming({ members: parsed, teamName: dec(tn?.[1]), by: dec(by?.[1]) });
+          return; // a share link supersedes the `#t=` resume hash
+        }
+      }
+      // `#t=` is the app's own resume/bookmark hash — load it into the builder.
       const m = hash.match(/(?:^#|&)t=([0-9a-z,\-]+)/);
       if (m) {
         const parsed = parseShareCode(m[1]);
@@ -224,10 +294,19 @@ export default function App() {
   // ---------- Sync members → URL hash ----------
   useEffect(() => {
     try {
-      const code = buildShareCode(members);
       const hasAny = members.some(Boolean);
-      const newHash = hasAny ? `#t=${code}` : '';
-      if (window.location.hash !== newHash) {
+      const cur = window.location.hash;
+      if (!hasAny) {
+        // Only clear OUR OWN resume hash. On mount this effect runs before the
+        // unlock/share boot effects, so clobbering a foreign hash (#unlock=,
+        // #team=, #/u/) here would strip it before those effects can read it.
+        if (/^#t=/.test(cur)) {
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+        return;
+      }
+      const newHash = `#t=${buildShareCode(members)}`;
+      if (cur !== newHash) {
         history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
       }
     } catch {}
@@ -243,13 +322,26 @@ export default function App() {
     // legacy localStorage `premium` flag (which was the dev-only preview
     // toggle). The license check is structural-only here — server-side
     // verification happens lazily when premium UI opens.
+    // Owner quick-unlock: `?unlock=premium` / `#unlock=premium` flips a
+    // persistent local override (and `unlock=off` clears it). Applied before
+    // the license check so it wins, and persisted under its own key so it
+    // survives reloads even on a Worker-backed deploy.
+    const unlockAction = applyOwnerUnlock();
+    if (unlockAction === 'locked') clearLicense();
+
     const license = getStoredLicense();
-    if (license) {
+    if (license || hasOwnerUnlock()) {
       setPremium(true);
     } else if (stored.premium && !isWorkerConfigured()) {
       // Self-host / no-worker deploy: the preview toggle remains the source
       // of truth. This keeps the bundle's offline UX intact for static hosts.
       setPremium(true);
+    }
+    if (unlockAction === 'unlocked') {
+      toast.success('premium unlocked · preview mode — every premium surface is open');
+    } else if (unlockAction === 'locked') {
+      setPremium(false);
+      toast('premium locked · back to the free experience');
     }
 
     if (stored.current && !pendingTeam && !members.some(Boolean)) {
@@ -267,7 +359,10 @@ export default function App() {
     // toast acknowledges the flow without blocking initial render.
     void (async () => {
       const claims = await bootstrapFromCheckoutReturn();
-      if (claims) {
+      if (!claims) return;
+      if (claims.plan === 'credits') {
+        toast.success('credits added · ready to generate in AI Studio');
+      } else {
         setPremium(true);
         toast.success('premium unlocked · welcome to the pack');
       }
@@ -422,6 +517,11 @@ export default function App() {
 
   // ---------- Team actions ----------
   const addToTeam = useCallback((p: Pokemon) => {
+    const legality = checkLegality(p, ruleset);
+    if (!legality.legal) {
+      toast.error(`${p.display} is banned · ${legality.reasons.join(' · ')}`);
+      return;
+    }
     setMembers(prev => {
       if (prev.some(m => m?.id === p.id)) return prev;
       const slot = prev.findIndex(m => m === null);
@@ -432,7 +532,7 @@ export default function App() {
       if (next.every(Boolean)) setTimeout(() => toast.success('team complete · ready to analyze'), 50);
       return next;
     });
-  }, [pushUndo]);
+  }, [pushUndo, ruleset]);
 
   const removeFromTeam = useCallback((idx: number) => {
     setMembers(prev => {
@@ -473,18 +573,26 @@ export default function App() {
 
   const loadRandom = useCallback(() => {
     pushUndo(members);
-    const picks = generateRandomTeam(POKEMON_BY_ID);
+    // Draw from the format-legal pool. A BST cap means the default 450 floor
+    // would empty the pool, so drop the floor when a cap is active; pass the
+    // mono-type constraint through to keep the roll on-format.
+    const picks = generateRandomTeam(legalPool, {
+      minBST: ruleset.bstCap != null ? 0 : undefined,
+      monotype: ruleset.monoType ?? undefined,
+    });
     if (picks.length > 0) {
       const padded: (TeamMember | null)[] = picks.map(p => ({ id: p.id, shiny: false }));
       while (padded.length < 6) padded.push(null);
       setMembers(padded);
-      setTeamName('Random Roll');
+      setTeamName(formatActive ? `Random · ${ruleset.label}` : 'Random Roll');
       toast('rolled a random team');
+    } else {
+      toast.warning('no legal mons for this format — loosen the rules');
     }
-  }, [members, pushUndo]);
+  }, [members, pushUndo, legalPool, ruleset, formatActive]);
 
   const loadCounterTeam = useCallback(() => {
-    const counters = suggestCounterTeam(team, POKEMON_BY_ID);
+    const counters = suggestCounterTeam(team, legalPool);
     if (counters.length < 6) {
       toast.warning('not enough data to build counter — fill more slots');
       return;
@@ -494,7 +602,7 @@ export default function App() {
     setTeamName('Counter Team');
     toast.success('built counter team');
     setSheet(false);
-  }, [team, members, pushUndo]);
+  }, [team, members, pushUndo, legalPool]);
 
   // ---------- Library actions ----------
   const saveCurrentToLibrary = useCallback((name: string) => {
@@ -541,8 +649,8 @@ export default function App() {
   const statAgg = useMemo(() => computeStats(team), [team]);
   const threats = useMemo(() => computeThreats(team, defRows), [team, defRows]);
   const uncovered = useMemo(() => computeUncovered(team, offRows), [team, offRows]);
-  const suggestions = useMemo(() => suggestFillers(team, POKEMON_BY_ID, defRows, uncovered), [team, defRows, uncovered]);
-  const counters = useMemo(() => suggestCounterTeam(team, POKEMON_BY_ID).slice(0, 6), [team]);
+  const suggestions = useMemo(() => suggestFillers(team, legalPool, defRows, uncovered), [team, legalPool, defRows, uncovered]);
+  const counters = useMemo(() => suggestCounterTeam(team, legalPool).slice(0, 6), [team, legalPool]);
 
   const undoLast = () => {
     if (undoStack.length === 0) return;
@@ -555,6 +663,28 @@ export default function App() {
   const onConfigureSlot = (idx: number) => {
     if (members[idx]) setConfigSlot(idx);
   };
+
+  // ---------- Incoming shared team takes over the whole screen ----------
+  if (sharedIncoming) {
+    const loadShared = () => {
+      const fixed = sharedIncoming.members.map(m => (m && POKEMON_BY_ID[m.id] ? m : null));
+      while (fixed.length < 6) fixed.push(null);
+      setMembers(fixed.slice(0, 6));
+      if (sharedIncoming.teamName) setTeamName(sharedIncoming.teamName);
+      setSharedIncoming(null);
+      toast.success('team loaded · tweak it, analyze it, or make it yours');
+    };
+    return (
+      <SharedTeamLanding
+        members={sharedIncoming.members}
+        teamName={sharedIncoming.teamName}
+        by={sharedIncoming.by}
+        myMembers={members}
+        onLoad={loadShared}
+        onDismiss={() => setSharedIncoming(null)}
+      />
+    );
+  }
 
   // ---------- Public profile route takes over the whole screen ----------
   if (routeHandle) {
@@ -612,6 +742,9 @@ export default function App() {
           </div>
           <TooltipProvider delayDuration={150}>
             <div className="flex items-center gap-1.5 shrink-0">
+              {/* Desktop toolbar: full icon row (≥640px). The test harness runs
+                  at 1280px, so every icon button stays inline + queryable here. */}
+              <div className="hidden sm:flex items-center gap-1.5">
               {undoStack.length > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -717,6 +850,7 @@ export default function App() {
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline" size="icon" onClick={() => setAiOpen(true)}
+                    data-testid="ai-studio-btn"
                     className={cn('w-8 h-8', premium && 'border-primary text-primary')}
                   >
                     <Sparkles size={14} />
@@ -754,6 +888,42 @@ export default function App() {
                 </TooltipTrigger>
                 <TooltipContent>Help (?)</TooltipContent>
               </Tooltip>
+              </div>{/* end desktop toolbar */}
+
+              {/* Mobile overflow menu (<640px): every secondary action as a
+                  labeled item so the header never overflows a phone viewport. */}
+              <div className="flex sm:hidden">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="icon" className="w-8 h-8" aria-label="More actions">
+                      <MoreHorizontal size={16} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 font-mono text-xs">
+                    <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">// actions</DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => setAiOpen(true)}><Sparkles size={14} className="mr-2" /> AI Studio</DropdownMenuItem>
+                    <DropdownMenuItem disabled={teamCount === 0} onSelect={() => setPosterOpen(true)}><Wand2 size={14} className="mr-2" /> Poster studio</DropdownMenuItem>
+                    <DropdownMenuItem disabled={teamCount === 0} onSelect={() => setMerchOpen(true)}><ShoppingBag size={14} className="mr-2" /> Merch studio</DropdownMenuItem>
+                    <DropdownMenuItem disabled={teamCount === 0} onSelect={() => setShare(true)}><Share2 size={14} className="mr-2" /> Share team</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => setImportOpen(true)}><ClipboardList size={14} className="mr-2" /> Import / export</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setLibrary(true)}><FolderOpen size={14} className="mr-2" /> Library{savedTeams.length > 0 ? ` (${savedTeams.length})` : ''}</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={loadRandom}><Dices size={14} className="mr-2" /> Random team</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setChart(true)}><Grid3x3 size={14} className="mr-2" /> Type chart</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => setTrainerOpen(true)}><User size={14} className="mr-2" /> {trainer?.name ? `Profile · ${trainer.name}` : 'Trainer profile'}</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setSignInOpen(true)}>{session ? <Cloud size={14} className="mr-2" /> : <LogIn size={14} className="mr-2" />} {session ? 'Cloud sync' : 'Sign in'}</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setPublishOpen(true)}><Globe size={14} className="mr-2" /> Publish profile</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={toggleTheme}>{theme === 'dark' ? <Sun size={14} className="mr-2" /> : <Moon size={14} className="mr-2" />} {theme === 'dark' ? 'Light mode' : 'Dark mode'}</DropdownMenuItem>
+                    {undoStack.length > 0 && (
+                      <DropdownMenuItem onSelect={undoLast}><RotateCcw size={14} className="mr-2" /> Undo</DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onSelect={() => setHelp(true)}><HelpCircle size={14} className="mr-2" /> Help</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
               <Button
                 onClick={() => setSheet(true)} disabled={teamCount === 0}
                 className="font-mono text-xs font-bold ml-1"
@@ -861,6 +1031,87 @@ export default function App() {
 
           {showFilters && (
             <div className="border rounded-md p-3 fade-up space-y-3" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--card))' }}>
+              <FilterGroup label="format · preset">
+                {FORMAT_PRESETS.map(preset => {
+                  const active = ruleset.id === preset.id;
+                  return (
+                    <button key={preset.id}
+                            data-format-preset={preset.id}
+                            title={preset.description}
+                            onClick={() => applyPreset(preset.id)}
+                            className={cn(
+                              'font-mono text-[10px] px-2 py-1 rounded border transition uppercase tracking-wider',
+                              active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary'
+                            )}>
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </FilterGroup>
+              <FilterGroup label="format · custom rules">
+                {([
+                  ['noMega', 'no megas'],
+                  ['noPrimal', 'no primals'],
+                  ['noGigantamax', 'no g-max'],
+                  ['noRegional', 'no regional'],
+                  ['noLegendary', 'no legendary'],
+                  ['noMythical', 'no mythical'],
+                  ['noParadox', 'no paradox'],
+                  ['noUltraBeast', 'no ultra beasts'],
+                  ['noRestricted', 'no restricteds'],
+                ] as [keyof Ruleset, string][]).map(([key, label]) => {
+                  const active = !!ruleset[key];
+                  return (
+                    <button key={key}
+                            data-format-rule={key}
+                            onClick={() => toggleRule(key)}
+                            className={cn(
+                              'font-mono text-[10px] px-2 py-1 rounded border transition uppercase tracking-wider',
+                              active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary'
+                            )}>
+                      {label}
+                    </button>
+                  );
+                })}
+                <Select
+                  value={ruleset.monoType ?? '_any'}
+                  onValueChange={(v) => setRuleset(r => ({
+                    ...r, id: 'custom', label: 'Custom',
+                    monoType: v === '_any' ? null : (v as PokemonType),
+                  }))}>
+                  <SelectTrigger data-testid="format-monotype" className="w-auto h-7 font-mono text-[10px] uppercase tracking-wider">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_any" className="font-mono text-[10px]">any type</SelectItem>
+                    {TYPES.map(t => (
+                      <SelectItem key={t} value={t} className="font-mono text-[10px]">mono-{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  data-testid="format-bstcap"
+                  placeholder="bst cap"
+                  value={ruleset.bstCap ?? ''}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    setRuleset(r => ({
+                      ...r, id: 'custom', label: 'Custom',
+                      bstCap: Number.isFinite(n) && n > 0 ? n : null,
+                    }));
+                  }}
+                  className="w-24 h-7 font-mono text-[10px]"
+                />
+                {formatActive && (
+                  <button
+                    data-testid="format-clear"
+                    onClick={() => setRuleset(UNRESTRICTED)}
+                    className="font-mono text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-destructive hover:border-destructive transition uppercase tracking-wider">
+                    clear format
+                  </button>
+                )}
+              </FilterGroup>
               <FilterGroup label="category">
                 {([
                   ['all', 'all'],
@@ -950,13 +1201,18 @@ export default function App() {
 
         {/* ============== GRID ============== */}
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-          {visible.map(p => (
-            <PokemonCard key={p.id} p={p}
-              onSelect={() => setSelected(p)}
-              onAdd={() => addToTeam(p)}
-              inTeam={teamIds.has(p.id)}
-              teamFull={teamFull} />
-          ))}
+          {visible.map(p => {
+            const legality = formatActive ? checkLegality(p, ruleset) : null;
+            return (
+              <PokemonCard key={p.id} p={p}
+                onSelect={() => setSelected(p)}
+                onAdd={() => addToTeam(p)}
+                inTeam={teamIds.has(p.id)}
+                teamFull={teamFull}
+                illegal={legality ? !legality.legal : false}
+                illegalReason={legality?.reasons.join(' · ')} />
+            );
+          })}
         </div>
 
         {visible.length === 0 && (
@@ -977,6 +1233,18 @@ export default function App() {
       {/* ============== STICKY TEAM BAR ============== */}
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-md bg-background/95" style={{ borderColor: 'hsl(var(--border))' }}>
         <LiveCoverageStrip team={team} />
+        {formatActive && !teamLegal.legal && (
+          <div data-testid="legality-banner"
+               className="max-w-6xl mx-auto px-3 py-1.5 font-mono text-[10px] flex items-center gap-2 flex-wrap"
+               style={{ color: 'hsl(var(--destructive))' }}>
+            <span className="uppercase tracking-widest font-bold">⚠ illegal in {ruleset.label}:</span>
+            {teamLegal.offenders.map(o => (
+              <span key={o.index} className="opacity-90">
+                {o.p.display} <span className="opacity-60">({o.reasons.join(' · ')})</span>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="max-w-6xl mx-auto px-3 py-2.5 flex items-center gap-2">
           <div className="flex gap-1.5 flex-1 overflow-x-auto scroll-x">
             {team.map((p, i) => (

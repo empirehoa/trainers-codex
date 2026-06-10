@@ -44,3 +44,4 @@ tests/_screenshots/
 # Worker scaffolding
 worker/pnpm-lock.yaml
 worker/pnpm-workspace.yaml
+tmp-responsive/
