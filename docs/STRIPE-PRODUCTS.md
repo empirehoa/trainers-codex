@@ -142,3 +142,51 @@ Run these in TEST mode before flipping to live:
 - [ ] Premium annual checkout (if `STRIPE_PRICE_ANNUAL` set) → license TTL ~366 days
 - [ ] Webhook log shows `granted N credits to <email>` for each credit purchase
 - [ ] Re-deliver the same webhook event → balance unchanged (idempotency holds)
+
+---
+
+## 7. Verified production state (2026-06-11) — TWO ACCOUNTS, decisions needed
+
+Probed the **live** Worker and both Stripe accounts directly. Findings:
+
+**Production is wired and working — in TEST mode.**
+- `POST https://trainers-codex-api.jrriestra.workers.dev/stripe/checkout` returns a
+  valid Checkout URL with a **`cs_test_…`** session → the deployed
+  `STRIPE_SECRET_KEY` is an **`sk_test_`** key. Real visitors who "subscribe"
+  hit a **test** checkout and **no real money is collected.** (This matches
+  `LAUNCH_PLAN.md`, which calls it the "$4.99/mo test product" for soft launch.)
+- The deployed `STRIPE_PRICE_ID = price_1TcX6MF03KhWyMQ7cqs9OT9p` **is valid**
+  for the deployed account and premium checkout succeeds. `wrangler.toml` is
+  **consistent** with the deployed account — *not* stale, as previously feared.
+
+**There are two distinct Stripe accounts in play:**
+
+| | Account A — **production** | Account B — local CLI |
+|---|---|---|
+| Account id (suffix) | `…F03KhWyMQ7` | `acct_1TbohkF3S2NCbljb` ("Trainers Codex") |
+| Used by | the **deployed Worker** (secret key + price + webhook) | the `stripe` CLI on this Mac |
+| Premium price | `price_1TcX6M…` (test, works) | `price_1Tgt5U…` ($4.99/mo test) |
+| Annual price | — (not in `wrangler.toml`) | `price_1Tgt5V…` ($39/yr test) |
+| Credit packs | — (none wired → `/credits/*` returns `503`) | `price_1Tgt5X/Y/Z…` (1/5/20, test) |
+
+The 5 prices created by `scripts/setup-stripe-live.sh` (or by hand) landed in
+**Account B**, but production runs on **Account A**. That's why credit-pack
+checkout returns `503 credits_not_configured` in production: Account A has no
+credit prices wired into `wrangler.toml`.
+
+**Decisions only Jose can make (money infrastructure — not done autonomously):**
+
+1. **Which account is canonical — A or B?** If A, create the annual + 3 credit
+   prices *in Account A* and add their ids to `wrangler.toml`. If B, repoint the
+   Worker's `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` to Account B and set
+   the five `price_1Tgt5…` ids.
+2. **Go live for real money.** Production is in TEST mode today. To collect
+   revenue: provision **live-mode** prices in the canonical account, then
+   `wrangler secret put STRIPE_SECRET_KEY` (`sk_live_…`), set the live
+   `STRIPE_PRICE_ID` (+ annual + credit ids) in `wrangler.toml`, add the live
+   webhook secret, and redeploy.
+
+> ⚠️ Do **not** redeploy the Worker from the current tree expecting no change to
+> billing — the deployed account/prices are correct, but any change to the
+> Stripe vars/secrets directly affects what buyers are charged. Stage and
+> approve before deploying Stripe changes.

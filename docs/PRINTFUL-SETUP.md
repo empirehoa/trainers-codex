@@ -113,11 +113,14 @@ Printful** → you should be handed the Printful dashboard listing.
 
 ---
 
-## Status (2026-06-11)
+## Status (2026-06-11 — verified live)
 
 - [x] Integration code written + deployed (`worker/src/printful.ts`)
 - [x] Store id set (`18253803`) and full 12-SKU variant map
 - [x] R2 bucket `trainerscodex` created + bound (`PRINTS_BUCKET`)
-- [ ] **`PRINTFUL_API_KEY` secret** — Jose, Step 2
-- [ ] **`cdn.trainerscodex.com` public R2 domain** — Jose, Step 3
-- [ ] Redeploy + smoke test — Steps 4–5
+- [x] **`PRINTFUL_API_KEY` secret** — already set on the Worker (`wrangler secret list`)
+- [x] **`cdn.trainerscodex.com` public R2 domain** — resolves (returns 404 at `/`,
+  i.e. the domain is wired to the bucket; an unwired domain would not resolve)
+- [ ] One real end-to-end order (Steps 5) — not run autonomously because it
+  creates a live Printful sync product (a real side effect). **Printful is
+  otherwise fully go-live ready.**
