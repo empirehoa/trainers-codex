@@ -77,9 +77,10 @@ if [[ -z "$KV_ID" ]]; then
 fi
 echo "  KV namespace ID: $KV_ID"
 
-# R2 bucket for print PNG storage
-"$WRANGLER" --config worker/wrangler.toml r2 bucket create trainerscodex-prints 2>&1 | tail -3 || true
-echo "  R2 bucket: trainerscodex-prints"
+# R2 bucket for print PNG storage — name MUST match wrangler.toml's
+# [[r2_buckets]] bucket_name, which the PRINTS_BUCKET binding resolves against.
+"$WRANGLER" --config worker/wrangler.toml r2 bucket create trainerscodex 2>&1 | tail -3 || true
+echo "  R2 bucket: trainerscodex"
 
 # Patch wrangler.toml with real IDs
 sed -i.bak \
