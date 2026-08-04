@@ -132,8 +132,10 @@ src/components/codex/journey/
   JourneyResult.tsx       retired beat, card, share tiers, CTAs
 
 src/i18n/
-  strings.ts       EN + ES complete; PT + JA seeded
-  useI18n.tsx      provider + hook
+  strings.ts        EN + ES complete; PT + JA seeded
+  useI18n.ts        context + the useI18n hook
+  I18nProvider.tsx  the provider component (split from the hook so the file
+                    exports only a component — Fast Refresh requires it)
 
 src/lib/flags.ts   feature flags (defaults → config → ?ff= override)
 ```

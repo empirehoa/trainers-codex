@@ -94,7 +94,9 @@ src/
     *.test.ts                      ← vitest, colocated
   i18n/
     strings.ts                     ← EN + ES complete; PT + JA seeded
-    useI18n.tsx                    ← provider + hook
+    useI18n.ts                     ← context + useI18n hook
+    I18nProvider.tsx               ← provider component (kept separate from the
+                                     hook: a file exporting both breaks Fast Refresh)
   lib/
     flags.ts                       ← v6 — feature flags (defaults → config → ?ff=)
     analysis.ts                    ← defensive matrix, offensive coverage, threats, counter team, sharecode
