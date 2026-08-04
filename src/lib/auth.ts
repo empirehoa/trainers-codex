@@ -69,6 +69,12 @@ export interface WorkerEndpointConfig {
 export interface TrainersCodexConfig {
   supabase?: SupabaseConfig;
   worker?: WorkerEndpointConfig;
+  /**
+   * Per-deploy feature-flag overrides. Keys are FeatureFlag names from
+   * lib/flags.ts; the type is loose here so lib/flags.ts stays the single
+   * owner of the flag vocabulary without a circular import.
+   */
+  flags?: Record<string, boolean>;
 }
 
 declare global {

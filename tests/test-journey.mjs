@@ -1,0 +1,604 @@
+// Journey Mode browser suite — the Definition-of-Done checks that only a real
+// browser can answer: does the state machine advance, does the Legend Card
+// actually rasterise, do the flags gate cleanly, does a shared ?seed= link
+// reproduce a run in a fresh incognito context, and does the mobile layout hold
+// at 360px.
+//
+// Sprites are blocked by the harness (only file://, data:, blob: are allowed),
+// so these also prove the offline path: the card must render from silhouette
+// fallbacks with zero network access.
+
+import {
+  runSuite, newPage, closePage, sleep, exists, assert, assertEq, assertGte, closeBrowser,
+} from './harness.mjs';
+
+// ---------- helpers ----------
+
+async function openJourney(page) {
+  await page.evaluate(() => {
+    const btn = document.querySelector('[data-testid="journey-open"]');
+    if (btn) btn.click();
+  });
+  await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+  await sleep(150);
+}
+
+async function startRun(page) {
+  await page.waitForSelector('[data-testid="journey-start"]', { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('[data-testid="journey-start"]').click());
+  await sleep(200);
+}
+
+const has = (page, sel) => page.evaluate(s => !!document.querySelector(s), sel);
+const text = (page) => page.evaluate(() => document.body.innerText);
+
+/**
+ * Text inside the Journey dialog only.
+ *
+ * `document.body.innerText` also contains the app rendered *behind* the modal —
+ * including the browse grid, which lists all 1,307 species names. Any assertion
+ * about what Journey Mode does or doesn't say must be scoped to the dialog, or
+ * it silently reads the page underneath.
+ */
+const dialogText = (page) => page.evaluate(() => {
+  const el = document.querySelector('[data-testid="journey-dialog"]');
+  return el ? el.innerText : '';
+});
+
+/**
+ * Click through a whole career, always taking option index `optionIndex`.
+ * Returns { verdict, score, steps }.
+ */
+async function playToEnd(page, optionIndex = 0, maxSteps = 80) {
+  for (let step = 0; step < maxSteps; step++) {
+    if (await has(page, '[data-testid="journey-retired"]')) {
+      const verdict = await page.$eval('[data-testid="journey-verdict"]', el => el.innerText.trim());
+      const score = await page.$eval('[data-testid="journey-score"]', el => el.innerText.trim());
+      return { verdict, score, steps: step };
+    }
+    const advanced = await page.evaluate((idx) => {
+      const cont = document.querySelector('[data-testid="journey-continue"]');
+      if (cont) { cont.click(); return 'continue'; }
+      const opts = [...document.querySelectorAll('[data-journey-option="1"]')];
+      if (opts.length) { opts[Math.min(idx, opts.length - 1)].click(); return 'option'; }
+      return null;
+    }, optionIndex);
+    if (!advanced) throw new Error(`stalled at step ${step} with no advance control`);
+    await sleep(70);
+  }
+  throw new Error(`run did not finish within ${maxSteps} steps`);
+}
+
+async function revealCard(page) {
+  await page.evaluate(() => document.querySelector('[data-testid="journey-reveal-card"]').click());
+  await page.waitForSelector('[data-testid="journey-card-screen"]', { timeout: 8000 });
+}
+
+// ---------- tests ----------
+
+const tests = [
+  {
+    name: 'journey button appears in the header and opens the dialog',
+    async fn(page) {
+      assert(await exists(page, '[data-testid="journey-open"]'), 'journey button should render');
+      await openJourney(page);
+      assert(await has(page, '[data-testid="journey-setup"]'), 'setup screen should render');
+    },
+  },
+
+  {
+    name: 'setup screen ships playable defaults — name, starter, archetype, pace prefilled',
+    async fn(page) {
+      await openJourney(page);
+      const state = await page.evaluate(() => ({
+        name: document.querySelector('[data-testid="journey-name"]')?.value ?? '',
+        starters: document.querySelectorAll('[data-testid^="journey-starter-"]').length,
+        archetypes: document.querySelectorAll('[data-testid^="journey-archetype-"]').length,
+        paces: document.querySelectorAll('[data-testid^="journey-pace-"]').length,
+        startEnabled: document.querySelector('[data-testid="journey-start"]')?.disabled === false,
+      }));
+      assertGte(state.name.length, 2, 'trainer name should be pre-filled');
+      assertEq(state.starters, 3, 'three starters offered');
+      assertEq(state.archetypes, 5, 'five archetypes offered');
+      assertEq(state.paces, 3, 'three paces offered');
+      assert(state.startEnabled, 'start must be tappable immediately — no required fields');
+    },
+  },
+
+  {
+    name: 'starting a run presents the first decision with 2-4 options',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      const n = await page.evaluate(() => document.querySelectorAll('[data-journey-option="1"]').length);
+      assertGte(n, 2, 'decision should offer at least 2 options');
+      assert(n <= 4, `decision should offer at most 4 options, got ${n}`);
+      const prompt = await page.$eval('[data-testid="journey-decision-prompt"]', el => el.innerText.trim());
+      assertGte(prompt.length, 20, 'prompt should carry real copy');
+      assert(!/^journey\./.test(prompt), `prompt must be translated, got raw key: ${prompt}`);
+    },
+  },
+
+  {
+    name: 'picking an option advances to a chapter recap with stat deltas',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelectorAll('[data-journey-option="1"]')[0].click());
+      await page.waitForSelector('[data-testid="journey-recap"]', { timeout: 8000 });
+      assert(await has(page, '[data-testid="journey-stats"]'), 'recap should show the stat strip');
+      const body = await text(page);
+      assert(!/journey\.(beat|chapterTitle)\./.test(body), 'recap must not leak raw i18n keys');
+    },
+  },
+
+  {
+    name: 'a full express run completes and produces a verdict plus a bounded score',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      const { verdict, score } = await playToEnd(page);
+      assertGte(verdict.length, 3, 'verdict headline should render');
+      assert(!/^journey\./.test(verdict), `verdict must be translated, got: ${verdict}`);
+      const n = Number(score);
+      assert(Number.isInteger(n) && n >= 0 && n <= 999, `score out of bounds: ${score}`);
+    },
+  },
+
+  {
+    name: 'a full express run finishes well inside the 2:30 budget',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      const t0 = Date.now();
+      await startRun(page);
+      await playToEnd(page);
+      const elapsedMs = Date.now() - t0;
+      // 150s is the DoD ceiling. The clickthrough here has no human think-time,
+      // so this asserts the machinery never becomes the bottleneck.
+      assert(elapsedMs < 150_000, `express run took ${(elapsedMs / 1000).toFixed(1)}s, budget 150s`);
+    },
+  },
+
+  {
+    name: 'the Legend Card rasterises with zero network access',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await revealCard(page);
+      await page.waitForSelector('[data-testid="journey-card-image"]', { timeout: 15000 });
+      const img = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="journey-card-image"]');
+        return { src: el?.src ?? '', w: el?.naturalWidth ?? 0, h: el?.naturalHeight ?? 0 };
+      });
+      assert(img.src.startsWith('blob:'), `card should be a blob URL, got ${img.src.slice(0, 40)}`);
+      assertEq(img.w, 1080, 'card width');
+      assertEq(img.h, 1350, 'card height');
+    },
+  },
+
+  {
+    name: 'share controls render, and download is always offered',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await revealCard(page);
+      await page.waitForSelector('[data-testid="journey-share-download"]', { timeout: 15000 });
+      const controls = await page.evaluate(() => ({
+        download: !!document.querySelector('[data-testid="journey-share-download"]'),
+        copy: !!document.querySelector('[data-testid="journey-share-copy"]'),
+        link: !!document.querySelector('[data-testid="journey-share-link"]'),
+      }));
+      assert(controls.download, 'download fallback must always be present');
+      assert(controls.copy, 'copy-image tier should be present');
+      assert(controls.link, 'copy-link tier should be present');
+    },
+  },
+
+  {
+    name: 'builder handoff loads the final six into the team bar',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await revealCard(page);
+      await page.waitForSelector('[data-testid="journey-cta-builder"]', { timeout: 15000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-cta-builder"]').click());
+      // Radix keeps the content mounted through its exit animation, so poll for
+      // "gone or data-state=closed" rather than sleeping a guessed interval.
+      await page.waitForFunction(() => {
+        const d = document.querySelector('[data-testid="journey-dialog"]');
+        return !d || d.getAttribute('data-state') === 'closed';
+      }, { timeout: 5000 });
+      // The analyze button reports team fill as "N/6".
+      const body = await text(page);
+      assert(/6\/6/.test(body), `team bar should report 6/6 after handoff · body: ${body.slice(0, 300)}`);
+    },
+  },
+
+  {
+    name: 'a shared ?seed= link prefills setup and shows the shared-journey banner',
+    pageOpts: { query: 'seed=8843' },
+    async fn(page) {
+      // The link auto-opens Journey Mode — a shared link must land on the game.
+      await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+      assert(await has(page, '[data-testid="journey-seed-banner"]'), 'shared-seed banner should render');
+      const body = await text(page);
+      assert(body.includes('8843'), 'the shared seed should be shown');
+    },
+  },
+
+  {
+    name: 'the same ?seed= link reproduces an identical run in two fresh contexts',
+    ownPage: true,
+    async fn() {
+      const run = async () => {
+        const page = await newPage({ query: 'seed=8843&pace=express' });
+        try {
+          await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+          await startRun(page);
+          const result = await playToEnd(page, 0);
+          return result;
+        } finally {
+          await closePage(page);
+        }
+      };
+      const a = await run();
+      const b = await run();
+      assertEq(b.verdict, a.verdict, 'verdict must match across fresh sessions');
+      assertEq(b.score, a.score, 'score must match across fresh sessions');
+      assertEq(b.steps, a.steps, 'career length must match across fresh sessions');
+    },
+  },
+
+  {
+    name: 'different choices on the same seed produce a different career',
+    ownPage: true,
+    async fn() {
+      const run = async (optionIndex) => {
+        const page = await newPage({ query: 'seed=8843&pace=intense' });
+        try {
+          await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+          await startRun(page);
+          return await playToEnd(page, optionIndex);
+        } finally {
+          await closePage(page);
+        }
+      };
+      const first = await run(0);
+      const second = await run(1);
+      assert(
+        first.score !== second.score || first.verdict !== second.verdict,
+        `opposite choices should change the outcome (both were ${first.verdict} / ${first.score})`,
+      );
+    },
+  },
+
+  {
+    name: 'a malformed seed fails soft to a fresh run — never an error screen',
+    pageOpts: { query: 'seed=not-a-number' },
+    async fn(page) {
+      await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+      assert(await has(page, '[data-testid="journey-setup"]'), 'setup should still render');
+      assert(!(await has(page, '[data-testid="journey-seed-banner"]')), 'no shared-seed banner for a bad seed');
+      assert(await has(page, '[data-testid="journey-invalid-seed"]'), 'a soft explanatory note should render');
+      // And the run must be playable.
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+    },
+  },
+
+  {
+    name: 'an out-of-range seed also fails soft and stays playable',
+    pageOpts: { query: 'seed=99999999' },
+    async fn(page) {
+      await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+      assert(await has(page, '[data-testid="journey-invalid-seed"]'), 'soft note expected');
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+    },
+  },
+
+  {
+    name: 'a ?daily= link shows the daily banner and the same seed in two fresh sessions',
+    ownPage: true,
+    async fn() {
+      const run = async () => {
+        const page = await newPage({ query: 'daily=2026-08-26&pace=express' });
+        try {
+          await page.waitForSelector('[data-testid="journey-daily-banner"]', { timeout: 8000 });
+          await startRun(page);
+          return await playToEnd(page, 0);
+        } finally {
+          await closePage(page);
+        }
+      };
+      const a = await run();
+      const b = await run();
+      assertEq(b.verdict, a.verdict, 'the daily seed must be identical across sessions');
+      assertEq(b.score, a.score, 'the daily score must be identical across sessions');
+    },
+  },
+
+  {
+    name: 'the streak counter survives a timezone change without inflating or corrupting',
+    ownPage: true,
+    async fn() {
+      // Kiritimati (UTC+14) → Midway (UTC-11) is a 25-hour swing, so the local
+      // calendar date is guaranteed to shift.
+      const page = await newPage();
+      try {
+        await page.emulateTimezone('Pacific/Kiritimati');
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('header', { timeout: 8000 });
+
+        // Seed a 3-day streak ending on the local "today" in this timezone.
+        const before = await page.evaluate(() => {
+          const pad = n => String(n).padStart(2, '0');
+          const local = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+          const now = new Date();
+          const dates = [2, 1, 0].map(back => {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back);
+            return local(d);
+          });
+          localStorage.setItem('trainerscodex.journey.streak',
+            JSON.stringify({ playedDates: dates, bestStreak: 3 }));
+          return dates;
+        });
+
+        await page.emulateTimezone('Pacific/Midway');
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await page.waitForSelector('header', { timeout: 8000 });
+        await openJourney(page);
+        await page.waitForSelector('[data-testid="journey-streak"]', { timeout: 8000 });
+
+        const after = await page.evaluate(() =>
+          JSON.parse(localStorage.getItem('trainerscodex.journey.streak')).playedDates);
+        assertEq(JSON.stringify(after), JSON.stringify(before),
+          'stored dates must be untouched by a timezone change');
+
+        const streakText = await page.$eval('[data-testid="journey-streak"]', el => el.innerText);
+        const match = streakText.match(/(\d+)/);
+        assert(match, `streak counter should render a number, got: ${streakText}`);
+        const days = Number(match[1]);
+        // Crossing the date line moves "today" by one, so 3 (date unchanged or
+        // ahead) or 2 (date moved back) are both correct. 4+ would mean the
+        // change invented a day; 0 would mean it broke a live streak.
+        assert(days === 3 || days === 2,
+          `timezone change must not inflate or break the streak, got ${days} from "${streakText}"`);
+      } finally {
+        await closePage(page);
+      }
+    },
+  },
+
+  {
+    name: 'JOURNEY_MODE=0 hides the entire feature',
+    pageOpts: { query: 'ff=JOURNEY_MODE:0' },
+    async fn(page) {
+      assert(!(await exists(page, '[data-testid="journey-open"]')), 'journey button must be hidden');
+      assert(!(await exists(page, '[data-testid="journey-dialog"]')), 'journey dialog must not mount');
+      // The rest of the app must be unaffected.
+      assert(await exists(page, 'header'), 'app should still render with the flag off');
+    },
+  },
+
+  {
+    name: 'JOURNEY_MERCH_CTA gates the print CTA off by default and on when enabled',
+    ownPage: true,
+    async fn() {
+      const checkMerch = async (query) => {
+        const page = await newPage({ query });
+        try {
+          await openJourney(page);
+          await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+          await sleep(80);
+          await startRun(page);
+          await playToEnd(page);
+          await revealCard(page);
+          await page.waitForSelector('[data-testid="journey-cta-builder"]', { timeout: 15000 });
+          return await has(page, '[data-testid="journey-cta-merch"]');
+        } finally {
+          await closePage(page);
+        }
+      };
+      assertEq(await checkMerch(''), false, 'merch CTA must be OFF by default (R2 + counsel pending)');
+      assertEq(await checkMerch('ff=JOURNEY_MERCH_CTA:1'), true, 'merch CTA should appear when flagged on');
+    },
+  },
+
+  {
+    name: 'JOURNEY_SPECIES_FLAVOR=0 degrades flavor text to type descriptors',
+    pageOpts: { query: 'ff=JOURNEY_SPECIES_FLAVOR:0&pace=express' },
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await playToEnd(page);
+      await revealCard(page);
+      // Wait for the IMAGE, not just the screen: the card renders asynchronously
+      // after the screen mounts, so asserting on the screen alone races the render.
+      await page.waitForSelector('[data-testid="journey-card-image"]', { timeout: 15000 });
+      const body = await dialogText(page);
+      // With the flag off, roster captions become type pairings.
+      const TYPES = ['Normal', 'Fire', 'Water', 'Electric', 'Grass', 'Ice', 'Fighting',
+        'Poison', 'Ground', 'Flying', 'Psychic', 'Bug', 'Rock', 'Ghost', 'Dragon',
+        'Dark', 'Steel', 'Fairy'];
+      assert(TYPES.some(ty => body.includes(ty)),
+        `degraded mode should show type descriptors · got: ${body.slice(0, 300)}`);
+      // And no species name may survive inside the feature.
+      const leaked = /Bulbasaur|Charmander|Squirtle|Pikachu|Eevee|Charizard|Gengar/.exec(body);
+      assert(!leaked, `degraded mode leaked a species name: ${leaked?.[0]}`);
+    },
+  },
+
+  {
+    name: 'JOURNEY_SPECIES_FLAVOR=0 also degrades the setup screen starter picker',
+    pageOpts: { query: 'ff=JOURNEY_SPECIES_FLAVOR:0' },
+    async fn(page) {
+      await openJourney(page);
+      await page.waitForSelector('[data-testid="journey-setup"]', { timeout: 8000 });
+      const body = await dialogText(page);
+      // Kanto is the default region, so these three are what the picker shows.
+      const leaked = /Bulbasaur|Charmander|Squirtle/.exec(body);
+      assert(!leaked, `setup screen leaked a species name: ${leaked?.[0]}`);
+      assert(/Grass|Fire|Water/.test(body),
+        `starter picker should show type descriptors · got: ${body.slice(0, 300)}`);
+    },
+  },
+
+  {
+    name: 'species names DO appear with the flavor flag on (the default)',
+    async fn(page) {
+      await openJourney(page);
+      await page.waitForSelector('[data-testid="journey-setup"]', { timeout: 8000 });
+      const body = await dialogText(page);
+      assert(/Bulbasaur|Charmander|Squirtle/.test(body),
+        `default mode should name the starters · got: ${body.slice(0, 300)}`);
+    },
+  },
+
+  {
+    name: 'the locale toggle switches the UI to Spanish',
+    async fn(page) {
+      await openJourney(page);
+      const englishBody = await text(page);
+      assert(/Start your career|Start Journey/i.test(englishBody), 'should start in English');
+
+      // Radix Select needs real mouse events (CLAUDE.md gotcha #1).
+      const box = await page.$eval('[data-testid="journey-locale"]', el => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.mouse.click(box.x, box.y);
+      await sleep(250);
+      const picked = await page.evaluate(() => {
+        const opt = [...document.querySelectorAll('[role="option"]')]
+          .find(o => /español/i.test(o.innerText));
+        if (!opt) return false;
+        opt.click();
+        return true;
+      });
+      assert(picked, 'Spanish option should be listed');
+      await sleep(300);
+
+      const spanishBody = await text(page);
+      assert(/Comienza tu carrera|Empezar la travesía/i.test(spanishBody),
+        `UI should switch to Spanish · got: ${spanishBody.slice(0, 200)}`);
+      assert(!/journey\./.test(spanishBody), 'no raw i18n keys after switching locale');
+    },
+  },
+
+  {
+    name: 'the setup screen fits a 360px viewport with no horizontal overflow',
+    pageOpts: { viewport: { width: 360, height: 720 } },
+    async fn(page) {
+      await openJourney(page);
+      const overflow = await page.evaluate(() => ({
+        docScroll: document.documentElement.scrollWidth,
+        docClient: document.documentElement.clientWidth,
+      }));
+      // A couple of pixels of rounding slack; anything more is a real overflow.
+      assert(overflow.docScroll <= overflow.docClient + 2,
+        `horizontal overflow at 360px: scrollWidth ${overflow.docScroll} vs clientWidth ${overflow.docClient}`);
+    },
+  },
+
+  {
+    name: 'a decision and the Legend Card both fit a 360px viewport',
+    pageOpts: { viewport: { width: 360, height: 720 } },
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      let o = await page.evaluate(() => ({
+        s: document.documentElement.scrollWidth, c: document.documentElement.clientWidth,
+      }));
+      assert(o.s <= o.c + 2, `decision overflows at 360px: ${o.s} vs ${o.c}`);
+
+      await playToEnd(page);
+      await revealCard(page);
+      await page.waitForSelector('[data-testid="journey-card-image"]', { timeout: 15000 });
+      o = await page.evaluate(() => ({
+        s: document.documentElement.scrollWidth, c: document.documentElement.clientWidth,
+      }));
+      assert(o.s <= o.c + 2, `card screen overflows at 360px: ${o.s} vs ${o.c}`);
+    },
+  },
+
+  {
+    name: 'undo rewinds a choice and re-presents a decision',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-intense"]').click());
+      await sleep(80);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelectorAll('[data-journey-option="1"]')[0].click());
+      await page.waitForSelector('[data-testid="journey-recap"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-continue"]').click());
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+
+      assert(await has(page, '[data-testid="journey-undo"]'), 'undo should be offered after a choice');
+      await page.evaluate(() => document.querySelector('[data-testid="journey-undo"]').click());
+      await sleep(250);
+      const back = await has(page, '[data-testid="journey-decision"]')
+        || await has(page, '[data-testid="journey-recap"]');
+      assert(back, 'undo should return to a playable state');
+      assert(!(await has(page, '[data-testid="journey-retired"]')), 'undo must not end the run');
+    },
+  },
+
+  {
+    name: 'replaying the same seed reproduces the same career in-session',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      const first = await playToEnd(page, 0);
+      await revealCard(page);
+      await page.waitForSelector('[data-testid="journey-replay"]', { timeout: 15000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-replay"]').click());
+      await sleep(250);
+      const second = await playToEnd(page, 0);
+      assertEq(second.verdict, first.verdict, 'replay verdict should match');
+      assertEq(second.score, first.score, 'replay score should match');
+    },
+  },
+
+  {
+    name: 'no journey analytics requests are attempted when Supabase is unconfigured',
+    async fn(page) {
+      const attempts = [];
+      page.on('request', req => {
+        if (/journey_events/.test(req.url())) attempts.push(req.url());
+      });
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      assertEq(attempts.length, 0,
+        `analytics must no-op without config, saw: ${attempts.join(', ')}`);
+    },
+  },
+];
+
+const result = await runSuite('journey-mode', tests);
+await closeBrowser();
+process.exit(result.failed === 0 ? 0 : 1);

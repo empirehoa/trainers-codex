@@ -12,6 +12,7 @@
 // which falls back to a coordinate click.
 
 import puppeteer from 'puppeteer';
+import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
 
@@ -21,17 +22,68 @@ const BUNDLE_URL = `file://${BUNDLE_PATH}`;
 
 let _browser = null;
 
+/**
+ * Locate a Chromium binary.
+ *
+ * Puppeteer normally downloads its own during install, but that postinstall
+ * script is skipped in sandboxes and CI images that pre-provision a browser
+ * instead. PUPPETEER_EXECUTABLE_PATH is honoured first, then the common
+ * pre-provisioned locations, and finally we hand back undefined so puppeteer
+ * falls back to its bundled download (and produces its own clear error if
+ * that's missing too).
+ */
+function resolveExecutablePath() {
+  const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+    '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  // Also accept any versioned chromium under the Playwright browser root.
+  const pwRoot = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
+  for (const v of ['chromium']) {
+    const guess = join(pwRoot, v, 'chrome-linux', 'chrome');
+    if (existsSync(guess)) return guess;
+  }
+  return undefined;
+}
+
+export function chromiumPath() {
+  return resolveExecutablePath();
+}
+
 async function getBrowser() {
   if (_browser) return _browser;
+  const executablePath = resolveExecutablePath();
   _browser = await puppeteer.launch({
     headless: 'new',
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     defaultViewport: { width: 1280, height: 900 },
+    ...(executablePath ? { executablePath } : {}),
   });
   return _browser;
 }
 
-export async function newPage() {
+/**
+ * Fresh page on bundle.html.
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.query]     Query string appended to the file:// URL,
+ *                                  e.g. 'seed=8843'. file:// preserves the
+ *                                  query string, so deep-link parsing can be
+ *                                  exercised without a server.
+ * @param {{width:number,height:number}} [opts.viewport] Viewport override, for
+ *                                  the 360px mobile-layout assertions.
+ * @param {number} [opts.timezone]  Unused placeholder kept out on purpose —
+ *                                  timezone shifts are emulated per-test via
+ *                                  page.emulateTimezone.
+ */
+export async function newPage(opts = {}) {
   const browser = await getBrowser();
   // Each test gets its own isolated browser context so localStorage, cookies,
   // and session state can't bleed between tests. This is the puppeteer
@@ -39,6 +91,7 @@ export async function newPage() {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
   page.__context = context;
+  if (opts.viewport) await page.setViewport(opts.viewport);
 
   page.on('pageerror', (err) => {
     console.error('  [pageerror]', err.message);
@@ -54,7 +107,8 @@ export async function newPage() {
     }
   });
 
-  await page.goto(BUNDLE_URL, { waitUntil: 'domcontentloaded' });
+  const url = opts.query ? `${BUNDLE_URL}?${opts.query}` : BUNDLE_URL;
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('header', { timeout: 10_000 });
   await sleep(120);
   return page;
@@ -138,6 +192,12 @@ export function assertGte(actual, min, msg) {
 
 /**
  * Run a suite of named tests. Each test receives a fresh page.
+ *
+ * A test may declare `pageOpts` ({ query, viewport }) to control how its page
+ * is opened — used by the deep-link and mobile-layout tests. A test may also
+ * set `ownPage: true` to skip page creation entirely and open its own pages,
+ * which the multi-session determinism tests need.
+ *
  * Prints a per-test line and a suite summary.
  * Returns { passed, failed, results } so the suite runner can aggregate.
  */
@@ -151,10 +211,10 @@ export async function runSuite(suiteName, tests) {
     const start = Date.now();
     let page = null;
     try {
-      page = await newPage();
+      page = t.ownPage ? null : await newPage(t.pageOpts);
       await t.fn(page);
       // Fail the test if any unhandled page errors occurred during execution.
-      if (page.__pageErrors) {
+      if (page?.__pageErrors) {
         throw new Error(`${page.__pageErrors} page error(s) during test`);
       }
       const ms = Date.now() - start;

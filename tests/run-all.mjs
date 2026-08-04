@@ -14,6 +14,7 @@ const SUITES = [
   'test-v5-extras.mjs',
   'test-posters.mjs',
   'test-stripe-printful.mjs',
+  'test-journey.mjs',
 ];
 
 let totalPassed = 0;

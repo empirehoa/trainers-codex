@@ -11,10 +11,32 @@
     <meta property="og:title" content="Trainer's Codex" />
     <meta property="og:description" content="Pokémon team builder with instant analysis, threat detection, and counter teams." />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://trainerscodex.com/" />
+    <meta property="og:site_name" content="Trainer's Codex" />
+
+    <!--
+      Journey Mode share card. The bundle is one static document served at both
+      / and /journey, so these tags are shared by both routes — a per-run OG
+      image would need a server to render per-seed and is explicitly out of
+      scope for v1 (the playable ?seed= deep-link carries the per-run payload
+      instead). The Journey card is the more shareable of the two surfaces, so
+      it gets the image.
+
+      The copy here omits the word "Pokémon" on purpose. Route copy, page
+      title, and OG tags are all inside the pre-launch IP counsel review, and
+      Journey Mode is built for peak visibility during Worlds week. Regenerate
+      public/og-journey.jpg via `node scripts/make-og-image.mjs` if that copy
+      changes.
+    -->
+    <meta property="og:image" content="https://trainerscodex.com/og-journey.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Trainer's Codex — live an entire trainer career in three minutes." />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Trainer's Codex" />
-    <meta name="twitter:description" content="Pokémon team builder & coverage analyzer." />
+    <meta name="twitter:title" content="Trainer's Codex — Journey Mode" />
+    <meta name="twitter:description" content="Live an entire trainer career in three minutes. Choose your path, retire, and share your Legend Card." />
+    <meta name="twitter:image" content="https://trainerscodex.com/og-journey.jpg" />
 
     <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

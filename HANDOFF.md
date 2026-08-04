@@ -5,6 +5,60 @@ Claude Code. Read CLAUDE.md first for conventions and gotchas.
 
 ---
 
+## Sprint 5 addendum — Journey Mode (Aug 2026)
+
+**Journey Mode is built, tested, and behind a flag.** A 3–5 minute
+choose-your-path trainer career sim ending in a shareable Trainer Legend Card.
+Full design notes, analytics schema, KPI queries, and extension guide:
+[`docs/JOURNEY_MODE.md`](docs/JOURNEY_MODE.md).
+
+- `JOURNEY_MODE` ships **on**. `JOURNEY_MERCH_CTA` ships **off**.
+- Bundle cost: **+30.0 KB gzipped** (budget was 150 KB).
+- Tests: **106 unit (vitest, new) + 75 browser (48 pre-existing + 27 new)**.
+- `vitest` added as a dev dependency — the repo had no non-browser test runner.
+
+### Two things a reader of this file should know
+
+**1. Sprint 0 did not happen, and it is a stated gate.** The sprint brief made
+live Stripe (Aug 7) and R2 → Printful (Aug 12) hard-dated prerequisites, on the
+argument that "clones can copy the game but not the funnel" is false while the
+funnel's money legs are broken. Neither was actionable without live credentials
+and dashboard access. The worker code exists (`worker/src/stripe.ts`,
+`worker/src/printful.ts`, R2 binding declared in `worker/wrangler.toml`); what's
+missing is credentials plus the manual charge/refund and draft-order runs.
+
+The consequence is contained by design: the builder-handoff leg of the funnel
+works and is tested, the merch leg is flag-hidden, and there are no dead
+buttons. But **half the defensibility thesis is currently unproven.**
+
+**2. No fal.ai integration exists in this repository.** Sprint 0 item #3 asked
+to fix or flag-hide a fal.ai trainer-card AI feature. A grep across `src/`,
+`worker/`, and the docs finds no fal.ai reference, no AI image generation, and
+no trainer-card AI feature — only CLAUDE.md and README noting "no AI image gen
+at runtime." Either it lives elsewhere or it was never built here. Worth
+confirming rather than assuming.
+
+### Also fixed in passing
+
+The header action row overflowed the viewport horizontally on mobile — 428 px
+against a 360 px viewport **before** Journey Mode added an eleventh button.
+`shrink-0` pinned it at max-content so nothing could give. It now wraps. This
+was pre-existing, not introduced.
+
+### Still required before the Aug 26 public launch
+
+- **IP counsel sign-off** on §4(a)–(d) of the brief. `JOURNEY_MERCH_CTA` stays
+  off until the paid-merch silhouette question (b) clears, independently of R2.
+  The degradation path is built: flipping `JOURNEY_SPECIES_FLAVOR` off swaps all
+  species names for type/role descriptors as a pure data change.
+- **Create the `journey_events` table** in Supabase (DDL in the Journey doc).
+  Until it exists, analytics no-op silently — nothing is being lost, but
+  nothing is being measured either, and the sprint's two KPIs are share rate and
+  builder-handoff rate.
+- PT and JA translations (structure ships; EN and ES are complete).
+
+---
+
 ## TL;DR
 
 The project is functionally **v5** but documentation/deployment is incomplete.
