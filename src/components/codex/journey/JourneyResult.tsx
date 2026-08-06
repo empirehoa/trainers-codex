@@ -12,8 +12,8 @@ import { renderLegendCard } from '@/journey/legend-card';
 import { buildDailyLink, buildSeedLink } from '@/journey/deeplink';
 import { dailyIssueNumber } from '@/journey/prng';
 import {
-  canShareFile, copyImageToClipboard, copyTextToClipboard, downloadBlob,
-  fileFromBlob, legendCardFilename, shareLegendCard,
+  buildEmojiSummary, canShareFile, copyImageToClipboard, copyTextToClipboard,
+  downloadBlob, fileFromBlob, legendCardFilename, shareLegendCard,
 } from '@/journey/share';
 import { track, type ShareMethod } from '@/journey/analytics';
 import type { JourneyRun } from '@/journey/types';
@@ -57,8 +57,12 @@ export function JourneyResult({
     region: String(run.chapters[0]?.vars.region ?? ''),
   });
 
-  const shareText = useMemo(() => (
-    isDaily
+  // Wordle-style emoji strip leads the text share: it's the part that reads as
+  // a "result" when pasted into Discord/X, and it stays spoiler-free for the
+  // day's seed. The localized sentence + link follow it.
+  const shareText = useMemo(() => {
+    const strip = buildEmojiSummary(run);
+    const sentence = isDaily
       ? t('journey.share.dailyText', {
           issue: dailyIssueNumber(run.setup.dailyDate!),
           verdict: verdictText,
@@ -70,8 +74,9 @@ export function JourneyResult({
           score: run.score,
           seed: run.setup.seed,
           url: shareUrl,
-        })
-  ), [isDaily, run, shareUrl, t, verdictText]);
+        });
+    return `${strip}\n${sentence}`;
+  }, [isDaily, run, shareUrl, t, verdictText]);
 
   const filename = legendCardFilename(run.setup.trainerName, run.setup.seed);
 

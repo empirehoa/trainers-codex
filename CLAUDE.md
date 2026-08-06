@@ -146,14 +146,17 @@ reads `dist/index.html`, swaps the `<link>` and `<script>` tags for inline
 
 ## Test commands
 
-Tests are committed under `tests/` (Puppeteer, drives the built `bundle.html`)
-and colocated `*.test.ts` files under `src/` (vitest, pure logic). **181 tests
-must pass before shipping:**
+Tests are committed under `tests/` (Puppeteer, drives the built `bundle.html`),
+colocated `*.test.ts` files under `src/` (vitest, pure logic — scoped by
+`vitest.config.ts`; do NOT let vitest glob `worker/`), and `worker/test/`
+(node:test suites, run inside `worker/`). **All three layers must pass before
+shipping:**
 
 ```bash
-pnpm test:all      # both layers — what `pnpm ship` runs
-pnpm test:unit     # vitest · 106 tests · engine, i18n, deeplink, streak, analytics
-pnpm test:browser  # puppeteer · 7 suites / 75 tests
+pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
+pnpm test:unit     # vitest · 123 tests · engine, i18n, deeplink, streak, analytics, paste-url, share summary
+pnpm test:browser  # puppeteer · 18 suites / 168 tests (incl. 27 Journey Mode)
+(cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
 
 Prefer a **vitest** test for anything that doesn't need a DOM — it runs in
@@ -266,6 +269,26 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     layer exists so tests and QA can exercise both sides of a flag without
     editing the bundle; the config layer exists so a deploy can flip one
     without a rebuild. Don't memoise them.
+
+18. **The browse grid is windowed — never render `visible` directly.** The
+    grid mounts `renderedGrid` (`visible.slice(0, renderCount)`, window 240)
+    and grows via an IntersectionObserver sentinel. Mounting all 1,307 cards
+    was measured at 1,578ms boot / 28MB heap vs 673ms / 17MB windowed
+    (`tests/bench-boot.mjs`). The "N results" counter still reads
+    `visible.length`. `PokemonCard` is `React.memo` with handlers that take
+    the Pokémon as an argument — keep callbacks passed to it referentially
+    stable or the memo is dead weight.
+
+19. **There is no pnpm workspace.** `pnpm-workspace.yaml` was removed (it
+    shipped with malformed placeholder content and broke every `pnpm`
+    command under pnpm 9). Root and `worker/` are separate installs; use
+    `pnpm install` at root and `pnpm install --ignore-workspace` in
+    `worker/`. In sandboxes without network Chrome downloads, install with
+    `PUPPETEER_SKIP_DOWNLOAD=1` — the harness resolves a system Chromium.
+
+20. **vitest must not glob `worker/`.** `worker/test/*.test.ts` are node:test
+    suites; vitest reports "No test suite found" on them. `vitest.config.ts`
+    scopes vitest to `src/**/*.test.ts` — keep it that way.
 
 ## Code style conventions
 

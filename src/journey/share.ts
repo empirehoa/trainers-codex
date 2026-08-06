@@ -149,3 +149,51 @@ export function legendCardFilename(trainerName: string, seed: number): string {
   const slug = trainerName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'trainer';
   return `${slug}-legend-${seed}.png`;
 }
+
+// ============================================================
+// EMOJI SHARE SUMMARY
+// ============================================================
+//
+// Wordle taught the whole category one lesson: a share that pastes as a compact,
+// spoiler-free emoji strip travels through Discord/X/iMessage with zero friction,
+// and the *shape* of the result is the hook — not the details. Squirdle's
+// 🟩🟥🟨 key and Immaculate Grid's rarity line are the same move. This is the
+// text half of the Legend Card share: the PNG wins Instagram, the strip wins
+// chat. Deliberately reveals nothing about the day's seed content (encounters,
+// routes, story beats) so it never spoils the shared daily.
+
+/** Max badge slots drawn on the strip — one gym circuit. */
+const BADGE_SLOTS = 8;
+
+/**
+ * Pure, deterministic emoji summary of a finished run.
+ *
+ * Line 1: badge progress as a filled/empty strip (the "grid").
+ * Line 2: career superlatives, only the ones that happened (no zero-noise).
+ */
+export function buildEmojiSummary(run: {
+  stats: {
+    badges: number;
+    titles: number;
+    shinies: number;
+    peakRank: number;
+    wins: number;
+    losses: number;
+  };
+  chapterCount: number;
+  score: number;
+}): string {
+  const { badges, titles, shinies, peakRank, wins, losses } = run.stats;
+  const filled = Math.max(0, Math.min(badges, BADGE_SLOTS));
+  const strip = '🏅'.repeat(filled) + '◽'.repeat(BADGE_SLOTS - filled);
+
+  const parts: string[] = [];
+  if (titles > 0) parts.push(`🏆×${titles}`);
+  if (shinies > 0) parts.push(`✨×${shinies}`);
+  if (peakRank > 0 && peakRank < 999) parts.push(`📈#${peakRank}`);
+  const total = wins + losses;
+  if (total > 0) parts.push(`⚔️${Math.round((wins / total) * 100)}%`);
+  parts.push(`🎂${run.chapterCount}yr`);
+
+  return `${strip}\n${parts.join(' · ')}`;
+}

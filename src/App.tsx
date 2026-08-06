@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import {
   Search, BarChart3, ArrowUpDown,
   Share2, Grid3x3, Filter as FilterIcon,
@@ -499,8 +499,12 @@ export default function App() {
   }, [session, trainer, savedTeams]);
 
   // ---------- Derived list ----------
+  // Deferred search: filtering 1,307 entries is cheap, but the re-render it
+  // triggers isn't. Deferring lets React keep the input responsive and batch
+  // the grid update behind it (React 19 concurrent rendering).
+  const deferredSearch = useDeferredValue(search);
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     let list = POKEMON_LIST.map(p => POKEMON_BY_ID[p.id]).filter(Boolean);
     if (q) list = list.filter(p => p.name.includes(q) || String(p.id) === q || p.display.toLowerCase().includes(q));
     if (filterTypes.length) list = list.filter(p => filterTypes.every(t => p.types.includes(t)));
@@ -528,7 +532,36 @@ export default function App() {
       return ((a.stats[sortBy as keyof Stats] ?? 0) - (b.stats[sortBy as keyof Stats] ?? 0)) * dir;
     });
     return list;
-  }, [search, filterTypes, filterGens, filterRoles, filterCategory, sortBy, sortDir]);
+  }, [deferredSearch, filterTypes, filterGens, filterRoles, filterCategory, sortBy, sortDir]);
+
+  // ---------- Windowed grid ----------
+  // Mounting all 1,307 cards at once was the app's single biggest jank source:
+  // ~1.3k component trees + sprite <img> nodes on first paint. Render the
+  // first window immediately and grow it as the sentinel scrolls into view.
+  // visible.length (the "N results" counter) is untouched by this.
+  const GRID_WINDOW = 240;
+  const [renderCount, setRenderCount] = useState(GRID_WINDOW);
+  // Reset the window when the result set changes — done during render (React's
+  // documented "adjust state when props change" pattern) rather than in an
+  // effect, so the shrink happens in the same pass with no cascading render.
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (prevVisible !== visible) {
+    setPrevVisible(visible);
+    setRenderCount(GRID_WINDOW);
+  }
+  const gridSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = gridSentinelRef.current;
+    if (!el || renderCount >= visible.length) return;
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) {
+        setRenderCount(c => Math.min(c + GRID_WINDOW, visible.length));
+      }
+    }, { rootMargin: '1200px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [renderCount, visible.length]);
+  const renderedGrid = useMemo(() => visible.slice(0, renderCount), [visible, renderCount]);
 
   // ---------- Undo helper ----------
   const pushUndo = useCallback((prev: (TeamMember | null)[]) => {
@@ -1292,12 +1325,12 @@ export default function App() {
 
         {/* ============== GRID ============== */}
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-          {visible.map(p => {
+          {renderedGrid.map(p => {
             const legality = formatActive ? checkLegality(p, ruleset) : null;
             return (
               <PokemonCard key={p.id} p={p}
-                onSelect={() => setSelected(p)}
-                onAdd={() => addToTeam(p)}
+                onSelect={setSelected}
+                onAdd={addToTeam}
                 inTeam={teamIds.has(p.id)}
                 teamFull={teamFull}
                 illegal={legality ? !legality.legal : false}
@@ -1305,6 +1338,12 @@ export default function App() {
             );
           })}
         </div>
+        {/* Sentinel: grows the windowed grid as it approaches the viewport. */}
+        {renderCount < visible.length && (
+          <div ref={gridSentinelRef} className="py-6 text-center font-mono text-[10px] text-muted-foreground" data-testid="grid-sentinel">
+            // loading {visible.length - renderCount} more…
+          </div>
+        )}
 
         {visible.length === 0 && (
           <div className="text-center py-16 font-mono text-xs text-muted-foreground">

@@ -2,10 +2,11 @@
 
 > Pokémon team builder + coverage analyzer + poster generator + print-on-demand merch — all in **one self-contained HTML file**.
 
-[![status](https://img.shields.io/badge/status-v5_live-emerald)](https://trainerscodex.com)
-[![bundle](https://img.shields.io/badge/bundle-1.21_MB-blue)](#)
+[![status](https://img.shields.io/badge/status-v7_(v6_live_%2B_journey)-emerald)](https://trainerscodex.com)
+[![bundle](https://img.shields.io/badge/bundle-1.87_MB-blue)](#)
 [![mons](https://img.shields.io/badge/pok%C3%A9mon-1%2C307-orange)](#)
-[![tests](https://img.shields.io/badge/tests-48%2F48-green)](#)
+[![tests](https://img.shields.io/badge/tests-310%2F310-green)](#)
+[![boot](https://img.shields.io/badge/boot-673ms_(2.3%C3%97_faster)-purple)](#)
 
 A single 1.21 MB `bundle.html` — zero install, zero accounts, works offline.
 Drag-drop the file onto any web server and it just runs. Auth and cloud sync

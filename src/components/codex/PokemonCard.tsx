@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Plus, Check, Star, Sparkles } from 'lucide-react';
 import type { Pokemon } from '@/lib/types';
 import { TYPE_COLORS } from '@/lib/constants';
@@ -7,8 +8,11 @@ import { cn } from '@/lib/utils';
 
 interface PokemonCardProps {
   p: Pokemon;
-  onSelect: () => void;
-  onAdd: () => void;
+  // Handlers receive the Pokémon so the parent can pass ONE stable callback to
+  // all 1,300 cards instead of minting a fresh closure per card per render —
+  // that identity stability is what lets React.memo below actually skip work.
+  onSelect: (p: Pokemon) => void;
+  onAdd: (p: Pokemon) => void;
   inTeam: boolean;
   teamFull: boolean;
   // When set, the mon is banned by the active format. It stays visible (so the
@@ -36,7 +40,10 @@ const FORM_BADGES: Record<string, { label: string; color: string }> = {
   form:        { label: 'FORM',   color: '#64748b' },
 };
 
-export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, illegalReason }: PokemonCardProps) {
+// memo: the grid holds up to 1,307 of these; without it every keystroke in the
+// search box re-renders the entire mounted set. With stable handlers from App,
+// only cards whose props actually changed re-render.
+export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, illegalReason }: PokemonCardProps) {
   const primary = TYPE_COLORS[p.types[0]];
   const disabled = inTeam || teamFull || !!illegal;
   const badge = p.form ? FORM_BADGES[p.form] : null;
@@ -55,7 +62,7 @@ export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, ill
         background: `linear-gradient(180deg, ${primary}11 0%, hsl(var(--card)) 80%)`,
       }}
     >
-      <button onClick={onSelect} className="w-full text-left p-2.5">
+      <button onClick={() => onSelect(p)} className="w-full text-left p-2.5">
         <div className="flex items-start justify-between mb-1 gap-1">
           <span className="font-mono text-[9px] text-muted-foreground">{padId(p.id)}</span>
           <div className="flex items-center gap-1">
@@ -76,6 +83,7 @@ export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, ill
             src={pixelSprite(p.id)}
             alt={p.display}
             loading="lazy"
+            decoding="async"
             className="pixel-img w-full h-full object-contain p-1 group-hover:scale-110 transition-transform"
           />
           {badge && (
@@ -103,7 +111,7 @@ export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, ill
         </div>
       </button>
       <button
-        onClick={(e) => { e.stopPropagation(); if (!disabled) onAdd(); }}
+        onClick={(e) => { e.stopPropagation(); if (!disabled) onAdd(p); }}
         disabled={disabled}
         aria-label={inTeam ? 'In team' : 'Add to team'}
         className={cn(
@@ -120,4 +128,4 @@ export function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, ill
       </button>
     </div>
   );
-}
+});

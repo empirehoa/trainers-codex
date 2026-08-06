@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import type { TeamMember } from '@/lib/types';
 import { parsePokePaste, exportPokePaste } from '@/lib/showdown';
+import { isPasteUrl, fetchPasteText } from '@/lib/paste-url';
 
 interface ShowdownImportDialogProps {
   open: boolean;
@@ -30,12 +31,13 @@ Jolly Nature
 export function ShowdownImportDialog({ open, onClose, members, onImport }: ShowdownImportDialogProps) {
   const [paste, setPaste] = useState('');
   const [copied, setCopied] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
   const exported = useMemo(() => exportPokePaste(members), [members]);
   const hasTeam = members.some(Boolean);
 
-  const doImport = () => {
-    const parsed = parsePokePaste(paste);
+  const importText = (text: string) => {
+    const parsed = parsePokePaste(text);
     if (!parsed.length) {
       toast.error('no valid Pokémon found — check the paste format');
       return;
@@ -44,6 +46,28 @@ export function ShowdownImportDialog({ open, onClose, members, onImport }: Showd
     toast.success(`imported ${parsed.length} Pokémon from Showdown`);
     setPaste('');
     onClose();
+  };
+
+  const doImport = async () => {
+    // Users share LINKS, not text walls — accept a pokepast.es / PokeBin /
+    // Showdown-teams URL directly. Those hosts don't guarantee CORS, so a
+    // failed fetch degrades to a clear instruction rather than a dead end.
+    if (isPasteUrl(paste)) {
+      setFetching(true);
+      try {
+        const text = await fetchPasteText(paste);
+        if (text) {
+          setPaste(text);
+          importText(text);
+        } else {
+          toast.error('couldn\'t fetch that link (the paste site blocks cross-site reads) — open it, copy the team text, and paste it here');
+        }
+      } finally {
+        setFetching(false);
+      }
+      return;
+    }
+    importText(paste);
   };
 
   const doCopy = async () => {
@@ -76,8 +100,10 @@ export function ShowdownImportDialog({ open, onClose, members, onImport }: Showd
           <TabsContent value="import" className="mt-3 space-y-2">
             <p className="font-mono text-[10px] text-muted-foreground leading-relaxed">
               // paste a team from Pokémon Showdown, PokePaste, Pikalytics, or any
-              tool that exports the standard text format. Forms, held items,
-              abilities, Tera type, EVs/IVs, nature, and all 4 moves are imported.
+              tool that exports the standard text format — or drop a
+              pokepast.es / PokeBin / Showdown-teams LINK and we'll fetch it.
+              Forms, held items, abilities, Tera type, EVs/IVs, nature, and all
+              4 moves are imported.
             </p>
             <Textarea
               data-testid="sd-import-text"
@@ -92,10 +118,10 @@ export function ShowdownImportDialog({ open, onClose, members, onImport }: Showd
                       className="font-mono text-[10px] text-muted-foreground">
                 load sample
               </Button>
-              <Button data-testid="sd-import-btn" onClick={doImport} disabled={!paste.trim()}
+              <Button data-testid="sd-import-btn" onClick={doImport} disabled={!paste.trim() || fetching}
                       className="font-mono text-xs font-bold">
                 <ClipboardPaste size={13} className="mr-1.5" />
-                Import team
+                {fetching ? 'Fetching…' : isPasteUrl(paste) ? 'Fetch & import' : 'Import team'}
               </Button>
             </div>
           </TabsContent>
