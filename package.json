@@ -9,7 +9,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node tests/run-all.mjs",
-    "ship": "pnpm build && node inline.mjs && pnpm test"
+    "ship": "pnpm build && node inline.mjs && pnpm test:all",
+    "test:unit": "vitest run",
+    "test:browser": "node tests/run-all.mjs",
+    "test:all": "vitest run && node tests/run-all.mjs",
+    "og": "node scripts/make-og-image.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -74,6 +78,7 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.10"
   }
 }

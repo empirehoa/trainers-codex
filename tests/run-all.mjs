@@ -25,6 +25,7 @@ const SUITES = [
   'test-formats.mjs',
   'test-pwa.mjs',
   'test-v6-badges.mjs',
+  'test-journey.mjs',
 ];
 
 let totalPassed = 0;

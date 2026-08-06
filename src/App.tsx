@@ -3,7 +3,7 @@ import {
   Search, BarChart3, ArrowUpDown,
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
-  User, Wand2, ShoppingBag, LogIn, Cloud,
+  User, Wand2, ShoppingBag, LogIn, Cloud, Compass,
   Sun, Moon, Sparkles, ClipboardList, Globe, MoreHorizontal
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -78,8 +78,21 @@ import {
 import { getProfileClient } from '@/lib/profiles-client';
 import { sanitizeListingTitle } from '@/lib/merch';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
+import { JourneyModeDialog } from '@/components/codex/journey/JourneyModeDialog';
 import { auth, type AuthSession } from '@/lib/auth';
+import { isEnabled } from '@/lib/flags';
+import { parseCurrentJourneyLink } from '@/journey/deeplink';
+import { renderLegendCardPrint } from '@/journey/legend-card';
+import { downloadBlob, legendCardFilename } from '@/journey/share';
+import { track } from '@/journey/analytics';
+import { useI18n } from '@/i18n/useI18n';
+import type { JourneyRun } from '@/journey/types';
 import { cn } from '@/lib/utils';
+
+// Deep-link params are read ONCE at module load, before any effect can rewrite
+// history. The team-code hash sync in this component calls replaceState on
+// mount, which would otherwise race the ?seed= read and drop a shared journey.
+const JOURNEY_LINK = parseCurrentJourneyLink();
 
 type CategoryFilter =
   | 'all' | 'normal' | 'legendary' | 'mythical' | 'special'
@@ -216,6 +229,12 @@ export default function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  // Auto-open when the URL is the Journey route or carries a shared seed —
+  // a shared link must land on the game, not on the builder.
+  const [journeyOpen, setJourneyOpen] = useState(
+    () => isEnabled('JOURNEY_MODE')
+      && (JOURNEY_LINK.isJourneyRoute || JOURNEY_LINK.seed !== null || JOURNEY_LINK.hadInvalidParams),
+  );
   const [session, setSession] = useState<AuthSession | null>(null);
   // v6 public profiles: which /u/<handle> route is active (null = the app), and
   // the resolved ProfileClient (null until the cloud SDK loads, or forever when
@@ -230,6 +249,7 @@ export default function App() {
   const [undoStack, setUndoStack] = useState<(TeamMember | null)[][]>([]);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const { t, locale } = useI18n();
 
   // ---------- Derived team (Pokémon objects) ----------
   const team = useMemo(() => membersToTeam(members), [members]);
@@ -604,6 +624,58 @@ export default function App() {
     setSheet(false);
   }, [team, members, pushUndo, legalPool]);
 
+  // ---------- Journey Mode handoffs ----------
+
+  /**
+   * CTA 1 — load the finished career's six into the builder.
+   *
+   * This is the leg of the funnel a clone cannot copy: the Legend Card ends in
+   * a real, tunable team inside a real analyzer. Shinies carry over; movesets
+   * are left to the builder's STAB-aware auto-fill.
+   */
+  const handleJourneyHandoff = useCallback((run: JourneyRun) => {
+    pushUndo(members);
+    const next: (TeamMember | null)[] = run.roster
+      .slice(0, 6)
+      .map(entry => (POKEMON_BY_ID[entry.id] ? { id: entry.id, shiny: entry.shiny } : null));
+    while (next.length < 6) next.push(null);
+    setMembers(next);
+    setTeamName(`${run.setup.trainerName} · ${t(run.verdict.titleKey, { region: '' }).trim()}`);
+    setJourneyOpen(false);
+    track({
+      event: 'builder_handoff',
+      score: run.score,
+      verdict: run.verdict.id,
+      seed: run.setup.seed,
+    });
+    toast.success(t('journey.cta.builder'));
+  }, [members, pushUndo, t]);
+
+  /**
+   * CTA 2 — print the Legend Card. Reached only when JOURNEY_MERCH_CTA is on.
+   *
+   * Mirrors the shipped Merch Studio order flow: generate the 300 DPI print
+   * file, hand it to the user, and open the studio so they can pick a product.
+   * The one-click Printful upload path needs the R2 bucket finished — see
+   * Sprint 0 item #2 in docs/JOURNEY_MODE.md.
+   */
+  const handleJourneyMerch = useCallback(async (run: JourneyRun) => {
+    track({
+      event: 'merch_cta_click',
+      score: run.score,
+      verdict: run.verdict.id,
+      seed: run.setup.seed,
+    });
+    try {
+      const printBlob = await renderLegendCardPrint({ run, locale, target: 'poster11x14' });
+      downloadBlob(printBlob, legendCardFilename(run.setup.trainerName, run.setup.seed));
+      handleJourneyHandoff(run);
+      setMerchOpen(true);
+    } catch {
+      toast.error(t('journey.result.renderFailed'));
+    }
+  }, [locale, handleJourneyHandoff, t]);
+
   // ---------- Library actions ----------
   const saveCurrentToLibrary = useCallback((name: string) => {
     // v6: free tier capped at 3 saved teams. Premium unlimited.
@@ -743,7 +815,9 @@ export default function App() {
           <TooltipProvider delayDuration={150}>
             <div className="flex items-center gap-1.5 shrink-0">
               {/* Desktop toolbar: full icon row (≥640px). The test harness runs
-                  at 1280px, so every icon button stays inline + queryable here. */}
+                  at 1280px, so every icon button stays inline + queryable here.
+                  Mobile gets the MoreHorizontal overflow menu instead, so this
+                  row never pushes the document into horizontal scroll. */}
               <div className="hidden sm:flex items-center gap-1.5">
               {undoStack.length > 0 && (
                 <Tooltip>
@@ -824,6 +898,20 @@ export default function App() {
                 </TooltipTrigger>
                 <TooltipContent>Type chart</TooltipContent>
               </Tooltip>
+              {isEnabled('JOURNEY_MODE') && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline" size="icon" onClick={() => setJourneyOpen(true)}
+                      className="w-8 h-8 border-primary/60 text-primary"
+                      data-testid="journey-open"
+                    >
+                      <Compass size={14} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('journey.title')} · {t('journey.tagline')}</TooltipContent>
+                </Tooltip>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -901,6 +989,9 @@ export default function App() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 font-mono text-xs">
                     <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">// actions</DropdownMenuLabel>
+                    {isEnabled('JOURNEY_MODE') && (
+                      <DropdownMenuItem onSelect={() => setJourneyOpen(true)} data-testid="journey-open-mobile"><Compass size={14} className="mr-2" /> {t('journey.title')}</DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onSelect={() => setAiOpen(true)}><Sparkles size={14} className="mr-2" /> AI Studio</DropdownMenuItem>
                     <DropdownMenuItem disabled={teamCount === 0} onSelect={() => setPosterOpen(true)}><Wand2 size={14} className="mr-2" /> Poster studio</DropdownMenuItem>
                     <DropdownMenuItem disabled={teamCount === 0} onSelect={() => setMerchOpen(true)}><ShoppingBag size={14} className="mr-2" /> Merch studio</DropdownMenuItem>
@@ -1366,6 +1457,15 @@ export default function App() {
         open={!!tcgPokemon} onClose={() => setTcgPokemon(null)}
         pokemon={tcgPokemon}
       />
+      {isEnabled('JOURNEY_MODE') && (
+        <JourneyModeDialog
+          open={journeyOpen}
+          onClose={() => setJourneyOpen(false)}
+          link={JOURNEY_LINK}
+          onBuilderHandoff={handleJourneyHandoff}
+          onMerch={(run) => { void handleJourneyMerch(run); }}
+        />
+      )}
     </div>
   );
 }

@@ -23,6 +23,13 @@
     <meta property="og:description" content="Build, analyze, and ship a Pokémon team across 1,300+ entries. Type coverage, threat detection, AI trainer cards, and print-on-demand merch — all in one tool." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://trainerscodex.com/" />
+<!--
+      Default OG tags cover the builder at "/". The worker rewrites og:* and
+      twitter:* to the Journey Mode share card (og-journey.jpg, copy that
+      deliberately omits "Pokémon") for requests to /journey — see
+      worker/src/index.ts. Regenerate public/og-journey.jpg via
+      `node scripts/make-og-image.mjs` if the Journey copy changes.
+    -->
     <meta property="og:image" content="https://trainerscodex.com/og-image.png" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="800" />

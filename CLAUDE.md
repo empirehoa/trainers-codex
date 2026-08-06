@@ -74,7 +74,31 @@ src/
       TrainerProfileDialog.tsx
       TypeChartDialog.tsx
       TypePill.tsx
+      journey/                     ← v6 — Journey Mode UI (see docs/JOURNEY_MODE.md)
+        JourneyModeDialog.tsx      ← shell + state machine
+        JourneySetup.tsx
+        JourneyDecision.tsx        ← also exports ProgressHeader + StatStrip
+        JourneyRecap.tsx
+        JourneyResult.tsx          ← retired beat, card, share tiers, CTAs
+  journey/                         ← v6 — the sim. Pure TS, no React, no DOM.
+    prng.ts                        ← mulberry32, FNV-1a, seed coercion, local dates
+    types.ts
+    content.ts                     ← regions, decision cards, verdicts, flavor layer
+    engine.ts                      ← simulate(setup, choices) — pure + deterministic
+    scoring.ts                     ← archetype-weighted 0-999 + verdict resolution
+    deeplink.ts                    ← ?seed= / ?daily= parse + build
+    streak.ts                      ← daily streak, stored as local date strings
+    analytics.ts                   ← fire-and-forget Supabase REST inserts
+    share.ts                       ← Web Share / clipboard / download tiers
+    legend-card.ts                 ← canvas renderer, 1080×1350 + 300 DPI
+    *.test.ts                      ← vitest, colocated
+  i18n/
+    strings.ts                     ← EN + ES complete; PT + JA seeded
+    useI18n.ts                     ← context + useI18n hook
+    I18nProvider.tsx               ← provider component (kept separate from the
+                                     hook: a file exporting both breaks Fast Refresh)
   lib/
+    flags.ts                       ← v6 — feature flags (defaults → config → ?ff=)
     analysis.ts                    ← defensive matrix, offensive coverage, threats, counter team, sharecode
     auth.ts                        ← v5 — Supabase adapter loaded from CDN only if config present
     compatibility.ts               ← form-aware game compat (megas excluded from Switch-era, etc.)
@@ -92,6 +116,16 @@ src/
     moves.json                     ← 919 moves, ~92KB
     species.json                   ← ~56KB
 inline.mjs                         ← bundle.html generator (regex-based Vite dist inliner)
+scripts/
+  make-og-image.mjs                ← renders public/og-journey.jpg via puppeteer (`pnpm og`)
+public/
+  _headers                         ← Cloudflare CSP + security headers
+  _redirects                       ← 200 rewrite for /journey (preserves ?seed=)
+  og-journey.jpg                   ← static OG card, 1200×630 (not inlined into the bundle)
+tests/
+  harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
+  run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
+  test-*.mjs                       ← 7 suites, 75 tests
 ```
 
 ## Build + bundle workflow
@@ -112,22 +146,26 @@ reads `dist/index.html`, swaps the `<link>` and `<script>` tags for inline
 
 ## Test commands
 
-Tests live in `/tmp/test-*.mjs` (Puppeteer + headless Chrome). They load
-`bundle.html` from `file://` and exercise real UI flows. **48 tests must pass
-before shipping:**
+Tests are committed under `tests/` (Puppeteer, drives the built `bundle.html`)
+and colocated `*.test.ts` files under `src/` (vitest, pure logic). **181 tests
+must pass before shipping:**
 
 ```bash
-cp bundle.html /tmp/bundle-test.html
-node /tmp/test-v4.mjs              # 12 core tests (cards, search, save/load, sheet, library, help)
-node /tmp/test-v4-features.mjs     # 12 v4 features (legendary filter, shiny, profile, game compat, poster studio)
-node /tmp/test-v5.mjs              # 12 v5 features (forms, badges, live coverage, tera, 12 styles, form-aware compat)
-node /tmp/test-v5-extras.mjs       # 12 v5 extras (sign-in, merch studio, product picker, customization, preview)
-node /tmp/test-posters.mjs         # 8 v4 poster renders
-node /tmp/test-posters-v5.mjs      # 12 poster renders (v4 + v5)
+pnpm test:all      # both layers — what `pnpm ship` runs
+pnpm test:unit     # vitest · 106 tests · engine, i18n, deeplink, streak, analytics
+pnpm test:browser  # puppeteer · 7 suites / 75 tests
 ```
 
-If `/tmp/test-*` doesn't exist after a Claude Code restore, the canonical
-versions are described in HANDOFF.md and can be regenerated.
+Prefer a **vitest** test for anything that doesn't need a DOM — it runs in
+milliseconds instead of seconds, and pure modules (the Journey engine, date
+handling, link parsing) can be swept over thousands of inputs at that speed.
+Reach for Puppeteer when the assertion is genuinely about rendering, browser
+APIs, or the built bundle.
+
+The browser harness (`tests/harness.mjs`) blocks all non-`file://` requests, so
+the suite doubles as the offline-path check. It resolves a system Chromium when
+puppeteer's bundled download was skipped — set `PUPPETEER_EXECUTABLE_PATH` to
+override.
 
 ## Hard-won gotchas
 
@@ -183,6 +221,51 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
 10. **The `category` filter chip lives in a `<FilterGroup>`.** Don't move the
     category logic into the main filter block — the chip-rendering pattern is
     `[CategoryFilter, string][]` tuples mapped to buttons. See `App.tsx`.
+
+11. **`new Image()` has no timeout.** `onerror` fires for a refused or 404'd
+    request, but a request that merely *hangs* (captive portal, dead proxy,
+    throttled mobile, sprite mirror rate-limiting) never settles either way — so
+    an `await` on it blocks forever and the user watches a spinner. Every sprite
+    load in a render path needs an explicit timer that rejects and falls back.
+    See `journey/legend-card.ts` `SPRITE_TIMEOUT_MS`.
+
+12. **A `file://` origin serialises as `"file://"` with no host.** Anything that
+    builds a shareable URL from `window.location.origin` must check for a real
+    `http(s)` origin and fall back to the canonical host, or it prints
+    `file://journey?seed=8843` onto a card. This matters here specifically
+    *because* opening `bundle.html` locally is a supported use case. See
+    `journey/deeplink.ts` `resolveOrigin`.
+
+13. **Radix keeps dialog content mounted through its exit animation.** After
+    closing a dialog the node is still in the DOM with `data-state="closed"` for
+    a few hundred ms. In tests, poll for `!el || data-state === "closed"` —
+    a fixed `sleep()` races the animation and flakes.
+
+14. **First-match tables are order-dependent, and silently so.** The Journey
+    verdict table is walked top-down and returns the first match, so a
+    cross-archetype entry placed below an archetype's lower tiers can never
+    fire. This shipped as a bug in the first draft (`CULT HERO` sat under
+    `BRAWLER`, so no Aggro player could ever get it). Keep such tables ordered
+    by descending threshold, conditional entries first at equal thresholds, and
+    say so in a comment above the array.
+
+15. **Don't short-circuit interpolation on a missing vars object.**
+    `interpolate(tpl, vars)` must run the replace even when `vars` is
+    `undefined`, or a caller that forgot to pass one leaves a literal `{seed}`
+    on screen. See `i18n/strings.ts`.
+
+16. **New i18n keys need an audit test, not vigilance.** Content tables
+    reference translation keys as bare strings, so TypeScript can't catch a
+    typo and the failure mode is a raw `journey.verdict.x.title` rendered in
+    the middle of a share card. `i18n/strings.test.ts` enumerates every key the
+    content layer can emit and asserts it resolves — extend it when you add a
+    content table.
+
+17. **Feature flags read at call time, never cached.** `lib/flags.ts` resolves
+    defaults → `window.TRAINERS_CODEX_CONFIG.flags` → `?ff=NAME:0|1`. The URL
+    layer exists so tests and QA can exercise both sides of a flag without
+    editing the bundle; the config layer exists so a deploy can flip one
+    without a rebuild. Don't memoise them.
 
 ## Code style conventions
 

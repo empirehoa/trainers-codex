@@ -68,6 +68,25 @@ icon set), so deploying the `public/` folder alongside the bundle is all it take
 - Trainer name + avatar + signature Pokémon + motto baked into each poster.
 - One-click PNG download.
 
+### Journey Mode (free) — a 3-minute trainer career sim
+
+- Pick a name, region, starter, playstyle, and pace, then live a full career
+  from age 10 to retirement in **12–20 chapters**. No battles are played; the
+  sim stops at turning points and asks one question with 2–4 options.
+- **Seeded and deterministic.** The same seed plus the same choices always
+  produces the same career, so a run is shareable and replayable.
+- Ends in a **Trainer Legend Card** — an archetype verdict
+  ("THE UNDEFEATED", "CULT HERO OF KANTO"), your final six as silhouettes,
+  career stats, a 0–999 score, and a **playable link back to the same seed**
+  baked into the pixels. Share via Web Share / clipboard / download.
+- **Daily Journey.** One shared seed per calendar day, with a local streak
+  counter. Everyone plays the same journey; only the choices differ.
+- Two CTAs on the result: open the final six **in the builder**, and (behind a
+  flag) print the card as merch.
+- Multi-language: English and Spanish complete, Portuguese and Japanese seeded.
+
+Full design notes: [`docs/JOURNEY_MODE.md`](docs/JOURNEY_MODE.md).
+
 ### Print-on-demand merch (Merch Studio) — 12 products × 4 designs
 
 - **Products**: Bella+Canvas tee · Gildan heavy cotton tee · Gildan heavy
@@ -254,20 +273,39 @@ monetization-playbook.md           ← merch math, launch funnel, growth plan
 
 ## Testing
 
-Test suites live under `tests/` and exercise the built `bundle.html` via
-Puppeteer + headless Chrome. 48 tests must pass before shipping:
+Two layers. **181 tests must pass before shipping.**
 
 ```bash
-cp bundle.html /tmp/bundle-test.html
-pnpm test                          # runs all 6 suites
-# or individually:
-node tests/test-v4.mjs             # 12 core
-node tests/test-v4-features.mjs    # 12 v4 features
-node tests/test-v5.mjs             # 12 v5 features
-node tests/test-v5-extras.mjs      # 12 v5 extras (sign-in, merch, etc.)
-node tests/test-posters.mjs        # 8 v4 poster renders
-node tests/test-posters-v5.mjs     # 12 v5 poster renders (4 v4 + 8 v5)
+pnpm test:all      # both layers — this is what `pnpm ship` runs
+pnpm test:unit     # vitest · 106 tests · pure logic, no browser
+pnpm test:browser  # puppeteer · 7 suites / 75 tests · drives the built bundle.html
 ```
+
+**Unit tests (vitest)** cover the pure modules — the Journey engine's
+determinism, termination, and score bounds; date and seed handling; deep-link
+parsing; streak arithmetic across DST and timezone travel; the analytics
+payloads; and an i18n audit that fails if any translation key a content table
+can emit is missing.
+
+**Browser tests (Puppeteer + headless Chrome)** load the built `bundle.html`
+from `file://` and exercise real UI flows:
+
+```bash
+node tests/test-v4-core.mjs         # 12 core (cards, search, save/load, library, help)
+node tests/test-v4-features.mjs     # 12 v4 features
+node tests/test-v5-features.mjs     # 12 v5 features (forms, badges, tera, coverage)
+node tests/test-v5-extras.mjs       # 12 v5 extras (sign-in, merch studio)
+node tests/test-posters.mjs         # 12 poster renders
+node tests/test-stripe-printful.mjs #  6 payment + POD wiring
+node tests/test-journey.mjs         # 27 Journey Mode
+```
+
+All network is blocked in the browser suite, so it also proves the offline
+path — including that the Legend Card rasterises with no sprite access.
+
+If puppeteer's bundled Chromium wasn't downloaded (common in CI images that
+pre-provision a browser), set `PUPPETEER_EXECUTABLE_PATH`; the harness also
+probes the usual system locations automatically.
 
 ---
 
