@@ -18,7 +18,8 @@ import { parseCurrentJourneyLink } from '@/journey/deeplink';
 import { recordDailyPlay, currentStreak } from '@/journey/streak';
 import { track } from '@/journey/analytics';
 import type {
-  JourneyRun, JourneySetup as Setup, JourneyUiState, RecordedChoice, RunSource,
+  JourneyRun, JourneySetup as Setup, JourneyUiState, PrepareAction,
+  RecordedChoice, RunSource,
 } from '@/journey/types';
 import { JourneySetup } from './JourneySetup';
 import { JourneyDecision } from './JourneyDecision';
@@ -80,6 +81,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
   const [draft, setDraft] = useState<Setup>(() => setupFromLink(link));
   const [setup, setSetup] = useState<Setup | null>(null);
   const [choices, setChoices] = useState<RecordedChoice[]>([]);
+  const [actions, setActions] = useState<PrepareAction[]>([]);
   const [revealed, setRevealed] = useState(0);
   const [cardStage, setCardStage] = useState<'retired' | 'card'>('retired');
   const [sharedSeed, setSharedSeed] = useState<number | null>(
@@ -94,8 +96,8 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
 
   // ---------- the simulation snapshot ----------
   const snapshot = useMemo(
-    () => (setup ? simulate(setup, choices) : null),
-    [setup, choices],
+    () => (setup ? simulate(setup, choices, actions) : null),
+    [setup, choices, actions],
   );
 
   const uiState: JourneyUiState = useMemo(() => {
@@ -144,6 +146,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     dailyRecorded.current = false;
     setSetup(next);
     setChoices([]);
+    setActions([]);
     setRevealed(0);
     setCardStage('retired');
     track({
@@ -186,16 +189,40 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     }]);
   }, [snapshot]);
 
+  // A prepare-action (evolve / item / set-ace) is recorded like a choice and
+  // re-simulated immediately, so the party rail reflects it before the player
+  // commits to the decision. Session-only — never serialized into the seed link.
+  const pushAction = useCallback((action: PrepareAction) => {
+    setActions(prev => [...prev, action]);
+  }, []);
+
+  // Undo the most recent prepare-action at the CURRENT decision chapter only.
+  const undoPrep = useCallback(() => {
+    if (!snapshot?.decision) return;
+    const idx = snapshot.decision.chapterIndex;
+    setActions(prev => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].chapterIndex === idx) {
+          return [...prev.slice(0, i), ...prev.slice(i + 1)];
+        }
+      }
+      return prev;
+    });
+  }, [snapshot]);
+
   const undo = useCallback(() => {
-    setChoices(prev => prev.slice(0, -1));
+    if (!setup) return;
+    // Drop the last choice, and any prepare-actions taken at chapters at or
+    // beyond the decision we're returning to, so re-deciding starts clean.
+    const next = choices.slice(0, -1);
+    const boundary = next.length > 0 ? next[next.length - 1].chapterIndex : -1;
+    setChoices(next);
+    setActions(a => a.filter(x => x.chapterIndex <= boundary));
     // Rewind the reveal cursor to the start of the chapter block that the
     // undone choice produced, so the player re-reads what they're changing.
-    setRevealed(prev => {
-      if (!setup) return prev;
-      const { decisionEvery } = getPace(setup.pace);
-      return Math.max(0, prev - decisionEvery);
-    });
-  }, [setup]);
+    const { decisionEvery } = getPace(setup.pace);
+    setRevealed(prev => Math.max(0, prev - decisionEvery));
+  }, [setup, choices]);
 
   const continueOn = useCallback(() => {
     if (!snapshot) return;
@@ -208,7 +235,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     const acc = [...choices];
     // Bounded by MAX_CHAPTERS decisions; the guard is a runaway-loop backstop.
     for (let i = 0; i < 32; i++) {
-      const snap = simulate(setup, acc);
+      const snap = simulate(setup, acc, actions);
       if (snap.status !== 'awaiting-decision' || !snap.decision) {
         setChoices(acc);
         setRevealed(snap.chapters.length);
@@ -221,7 +248,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
       });
     }
     setChoices(acc);
-  }, [setup, choices]);
+  }, [setup, choices, actions]);
 
   const replay = useCallback(() => {
     if (!setup) return;
@@ -235,6 +262,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     setDraft(fresh);
     setSetup(null);
     setChoices([]);
+    setActions([]);
     setRevealed(0);
     setCardStage('retired');
   }, []);
@@ -311,17 +339,26 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
           <JourneyRecap
             chapters={unrevealed}
             chapterCount={snapshot.chapterCount}
+            roster={snapshot.roster}
+            dex={snapshot.dex}
             onContinue={continueOn}
             onSkipToEnd={snapshot.status === 'awaiting-decision' ? skipToEnd : null}
           />
         )}
 
-        {uiState === 'decision' && snapshot?.decision && (
+        {uiState === 'decision' && snapshot?.decision && snapshot.prepare && (
           <JourneyDecision
             decision={snapshot.decision}
             stats={snapshot.stats}
             chapterCount={snapshot.chapterCount}
+            roster={snapshot.roster}
+            dex={snapshot.dex}
+            inventory={snapshot.inventory}
+            prepare={snapshot.prepare}
+            actionsThisChapter={actions.filter(a => a.chapterIndex === snapshot.decision!.chapterIndex).length}
             onPick={pick_}
+            onAction={pushAction}
+            onUndoPrep={undoPrep}
             onUndo={choices.length > 0 ? undo : null}
           />
         )}

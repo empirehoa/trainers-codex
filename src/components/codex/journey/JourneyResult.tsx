@@ -312,17 +312,22 @@ export function JourneyResult({
 
       {/* ---- roster ---- */}
       <div>
-        <div className="text-[10px] font-mono uppercase tracking-widest mb-1.5 text-muted-foreground">
-          // {t('journey.result.roster')}
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+            // {t('journey.result.roster')}
+          </div>
+          <div className="text-[9px] font-mono text-muted-foreground" data-testid="journey-result-dex">
+            {t('journey.party.dexCount', { caught: run.dex.caught.length, seen: run.dex.seen.length })}
+          </div>
         </div>
-        <div className="grid grid-cols-6 gap-1">
-          {run.roster.map(entry => (
-            <div key={entry.id} className="rounded border p-1 text-center"
-                 style={{ borderColor: 'hsl(var(--border))' }}>
+        <div className="grid grid-cols-6 gap-1" data-testid="journey-result-roster">
+          {run.roster.map((entry, i) => (
+            <div key={`${entry.id}-${i}`} className="rounded border p-1 text-center relative"
+                 style={{ borderColor: i === 0 ? 'hsl(var(--primary))' : 'hsl(var(--border))' }}>
               <img src={pixelSprite(entry.id, entry.shiny)} alt="" width={40} height={40}
                    className="pixelated mx-auto" loading="lazy" />
               <div className="font-mono text-[8px] truncate text-muted-foreground">
-                {rosterCaption(entry.id)}
+                {rosterCaption(entry.id)}{entry.shiny ? ' ★' : ''}
               </div>
             </div>
           ))}

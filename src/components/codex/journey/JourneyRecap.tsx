@@ -2,19 +2,23 @@ import { ArrowRight, FastForward, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
 import { ProgressHeader, StatStrip } from './JourneyDecision';
+import { PartyRail } from './PartyRail';
 import { pixelSprite } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
-import type { ChapterResult } from '@/journey/types';
+import type { ChapterResult, DexState, RosterEntry } from '@/journey/types';
 
 interface Props {
   /** The chapters resolved since the player last looked. */
   chapters: ChapterResult[];
   chapterCount: number;
+  /** Live team + dex, so the six stays in view between decisions. */
+  roster: RosterEntry[];
+  dex: DexState;
   onContinue: () => void;
   onSkipToEnd: (() => void) | null;
 }
 
-export function JourneyRecap({ chapters, chapterCount, onContinue, onSkipToEnd }: Props) {
+export function JourneyRecap({ chapters, chapterCount, roster, dex, onContinue, onSkipToEnd }: Props) {
   const { t } = useI18n();
   const last = chapters[chapters.length - 1];
   if (!last) return null;
@@ -22,6 +26,8 @@ export function JourneyRecap({ chapters, chapterCount, onContinue, onSkipToEnd }
   return (
     <div className="p-4 space-y-4" data-testid="journey-recap">
       <ProgressHeader chapter={last.index + 1} total={chapterCount} age={last.age} />
+
+      <PartyRail roster={roster} dex={dex} />
 
       <div className="space-y-3">
         {chapters.map(ch => (

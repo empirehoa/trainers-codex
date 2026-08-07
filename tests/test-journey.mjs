@@ -597,6 +597,121 @@ const tests = [
         `analytics must no-op without config, saw: ${attempts.join(', ')}`);
     },
   },
+
+  // ---------- party / pokédex / prepare (v7) ----------
+
+  {
+    name: 'the party rail, dex grid and prepare panel all fit a 360px viewport',
+    pageOpts: { viewport: { width: 360, height: 720 } },
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      // Open both expandable surfaces — the worst case for narrow layouts.
+      await page.evaluate(() => {
+        document.querySelector('[data-testid="journey-dex-toggle"]')?.click();
+        document.querySelector('[data-testid="journey-prepare-toggle"]')?.click();
+      });
+      await sleep(200);
+      const o = await page.evaluate(() => ({
+        s: document.documentElement.scrollWidth,
+        c: document.documentElement.clientWidth,
+        party: !!document.querySelector('[data-testid="journey-party"]'),
+        dex: !!document.querySelector('[data-testid="journey-dex-grid"]'),
+        prep: !!document.querySelector('[data-testid="journey-prepare"]'),
+      }));
+      assert(o.party && o.dex && o.prep, 'party, dex and prepare should all render at 360px');
+      assert(o.s <= o.c + 2,
+        `journey party/prepare overflow at 360px: scrollWidth ${o.s} vs clientWidth ${o.c}`);
+    },
+  },
+
+  {
+    name: 'the party rail shows the six with the starter as ace, and a dex counter',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      assert(await has(page, '[data-testid="journey-party"]'), 'party rail should render on the decision');
+      // The starter occupies the ace slot at the first decision.
+      assert(await has(page, '[data-testid="journey-party-slot-0"]'), 'ace slot should be filled by the starter');
+      const dex = await page.$eval('[data-testid="journey-dex-toggle"]', el => el.innerText.trim());
+      assert(/caught/i.test(dex), `dex counter should read a caught count, got: ${dex}`);
+    },
+  },
+
+  {
+    name: 'the pokédex toggle opens a caught grid',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      assert(!(await has(page, '[data-testid="journey-dex-grid"]')), 'dex grid starts collapsed');
+      await page.evaluate(() => document.querySelector('[data-testid="journey-dex-toggle"]').click());
+      await sleep(120);
+      assert(await has(page, '[data-testid="journey-dex-grid"]'), 'dex grid should open on toggle');
+      const sprites = await page.evaluate(() =>
+        document.querySelectorAll('[data-testid="journey-dex-grid"] img').length);
+      assertGte(sprites, 1, 'caught grid should show at least the starter');
+    },
+  },
+
+  {
+    name: 'the prepare step opens and can evolve the starter at an eligible chapter',
+    async fn(page) {
+      await openJourney(page);
+      // Intense pace = a decision every chapter, so the starter clears the
+      // two-chapter hold gate on the third decision without skipping content.
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-intense"]').click());
+      await sleep(60);
+      // Kanto default starter is Bulbasaur (#1) → evolves into Ivysaur (#2).
+      await startRun(page);
+
+      let evolved = false;
+      for (let step = 0; step < 60 && !evolved; step++) {
+        if (await has(page, '[data-testid="journey-retired"]')) break;
+        // On a decision, try to open prepare and evolve the starter (#1 → #2).
+        if (await has(page, '[data-testid="journey-decision"]')) {
+          await page.evaluate(() => {
+            const t = document.querySelector('[data-testid="journey-prepare-toggle"]');
+            if (t) t.click();
+          });
+          await sleep(80);
+          const clicked = await page.evaluate(() => {
+            const b = document.querySelector('[data-testid="journey-evolve-1-2"]');
+            if (b && !b.disabled) { b.click(); return true; }
+            return false;
+          });
+          if (clicked) { await sleep(150); evolved = true; break; }
+        }
+        // Advance: click continue on a recap, else take the first decision option.
+        const moved = await page.evaluate(() => {
+          const cont = document.querySelector('[data-testid="journey-continue"]');
+          if (cont) { cont.click(); return true; }
+          const opts = [...document.querySelectorAll('[data-journey-option="1"]')];
+          if (opts.length) { opts[0].click(); return true; }
+          return false;
+        });
+        if (!moved) break;
+        await sleep(80);
+      }
+      assert(evolved, 'should have found an eligible chapter to evolve the starter');
+
+      // Finish the run and confirm the ace on the Legend Card is the evolved
+      // species (Ivysaur, #2) rather than the base starter (#1).
+      await playToEnd(page, 0);
+      // The roster grid lives on the Legend Card screen, not the retired beat.
+      await revealCard(page);
+      await page.waitForSelector('[data-testid="journey-result-roster"]', { timeout: 8000 });
+      const aceSrc = await page.evaluate(() => {
+        const grid = document.querySelector('[data-testid="journey-result-roster"]');
+        const img = grid ? grid.querySelector('img') : null;
+        return img ? img.getAttribute('src') : '';
+      });
+      assert(aceSrc.endsWith('/2.png'),
+        `ace sprite should be the evolved species (#2 Ivysaur); got ${aceSrc}`);
+    },
+  },
 ];
 
 const result = await runSuite('journey-mode', tests);

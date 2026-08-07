@@ -1,4 +1,5 @@
 import type { PokemonType } from '@/lib/types';
+import type { Inventory, ItemId } from './items';
 
 // ============================================================
 // SETUP
@@ -127,16 +128,46 @@ export interface RecordedChoice {
 }
 
 // ============================================================
+// PREPARE ACTIONS — team management before a decision
+// ============================================================
+//
+// Prepare actions are player input taken at a decision chapter, BEFORE the
+// chapter resolves. They are recorded and replayed exactly like choices, so
+// determinism holds; they are session-only (never serialized into the seed
+// deep-link, which carries setup, not history).
+
+export type PrepareAction =
+  /** Evolve a roster member (fromId → toId). `viaItem` bypasses the hold gate. */
+  | { type: 'evolve'; chapterIndex: number; fromId: number; toId: number; viaItem?: boolean }
+  /** Promote a roster member to the ace slot (index 0). */
+  | { type: 'ace'; chapterIndex: number; id: number }
+  /** Consume an item. `targetId` is required for rare-candy (which member). */
+  | { type: 'item'; chapterIndex: number; item: ItemId; targetId?: number };
+
+// ============================================================
+// POKÉDEX
+// ============================================================
+
+export interface DexState {
+  /** Species ids the trainer has encountered (seen or caught). */
+  seen: number[];
+  /** Species ids the trainer has actually caught (superset includes roster). */
+  caught: number[];
+}
+
+// ============================================================
 // RESULT
 // ============================================================
 
 export interface RosterEntry {
   id: number;
   shiny: boolean;
-  /** Chapter index the Pokémon joined at. Starter is -1. */
+  /** Chapter index the Pokémon joined at. Starter is -1, dex-pad is -2. */
   joinedAt: number;
-  /** Highest-tier role this member filled — drives Legend Card captions. */
+  /** Current types — updated when the member evolves. */
   types: PokemonType[];
+  /** How many times this member has evolved this run (0 = base form as caught). */
+  evolved?: number;
 }
 
 export interface Verdict {
@@ -164,13 +195,36 @@ export interface JourneyRun {
   setup: JourneySetup;
   chapters: ChapterResult[];
   choices: RecordedChoice[];
+  actions: PrepareAction[];
   stats: CareerStats;
   roster: RosterEntry[];
+  dex: DexState;
   verdict: Verdict;
   score: number;
   breakdown: ScoreBreakdown;
   /** Total chapters this career ran for. */
   chapterCount: number;
+}
+
+// ============================================================
+// PREPARE AVAILABILITY — what the UI can offer at a decision
+// ============================================================
+
+/** One member's evolve options at the current decision point. */
+export interface EvolveOffer {
+  fromId: number;
+  /** Legal targets (id + display), from the evolution map. */
+  options: { id: number; to: string }[];
+  /** True when the normal hold gate is met (no Rare Candy needed). */
+  eligible: boolean;
+}
+
+/** Everything the prepare step can present at the pending decision. */
+export interface PrepareAvailability {
+  /** Evolve offers keyed by the member's current species id. */
+  evolves: EvolveOffer[];
+  /** Whether reordering the ace is meaningful (roster length > 1). */
+  canSetAce: boolean;
 }
 
 // ============================================================
@@ -185,9 +239,13 @@ export interface SimSnapshot {
   chapters: ChapterResult[];
   stats: CareerStats;
   roster: RosterEntry[];
+  dex: DexState;
+  inventory: Inventory;
   chapterCount: number;
   /** Present when status === 'awaiting-decision'. */
   decision?: PendingDecision;
+  /** Present when status === 'awaiting-decision' — the prepare-step offer. */
+  prepare?: PrepareAvailability;
   /** Present when status === 'complete'. */
   run?: JourneyRun;
 }
@@ -199,6 +257,7 @@ export interface SimSnapshot {
 export type JourneyUiState =
   | 'setup'
   | 'simulating'
+  | 'prepare'
   | 'decision'
   | 'chapter-recap'
   | 'retired'

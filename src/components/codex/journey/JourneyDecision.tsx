@@ -2,17 +2,33 @@ import { ChevronRight, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
 import { cn } from '@/lib/utils';
-import type { CareerStats, PendingDecision } from '@/journey/types';
+import { PartyRail } from './PartyRail';
+import { JourneyPrepare } from './JourneyPrepare';
+import type {
+  CareerStats, DexState, PendingDecision, PrepareAction, PrepareAvailability,
+  RosterEntry,
+} from '@/journey/types';
+import type { Inventory } from '@/journey/items';
 
 interface Props {
   decision: PendingDecision;
   stats: CareerStats;
   chapterCount: number;
+  roster: RosterEntry[];
+  dex: DexState;
+  inventory: Inventory;
+  prepare: PrepareAvailability;
+  actionsThisChapter: number;
   onPick: (optionId: string) => void;
+  onAction: (action: PrepareAction) => void;
+  onUndoPrep: () => void;
   onUndo: (() => void) | null;
 }
 
-export function JourneyDecision({ decision, stats, chapterCount, onPick, onUndo }: Props) {
+export function JourneyDecision({
+  decision, stats, chapterCount, roster, dex, inventory, prepare,
+  actionsThisChapter, onPick, onAction, onUndoPrep, onUndo,
+}: Props) {
   const { t } = useI18n();
   const { card, vars } = decision;
 
@@ -22,6 +38,22 @@ export function JourneyDecision({ decision, stats, chapterCount, onPick, onUndo 
         chapter={decision.chapterIndex + 1}
         total={chapterCount}
         age={stats.age}
+      />
+
+      <PartyRail
+        roster={roster}
+        dex={dex}
+        evolvableIds={prepare.evolves.map(e => e.fromId)}
+      />
+
+      <JourneyPrepare
+        chapterIndex={decision.chapterIndex}
+        roster={roster}
+        prepare={prepare}
+        inventory={inventory}
+        actionsThisChapter={actionsThisChapter}
+        onAction={onAction}
+        onUndoPrep={onUndoPrep}
       />
 
       <p className="text-sm leading-relaxed" data-testid="journey-decision-prompt">

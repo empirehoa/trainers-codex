@@ -83,6 +83,41 @@ const en: StringMap = {
   'journey.sim.skipToEnd': 'Auto-resolve the rest',
   'journey.sim.undo': 'Undo that choice',
 
+  // ---------- party + pokédex ----------
+  'journey.party.title': 'Your Six',
+  'journey.party.ace': 'Ace',
+  'journey.party.dex': 'Pokédex',
+  'journey.party.dexCount': '{caught} caught · {seen} seen',
+  'journey.party.caughtHeading': 'Caught this run',
+  'journey.party.evolveReady': 'Ready to evolve',
+  'journey.party.empty': 'Your team fills as you journey.',
+
+  // ---------- prepare step ----------
+  'journey.prepare.title': 'Prepare your team',
+  'journey.prepare.subtitle': 'Evolve, use an item, set your ace — then choose.',
+  'journey.prepare.show': 'Prepare team',
+  'journey.prepare.hide': 'Hide',
+  'journey.prepare.evolve': 'Evolve',
+  'journey.prepare.evolveInto': 'Evolve into {name}',
+  'journey.prepare.evolveLocked': 'Needs more time together',
+  'journey.prepare.candyEvolve': 'Evolve now (Rare Candy)',
+  'journey.prepare.setAce': 'Make ace',
+  'journey.prepare.isAce': 'Ace',
+  'journey.prepare.fullyEvolved': 'Fully evolved',
+  'journey.prepare.items': 'Items',
+  'journey.prepare.noItems': 'No items yet — win and explore to earn them.',
+  'journey.prepare.useItem': 'Use',
+  'journey.prepare.undoPrep': 'Undo last prep',
+  'journey.prepare.done': 'Team ready',
+
+  // ---------- items ----------
+  'journey.item.soothe-bell.name': 'Soothe Bell',
+  'journey.item.soothe-bell.desc': 'Deepens the bond with your team (+bond).',
+  'journey.item.energy-root.name': 'Energy Root',
+  'journey.item.energy-root.desc': 'Shakes off fatigue (−fatigue).',
+  'journey.item.rare-candy.name': 'Rare Candy',
+  'journey.item.rare-candy.desc': 'Evolve a partner right now, ahead of schedule.',
+
   // ---------- stat labels ----------
   'journey.stat.badges': 'Badges',
   'journey.stat.wins': 'Wins',
@@ -436,6 +471,41 @@ const es: StringMap = {
   'journey.sim.continue': 'Continuar →',
   'journey.sim.skipToEnd': 'Resolver el resto automáticamente',
   'journey.sim.undo': 'Deshacer esa decisión',
+
+  // ---------- equipo + pokédex ----------
+  'journey.party.title': 'Tu equipo',
+  'journey.party.ace': 'As',
+  'journey.party.dex': 'Pokédex',
+  'journey.party.dexCount': '{caught} capturados · {seen} vistos',
+  'journey.party.caughtHeading': 'Capturados en esta travesía',
+  'journey.party.evolveReady': 'Listo para evolucionar',
+  'journey.party.empty': 'Tu equipo crece a medida que avanzas.',
+
+  // ---------- preparación ----------
+  'journey.prepare.title': 'Prepara tu equipo',
+  'journey.prepare.subtitle': 'Evoluciona, usa un objeto, elige a tu as — luego decide.',
+  'journey.prepare.show': 'Preparar equipo',
+  'journey.prepare.hide': 'Ocultar',
+  'journey.prepare.evolve': 'Evolucionar',
+  'journey.prepare.evolveInto': 'Evolucionar a {name}',
+  'journey.prepare.evolveLocked': 'Necesita más tiempo contigo',
+  'journey.prepare.candyEvolve': 'Evolucionar ya (Caramelo Raro)',
+  'journey.prepare.setAce': 'Hacer as',
+  'journey.prepare.isAce': 'As',
+  'journey.prepare.fullyEvolved': 'Totalmente evolucionado',
+  'journey.prepare.items': 'Objetos',
+  'journey.prepare.noItems': 'Aún no tienes objetos — gana y explora para conseguirlos.',
+  'journey.prepare.useItem': 'Usar',
+  'journey.prepare.undoPrep': 'Deshacer preparación',
+  'journey.prepare.done': 'Equipo listo',
+
+  // ---------- objetos ----------
+  'journey.item.soothe-bell.name': 'Cascabel Alivio',
+  'journey.item.soothe-bell.desc': 'Fortalece el vínculo con tu equipo (+vínculo).',
+  'journey.item.energy-root.name': 'Raíz Energía',
+  'journey.item.energy-root.desc': 'Elimina la fatiga (−fatiga).',
+  'journey.item.rare-candy.name': 'Caramelo Raro',
+  'journey.item.rare-candy.desc': 'Evoluciona a un compañero ahora mismo, antes de tiempo.',
 
   'journey.stat.badges': 'Medallas',
   'journey.stat.wins': 'Victorias',

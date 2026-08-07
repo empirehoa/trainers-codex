@@ -27,11 +27,17 @@ import {
   CHAPTER_BEATS, CHAPTER_TITLES, cardsForPhase, DECISION_CARD_BY_ID,
   describeMon, getPace, getPools, getRegion, monTypes,
 } from './content';
+import {
+  evolutionsOf, evolveEligible, isValidEvolution, typesOf,
+} from './evolution';
+import {
+  emptyInventory, ITEM_STAT_EFFECT, type Inventory, type ItemId,
+} from './items';
 import { resolveVerdict, scoreCareer } from './scoring';
 import type {
-  CareerStats, ChapterPhase, ChapterResult, DecisionCardSpec, JourneyRun,
-  JourneySetup, PendingDecision, RecordedChoice, RosterEntry, SimSnapshot,
-  StatDelta,
+  CareerStats, ChapterPhase, ChapterResult, DecisionCardSpec, DexState,
+  EvolveOffer, JourneyRun, JourneySetup, PendingDecision, PrepareAction,
+  PrepareAvailability, RecordedChoice, RosterEntry, SimSnapshot, StatDelta,
 } from './types';
 
 export const MIN_CHAPTERS = 12;
@@ -249,7 +255,12 @@ interface ChapterInput {
   choiceOptionId: string | null;
 }
 
-function resolveChapter(input: ChapterInput): { chapter: ChapterResult; roster: RosterEntry[] } {
+function resolveChapter(input: ChapterInput): {
+  chapter: ChapterResult;
+  roster: RosterEntry[];
+  seenAdded: number[];
+  caughtAdded: number[];
+} {
   const { setup, index, phase, risk } = input;
   const rng = chapterRng(setup.seed, index);
   const profile = PHASE_PROFILE[phase];
@@ -294,12 +305,36 @@ function resolveChapter(input: ChapterInput): { chapter: ChapterResult; roster: 
   const badges = phase === 'gym-circuit' && chance(rng, 0.72) ? randInt(rng, 1, 2) : 0;
 
   // ---- catches + shinies ----
+  const region = getRegion(setup.regionId);
+  const pools = getPools(region.gen);
+  const seenAdded: number[] = [];
+  const caughtAdded: number[] = [];
   const catchRolls = randInt(rng, 1, 4);
   let catches = 0;
   let shinies = 0;
+  // Actual species drawn for the dex. Every catch registers a real id so the
+  // Pokédex fills with what the trainer met, and the caught set becomes the
+  // pool the "true six" is completed from (never arbitrary region filler).
+  const owned0 = new Set([...input.roster.map(r => r.id)]);
+  const catchTier = phase === 'gym-circuit'
+    ? pools.common
+    : (chance(rng, 0.4) ? pools.rare : pools.common);
+  const catchDraw = sample(rng, catchTier.length ? catchTier : pools.common, 12);
+  let drawCursor = 0;
+  const nextSpecies = (): number | undefined => {
+    while (drawCursor < catchDraw.length) {
+      const id = catchDraw[drawCursor++];
+      if (!owned0.has(id)) return id;
+    }
+    return undefined;
+  };
   for (let i = 0; i < catchRolls; i++) {
+    // Wild sighting either way — a seen entry even when the catch fails.
+    const sighted = nextSpecies();
+    if (sighted !== undefined) seenAdded.push(sighted);
     if (chance(rng, 0.35 + mods.catchChance)) {
       catches++;
+      if (sighted !== undefined) caughtAdded.push(sighted);
       if (chance(rng, mods.shinyChance * 0.28)) shinies++;
     }
   }
@@ -309,8 +344,6 @@ function resolveChapter(input: ChapterInput): { chapter: ChapterResult; roster: 
   let recruitedId: number | undefined;
   let recruitedShiny = false;
   if (roster.length < ROSTER_SIZE && chance(rng, phase === 'gym-circuit' ? 0.85 : 0.55)) {
-    const region = getRegion(setup.regionId);
-    const pools = getPools(region.gen);
     // Legendaries only become plausible once the career is on a real stage.
     const tier = phase === 'gym-circuit'
       ? pools.common
@@ -327,7 +360,10 @@ function resolveChapter(input: ChapterInput): { chapter: ChapterResult; roster: 
         shiny: recruitedShiny,
         joinedAt: index,
         types: monTypes(recruitedId),
+        evolved: 0,
       }];
+      seenAdded.push(recruitedId);
+      caughtAdded.push(recruitedId);
       if (recruitedShiny) shinies = Math.max(shinies, 1);
     }
   }
@@ -400,7 +436,107 @@ function resolveChapter(input: ChapterInput): { chapter: ChapterResult; roster: 
     placement,
   };
 
-  return { chapter, roster };
+  return { chapter, roster, seenAdded, caughtAdded };
+}
+
+// ============================================================
+// PREPARE ACTIONS
+// ============================================================
+
+/** Deterministic item drop for the decision chapter at `index`, or null. */
+function itemGrantFor(seed: number, index: number): ItemId | null {
+  const rng = namedRng(seed, `item-grant-${index}`);
+  // ~70% of decision chapters hand out something, so the inventory grows
+  // steadily but a run isn't drowning in items. Rare Candy is the scarcest.
+  if (!chance(rng, 0.7)) return null;
+  const roll = rng();
+  if (roll < 0.42) return 'soothe-bell';
+  if (roll < 0.82) return 'energy-root';
+  return 'rare-candy';
+}
+
+/** What the prepare step can offer at the pending decision. */
+function computePrepare(roster: RosterEntry[], chapterIndex: number): PrepareAvailability {
+  const evolves: EvolveOffer[] = [];
+  for (const m of roster) {
+    const opts = evolutionsOf(m.id);
+    if (opts.length === 0) continue;
+    evolves.push({
+      fromId: m.id,
+      options: opts.map(o => ({ id: o.id, to: o.to })),
+      eligible: evolveEligible(m.joinedAt, chapterIndex),
+    });
+  }
+  return { evolves, canSetAce: roster.length > 1 };
+}
+
+interface PrepareState {
+  roster: RosterEntry[];
+  inventory: Inventory;
+  stats: CareerStats;
+  seen: number[];
+  caught: number[];
+}
+
+/**
+ * Apply the recorded prepare-actions for one chapter, in order. Every action
+ * is validated; an invalid one (stale share link, missing item, illegal
+ * target) is skipped rather than throwing, so a replay never hard-fails.
+ */
+function applyPrepareActions(
+  state: PrepareState,
+  actions: PrepareAction[],
+  chapterIndex: number,
+): PrepareState {
+  let roster = state.roster;
+  const inventory: Inventory = { ...state.inventory };
+  let stats = state.stats;
+  const seen = [...state.seen];
+  const caught = [...state.caught];
+
+  for (const action of actions) {
+    if (action.chapterIndex !== chapterIndex) continue;
+
+    if (action.type === 'evolve') {
+      const i = roster.findIndex(m => m.id === action.fromId);
+      if (i === -1) continue;
+      if (!isValidEvolution(action.fromId, action.toId)) continue;
+      if (roster.some(m => m.id === action.toId)) continue; // keep the six unique
+      const member = roster[i];
+      const gateMet = evolveEligible(member.joinedAt, chapterIndex);
+      if (!gateMet) {
+        // Off-gate evolution requires (and consumes) a Rare Candy.
+        if (!action.viaItem || (inventory['rare-candy'] ?? 0) <= 0) continue;
+        inventory['rare-candy'] -= 1;
+      }
+      roster = roster.map((m, idx) => idx === i
+        ? { ...m, id: action.toId, types: typesOf(action.toId), evolved: (m.evolved ?? 0) + 1 }
+        : m);
+      if (!seen.includes(action.toId)) seen.push(action.toId);
+      if (!caught.includes(action.toId)) caught.push(action.toId);
+      continue;
+    }
+
+    if (action.type === 'ace') {
+      const i = roster.findIndex(m => m.id === action.id);
+      if (i <= 0) continue; // -1 not found, 0 already ace
+      const member = roster[i];
+      roster = [member, ...roster.slice(0, i), ...roster.slice(i + 1)];
+      continue;
+    }
+
+    if (action.type === 'item') {
+      const item = action.item;
+      if ((inventory[item] ?? 0) <= 0) continue;
+      const effect = ITEM_STAT_EFFECT[item];
+      if (!effect) continue;
+      inventory[item] -= 1;
+      stats = applyDelta(stats, effect);
+      continue;
+    }
+  }
+
+  return { roster, inventory, stats, seen, caught };
 }
 
 // ============================================================
@@ -417,6 +553,7 @@ function initialRoster(setup: JourneySetup): RosterEntry[] {
     shiny,
     joinedAt: -1,
     types: monTypes(setup.starterId),
+    evolved: 0,
   }];
 }
 
@@ -432,15 +569,32 @@ function initialRoster(setup: JourneySetup): RosterEntry[] {
  * career needs are ignored; a choice whose optionId no longer exists falls
  * back to the card's first option so a stale share link still plays.
  */
-export function simulate(setup: JourneySetup, choices: RecordedChoice[]): SimSnapshot {
+export function simulate(
+  setup: JourneySetup,
+  choices: RecordedChoice[],
+  actions: PrepareAction[] = [],
+): SimSnapshot {
   const chapterCount = chapterCountFor(setup.seed);
   const { decisionEvery } = getPace(setup.pace);
 
   let stats = initialStats();
   let roster = initialRoster(setup);
+  let inventory = emptyInventory();
+  // Dex seeded with the starter — the trainer has, at minimum, met their own.
+  const seen: number[] = [setup.starterId];
+  const caught: number[] = [setup.starterId];
+  const grantedFor = new Set<number>();
   const chapters: ChapterResult[] = [];
   const usedCardIds = new Set<string>();
   const choiceByChapter = new Map(choices.map(c => [c.chapterIndex, c]));
+
+  const mergeDex = (addSeen: number[], addCaught: number[]) => {
+    for (const id of addSeen) if (!seen.includes(id)) seen.push(id);
+    for (const id of addCaught) {
+      if (!caught.includes(id)) caught.push(id);
+      if (!seen.includes(id)) seen.push(id);
+    }
+  };
 
   for (let index = 0; index < chapterCount; index++) {
     const phase = phaseFor(index, chapterCount);
@@ -453,6 +607,25 @@ export function simulate(setup: JourneySetup, choices: RecordedChoice[]): SimSna
       const card = selectCard(setup.seed, index, phase, setup.archetype, usedCardIds);
       usedCardIds.add(card.id);
 
+      // Grant this chapter's item once, the first time we arrive, so it's
+      // spendable in the prepare step at the same decision.
+      if (!grantedFor.has(index)) {
+        grantedFor.add(index);
+        const grant = itemGrantFor(setup.seed, index);
+        if (grant) inventory = { ...inventory, [grant]: (inventory[grant] ?? 0) + 1 };
+      }
+
+      // Apply any recorded prepare-actions BEFORE the decision resolves, so the
+      // team the player shaped (evolutions, ace, items) is what faces the
+      // chapter — and is what the awaiting-decision snapshot shows.
+      const prepped = applyPrepareActions(
+        { roster, inventory, stats, seen, caught }, actions, index,
+      );
+      roster = prepped.roster;
+      inventory = prepped.inventory;
+      stats = prepped.stats;
+      mergeDex(prepped.seen, prepped.caught);
+
       const recorded = choiceByChapter.get(index);
       if (!recorded) {
         return {
@@ -460,12 +633,15 @@ export function simulate(setup: JourneySetup, choices: RecordedChoice[]): SimSna
           chapters,
           stats,
           roster,
+          dex: { seen: [...seen], caught: [...caught] },
+          inventory,
           chapterCount,
           decision: {
             chapterIndex: index,
             card,
             vars: decisionVars(setup, roster, stats, index),
           },
+          prepare: computePrepare(roster, index),
         };
       }
 
@@ -481,12 +657,15 @@ export function simulate(setup: JourneySetup, choices: RecordedChoice[]): SimSna
     chapters.push(resolved.chapter);
     stats = resolved.chapter.stats;
     roster = resolved.roster;
+    mergeDex(resolved.seenAdded, resolved.caughtAdded);
   }
 
-  // Pad the roster to six from the region pool so the Builder handoff always
-  // hands over a full team. Deterministic: derived from the seed alone.
-  roster = padRoster(setup, roster);
+  // Complete the six from the species the trainer actually CAUGHT this run
+  // (falling back to the region pool only if they somehow caught nothing new).
+  // This is the "true six" fix — the roster is the trainer's, never filler.
+  roster = padRoster(setup, roster, caught);
 
+  const dex: DexState = { seen: [...seen], caught: [...caught] };
   const breakdown = scoreCareer(stats, setup.archetype, chapterCount);
   const verdict = resolveVerdict(stats, setup.archetype, breakdown.total);
 
@@ -496,26 +675,44 @@ export function simulate(setup: JourneySetup, choices: RecordedChoice[]): SimSna
     choices: chapters
       .map(c => choiceByChapter.get(c.index))
       .filter((c): c is RecordedChoice => c !== undefined),
+    actions: actions.filter(a => a.chapterIndex < chapterCount),
     stats,
     roster,
+    dex,
     verdict,
     score: breakdown.total,
     breakdown,
     chapterCount,
   };
 
-  return { status: 'complete', chapters, stats, roster, chapterCount, run };
+  return { status: 'complete', chapters, stats, roster, dex, inventory, chapterCount, run };
 }
 
-function padRoster(setup: JourneySetup, roster: RosterEntry[]): RosterEntry[] {
+function padRoster(setup: JourneySetup, roster: RosterEntry[], caught: number[] = []): RosterEntry[] {
   if (roster.length >= ROSTER_SIZE) return roster.slice(0, ROSTER_SIZE);
-  const rng = namedRng(setup.seed, 'roster-pad');
-  const pools = getPools(getRegion(setup.regionId).gen);
   const owned = new Set(roster.map(r => r.id));
-  const pool = [...pools.rare, ...pools.common].filter(id => !owned.has(id));
   const out = [...roster];
-  for (const id of sample(rng, pool, ROSTER_SIZE - roster.length)) {
-    out.push({ id, shiny: false, joinedAt: -2, types: monTypes(id) });
+
+  // Prefer species the trainer actually caught this run — a "true six" is
+  // assembled from real encounters, in the order they were caught.
+  for (const id of caught) {
+    if (out.length >= ROSTER_SIZE) break;
+    if (owned.has(id)) continue;
+    owned.add(id);
+    out.push({ id, shiny: false, joinedAt: -2, types: monTypes(id), evolved: 0 });
+  }
+
+  // Fallback: only if the caught pool couldn't fill the six (a very short or
+  // catch-averse run), top up deterministically from the region pool.
+  if (out.length < ROSTER_SIZE) {
+    const rng = namedRng(setup.seed, 'roster-pad');
+    const pools = getPools(getRegion(setup.regionId).gen);
+    const pool = [...pools.rare, ...pools.common].filter(id => !owned.has(id));
+    for (const id of sample(rng, pool, ROSTER_SIZE - out.length)) {
+      if (owned.has(id)) continue;
+      owned.add(id);
+      out.push({ id, shiny: false, joinedAt: -2, types: monTypes(id), evolved: 0 });
+    }
   }
   return out.slice(0, ROSTER_SIZE);
 }
