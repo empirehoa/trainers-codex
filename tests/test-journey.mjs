@@ -672,11 +672,15 @@ const tests = [
         if (await has(page, '[data-testid="journey-retired"]')) break;
         // On a decision, try to open prepare and evolve the starter (#1 → #2).
         if (await has(page, '[data-testid="journey-decision"]')) {
+          // Open prepare only if it is currently closed — toggling blindly on
+          // every iteration would close a panel opened last time round.
           await page.evaluate(() => {
-            const t = document.querySelector('[data-testid="journey-prepare-toggle"]');
-            if (t) t.click();
+            if (!document.querySelector('[data-testid="journey-prepare-toggle"] + *')
+                && !document.querySelector('[data-testid^="journey-member-"]')) {
+              document.querySelector('[data-testid="journey-prepare-toggle"]')?.click();
+            }
           });
-          await sleep(80);
+          await sleep(90);
           const clicked = await page.evaluate(() => {
             const b = document.querySelector('[data-testid="journey-evolve-1-2"]');
             if (b && !b.disabled) { b.click(); return true; }
@@ -703,13 +707,18 @@ const tests = [
       // The roster grid lives on the Legend Card screen, not the retired beat.
       await revealCard(page);
       await page.waitForSelector('[data-testid="journey-result-roster"]', { timeout: 8000 });
-      const aceSrc = await page.evaluate(() => {
+      const ids = await page.evaluate(() => {
         const grid = document.querySelector('[data-testid="journey-result-roster"]');
-        const img = grid ? grid.querySelector('img') : null;
-        return img ? img.getAttribute('src') : '';
+        if (!grid) return [];
+        return [...grid.querySelectorAll('img')]
+          .map(i => Number((i.getAttribute('src') || '').match(/\/(\d+)\.png$/)?.[1] || 0));
       });
-      assert(aceSrc.endsWith('/2.png'),
-        `ace sprite should be the evolved species (#2 Ivysaur); got ${aceSrc}`);
+      // The invariant that matters: the starter LINE advanced. Bulbasaur (#1)
+      // must be gone and its evolution present somewhere in the final six.
+      assert(ids.includes(2) || ids.includes(3),
+        `evolved starter should appear in the final six; roster was [${ids.join(', ')}]`);
+      assert(!ids.includes(1),
+        `base Bulbasaur should no longer be in the six after evolving; roster was [${ids.join(', ')}]`);
     },
   },
 

@@ -64,7 +64,9 @@ export type ChapterPhase =
   | 'gym-circuit'
   | 'regional'
   | 'national'
+  | 'elite-four'
   | 'worlds'
+  | 'world-cup'
   | 'veteran'
   | 'retirement';
 
@@ -155,7 +157,9 @@ export type PrepareAction =
   /** Swap a party member out for one from the box. */
   | { type: 'swap'; chapterIndex: number; outId: number; inId: number }
   /** Give a party member a nickname (empty string clears it). */
-  | { type: 'nickname'; chapterIndex: number; id: number; name: string };
+  | { type: 'nickname'; chapterIndex: number; id: number; name: string }
+  /** Choose the next region on the tour ("go international"). */
+  | { type: 'travel'; chapterIndex: number; regionId: string };
 
 // ============================================================
 // POKÉDEX
@@ -193,6 +197,65 @@ export interface RegionProgress {
   tourIndex: number;
   /** Badges earned in the CURRENT region. */
   regionBadges: number;
+}
+
+// ============================================================
+// QUESTS
+// ============================================================
+
+export type QuestKind =
+  | 'badges' | 'party-size' | 'evolve' | 'catch' | 'shiny' | 'wins'
+  | 'titles' | 'syndicate';
+
+export interface QuestReward {
+  item?: ItemId;
+  mult?: number;
+  fame?: number;
+}
+
+export interface QuestSpec {
+  id: string;
+  kind: QuestKind;
+  n: number;
+  scope: 'region' | 'campaign';
+  reward: QuestReward;
+}
+
+export interface Quest {
+  id: string;
+  scope: 'region' | 'campaign';
+  kind: QuestKind;
+  target: number;
+  progress: number;
+  complete: boolean;
+  reward: QuestReward;
+  titleKey: string;
+  descKey: string;
+}
+
+// ============================================================
+// CROWNS + BRACKETS
+// ============================================================
+
+/** Awarded for clearing a region's Elite Four and Champion. */
+export interface RegionCrown {
+  regionId: string;
+  chapterIndex: number;
+  /** Champion's name, for the Legend Card. */
+  championName: string;
+}
+
+/** One resolved battle against a named opponent. */
+export interface OpponentResult {
+  chapterIndex: number;
+  kind: 'gym' | 'elite-four' | 'champion' | 'syndicate' | 'world-cup';
+  name: string;
+  title: string;
+  specialty: PokemonType;
+  level: number;
+  won: boolean;
+  /** Party advantage at the time, -1..+1. */
+  advantage: number;
 }
 
 // ============================================================
@@ -295,6 +358,9 @@ export interface JourneyRun {
   region: RegionProgress;
   stakes: Stake[];
   events: JourneyEvent[];
+  quests: Quest[];
+  crowns: RegionCrown[];
+  battles: OpponentResult[];
   verdict: Verdict;
   score: number;
   breakdown: ScoreBreakdown;
@@ -336,6 +402,20 @@ export interface PrepareAvailability {
   canSetAce: boolean;
   /** Box members available to swap in. */
   box: BoxEntry[];
+  /** Regions the player may travel to next (empty unless at a crossroads). */
+  travelOptions?: TravelOption[];
+}
+
+/** A candidate next region, with what makes it worth choosing. */
+export interface TravelOption {
+  regionId: string;
+  label: string;
+  /** Regional-form line available there, if any. */
+  formLabel?: string;
+  /** Number of legendaries in that region's pool. */
+  legendaryCount: number;
+  /** A few notable species ids to preview. */
+  previewIds: number[];
 }
 
 // ============================================================
@@ -356,14 +436,32 @@ export interface SimSnapshot {
   region: RegionProgress;
   stakes: Stake[];
   events: JourneyEvent[];
+  quests: Quest[];
+  crowns: RegionCrown[];
+  battles: OpponentResult[];
   inventory: Inventory;
   chapterCount: number;
   /** Present when status === 'awaiting-decision'. */
   decision?: PendingDecision;
   /** Present when status === 'awaiting-decision' — the prepare-step offer. */
   prepare?: PrepareAvailability;
+  /** The named adversary standing at this chapter, if the phase has one. */
+  opponent?: OpponentSummary;
+  /** Party advantage against that opponent, -1..+1. */
+  opponentAdvantage?: number;
   /** Present when status === 'complete'. */
   run?: JourneyRun;
+}
+
+/** Serializable view of an opponent for the UI layer. */
+export interface OpponentSummary {
+  kind: 'gym' | 'elite-four' | 'champion' | 'syndicate' | 'world-cup';
+  name: string;
+  title: string;
+  specialty: PokemonType;
+  level: number;
+  teamIds: number[];
+  ghost?: { trainerName: string; score: number };
 }
 
 // ============================================================

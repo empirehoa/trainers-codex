@@ -17,6 +17,9 @@ import {
 import { parseCurrentJourneyLink } from '@/journey/deeplink';
 import { recordDailyPlay, currentStreak } from '@/journey/streak';
 import { track } from '@/journey/analytics';
+import { fetchGhosts, ghostsToOpponents, submitGhost } from '@/journey/ghosts';
+import { levelFromXp } from '@/journey/levels';
+import type { Opponent } from '@/journey/opponents';
 import type {
   JourneyRun, JourneySetup as Setup, JourneyUiState, PrepareAction,
   RecordedChoice, RunSource,
@@ -89,6 +92,10 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
   );
   const [dailyDate, setDailyDate] = useState<string | null>(() => link?.dailyDate ?? null);
   const [invalidLink, setInvalidLink] = useState(() => link?.hadInvalidParams ?? false);
+  // Other players' finished teams, used as World Cup opponents. Fetched
+  // opportunistically; the bracket falls back to generated challengers when
+  // this is empty, so nothing depends on it.
+  const [ghosts, setGhosts] = useState<Opponent[]>([]);
 
   const startedAt = useRef<number>(0);
   const completedRef = useRef(false);
@@ -96,9 +103,21 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
 
   // ---------- the simulation snapshot ----------
   const snapshot = useMemo(
-    () => (setup ? simulate(setup, choices, actions) : null),
-    [setup, choices, actions],
+    () => (setup ? simulate(setup, choices, actions, ghosts) : null),
+    [setup, choices, actions, ghosts],
   );
+
+  // Pull ghosts for this seed once a run begins.
+  useEffect(() => {
+    if (!setup) return;
+    let cancelled = false;
+    void fetchGhosts(setup.seed).then(rows => {
+      if (!cancelled && rows.length) {
+        setGhosts(ghostsToOpponents(rows, setup.regionId));
+      }
+    });
+    return () => { cancelled = true; };
+  }, [setup]);
 
   const uiState: JourneyUiState = useMemo(() => {
     if (!setup || !snapshot) return 'setup';
@@ -124,6 +143,13 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
       seed: setup.seed,
     });
 
+    // Contribute this finished career as a ghost for later players on the
+    // same seed. Anonymous, fire-and-forget, no-ops without Supabase config.
+    const partyLevel = run.roster.length
+      ? Math.round(run.roster.reduce((n, m) => n + levelFromXp(m.xp ?? 0), 0) / run.roster.length)
+      : 5;
+    submitGhost(run, partyLevel);
+
     // A Daily counts once per local date, and only on completion — an
     // abandoned run must not extend a streak.
     if (setup.source === 'daily' && setup.dailyDate && !dailyRecorded.current) {
@@ -147,6 +173,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     setSetup(next);
     setChoices([]);
     setActions([]);
+    setGhosts([]);
     setRevealed(0);
     setCardStage('retired');
     track({
@@ -358,6 +385,10 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
             badges={snapshot.badges}
             region={snapshot.region}
             stakes={snapshot.stakes}
+            quests={snapshot.quests}
+            crowns={snapshot.crowns}
+            opponent={snapshot.opponent}
+            opponentAdvantage={snapshot.opponentAdvantage}
             inventory={snapshot.inventory}
             prepare={snapshot.prepare}
             actionsThisChapter={actions.filter(a => a.chapterIndex === snapshot.decision!.chapterIndex).length}

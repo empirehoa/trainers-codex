@@ -52,7 +52,9 @@ const PHASE_XP: Record<ChapterPhase, number> = {
   'gym-circuit': 1.0,
   'regional': 1.35,
   'national': 1.8,
+  'elite-four': 2.8,
   'worlds': 2.4,
+  'world-cup': 3.2,
   'veteran': 2.0,
   'retirement': 1.2,
 };

@@ -4,11 +4,14 @@ import { useI18n } from '@/i18n/useI18n';
 import { cn } from '@/lib/utils';
 import { PartyRail } from './PartyRail';
 import { BadgeTrack } from './BadgeTrack';
+import { OpponentCard, QuestStrip, CrownStrip, TravelPicker } from './OpponentCard';
 import { JourneyPrepare } from './JourneyPrepare';
 import type {
-  BadgeEarned, CareerStats, DexState, PendingDecision, PrepareAction,
-  PrepareAvailability, RegionProgress, RosterEntry, Stake,
+  BadgeEarned, CareerStats, DexState, OpponentSummary, PendingDecision,
+  PrepareAction, PrepareAvailability, Quest, RegionCrown, RegionProgress,
+  RosterEntry, Stake,
 } from '@/journey/types';
+import type { Opponent } from '@/journey/opponents';
 import type { Inventory } from '@/journey/items';
 
 interface Props {
@@ -20,6 +23,10 @@ interface Props {
   badges: BadgeEarned[];
   region: RegionProgress;
   stakes: Stake[];
+  quests: Quest[];
+  crowns: RegionCrown[];
+  opponent?: OpponentSummary;
+  opponentAdvantage?: number;
   inventory: Inventory;
   prepare: PrepareAvailability;
   actionsThisChapter: number;
@@ -30,8 +37,9 @@ interface Props {
 }
 
 export function JourneyDecision({
-  decision, stats, chapterCount, roster, dex, badges, region, stakes, inventory,
-  prepare, actionsThisChapter, onPick, onAction, onUndoPrep, onUndo,
+  decision, stats, chapterCount, roster, dex, badges, region, stakes, quests,
+  crowns, opponent, opponentAdvantage, inventory, prepare, actionsThisChapter,
+  onPick, onAction, onUndoPrep, onUndo,
 }: Props) {
   const { t } = useI18n();
   const { card, vars } = decision;
@@ -45,6 +53,22 @@ export function JourneyDecision({
       />
 
       <BadgeTrack badges={badges} region={region} stakes={stakes} />
+
+      <CrownStrip crowns={crowns} />
+
+      {opponent && (
+        <OpponentCard
+          opponent={opponent as unknown as Opponent}
+          advantage={opponentAdvantage ?? 0}
+        />
+      )}
+
+      {prepare.travelOptions && prepare.travelOptions.length > 0 && (
+        <TravelPicker
+          options={prepare.travelOptions}
+          onTravel={regionId => onAction({ type: 'travel', chapterIndex: decision.chapterIndex, regionId })}
+        />
+      )}
 
       <PartyRail
         roster={roster}
@@ -88,6 +112,8 @@ export function JourneyDecision({
           </button>
         ))}
       </div>
+
+      <QuestStrip quests={quests} />
 
       <StatStrip stats={stats} />
 

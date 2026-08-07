@@ -395,6 +395,43 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
       { id: 'meta',  labelKey: 'journey.card.final-roster.meta.label',  flavorKey: 'journey.card.final-roster.meta.flavor',  delta: { wins: 5, bond: -10, catches: 2 }, riskMultiplier: 1.25 },
     ],
   },
+  {
+    id: 'e4-order',
+    phases: ['elite-four'],
+    promptKey: 'journey.card.e4-order.prompt',
+    options: [
+      { id: 'lead-ace',  labelKey: 'journey.card.e4-order.lead-ace.label',  flavorKey: 'journey.card.e4-order.lead-ace.flavor',  delta: { fame: 6, fatigue: 10 }, riskMultiplier: 1.25 },
+      { id: 'lead-wall', labelKey: 'journey.card.e4-order.lead-wall.label', flavorKey: 'journey.card.e4-order.lead-wall.flavor', delta: { bond: 8, fatigue: 4 }, riskMultiplier: 0.85 },
+    ],
+    affinity: ['aggro', 'stall'],
+  },
+  {
+    id: 'e4-gambit',
+    phases: ['elite-four'],
+    promptKey: 'journey.card.e4-gambit.prompt',
+    options: [
+      { id: 'all-in',   labelKey: 'journey.card.e4-gambit.all-in.label',   flavorKey: 'journey.card.e4-gambit.all-in.flavor',   delta: { fame: 12, fatigue: 18 }, riskMultiplier: 1.6 },
+      { id: 'measured', labelKey: 'journey.card.e4-gambit.measured.label', flavorKey: 'journey.card.e4-gambit.measured.flavor', delta: { fatigue: -6, bond: 6 }, riskMultiplier: 0.8 },
+    ],
+  },
+  {
+    id: 'wc-scout',
+    phases: ['world-cup'],
+    promptKey: 'journey.card.wc-scout.prompt',
+    options: [
+      { id: 'scout',   labelKey: 'journey.card.wc-scout.scout.label',   flavorKey: 'journey.card.wc-scout.scout.flavor',   delta: { fatigue: 8 }, riskMultiplier: 0.8 },
+      { id: 'trust',   labelKey: 'journey.card.wc-scout.trust.label',   flavorKey: 'journey.card.wc-scout.trust.flavor',   delta: { bond: 10, fame: 4 }, riskMultiplier: 1.2 },
+    ],
+  },
+  {
+    id: 'wc-final',
+    phases: ['world-cup'],
+    promptKey: 'journey.card.wc-final.prompt',
+    options: [
+      { id: 'signature', labelKey: 'journey.card.wc-final.signature.label', flavorKey: 'journey.card.wc-final.signature.flavor', delta: { fame: 16, fatigue: 12 }, riskMultiplier: 1.45 },
+      { id: 'safe',      labelKey: 'journey.card.wc-final.safe.label',      flavorKey: 'journey.card.wc-final.safe.flavor',      delta: { bond: 8, fatigue: 4 }, riskMultiplier: 0.9 },
+    ],
+  },
 ];
 
 /** Cards eligible in a phase, in stable order. */
@@ -414,7 +451,9 @@ export const CHAPTER_BEATS: Record<ChapterPhase, string[]> = {
   'gym-circuit': ['first-badge', 'route-grind', 'gym-upset', 'crowd-notices', 'lost-close', 'training-camp'],
   'regional':    ['bracket-run', 'regional-final', 'meta-read', 'sponsor-scout', 'bad-matchup', 'clutch-set'],
   'national':    ['national-stage', 'travel-toll', 'top-cut', 'rival-rematch', 'format-lock', 'press-row'],
+  'elite-four':  ['e4-gauntlet', 'e4-no-heal', 'e4-final-door', 'e4-crowd-hush'],
   'worlds':      ['worlds-debut', 'day-two', 'stage-lights', 'heartbreak', 'trophy-lift', 'stream-clip'],
+  'world-cup':   ['wc-opening', 'wc-bracket', 'wc-upset', 'wc-final-stage'],
   'veteran':     ['veteran-grind', 'young-guns', 'legacy-set', 'body-aches', 'mentor-role', 'last-ladder'],
   'retirement':  ['final-bow', 'hall-of-fame', 'quiet-exit', 'passing-torch'],
 };
@@ -424,7 +463,9 @@ export const CHAPTER_TITLES: Record<ChapterPhase, string> = {
   'gym-circuit': 'gym-circuit',
   'regional': 'regional',
   'national': 'national',
+  'elite-four': 'elite-four',
   'worlds': 'worlds',
+  'world-cup': 'world-cup',
   'veteran': 'veteran',
   'retirement': 'retirement',
 };
