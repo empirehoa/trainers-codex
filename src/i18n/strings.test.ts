@@ -51,11 +51,11 @@ describe('i18n reference locale', () => {
     // Feed every known var name; anything left in braces is a var the string
     // asks for that no caller supplies.
     const vars = {
-      seed: 1, issue: 1, score: 1, verdict: 'V', url: 'u', region: 'R', minutes: '2',
+      seed: 1, issue: 1, verdict: 'V', url: 'u', region: 'R', minutes: '2',
       chapter: 1, total: 1, age: 10, days: 1, ace: 'A', subject: 'S', badges: 1,
       wins: 1, losses: 1, battles: 1, catches: 1, shinies: 1, fame: 1, fatigue: 1,
       placement: 1, trainer: 'T', recruit: 'R', choice: 'c',
-      caught: 1, seen: 1, name: 'N',
+      caught: 1, seen: 1, name: 'N', type: 'Fire', level: 20, score: 500,
     };
     const unresolved = referenceKeys().filter(k => /\{\w+\}/.test(translate(k, 'en', vars)));
     expect(unresolved, `strings with unknown vars: ${unresolved.join(', ')}`).toEqual([]);

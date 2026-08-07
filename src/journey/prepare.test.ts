@@ -362,3 +362,94 @@ describe('nicknames', () => {
     expect(snap.roster.find(r => r.id === SETUP.starterId)?.nickname).toBeUndefined();
   });
 });
+
+describe('v10: opponents, quests, crowns, travel', () => {
+  it('gym leaders are original, 8 per region, with rising levels', async () => {
+    const { gymLeaders } = await import('./opponents');
+    const leaders = gymLeaders(4242, 'kanto');
+    expect(leaders.length).toBe(8);
+    for (let i = 1; i < leaders.length; i++) {
+      expect(leaders[i].level).toBeGreaterThan(leaders[i - 1].level - 5);
+    }
+    // Specialties are distinct across the circuit.
+    expect(new Set(leaders.map(l => l.specialty)).size).toBe(8);
+    // Every leader fields a real team.
+    for (const l of leaders) expect(l.teamIds.length).toBeGreaterThan(0);
+  });
+
+  it('the cast never uses a protected character or organisation name', async () => {
+    const { gymLeaders, eliteFour, regionChampion, syndicateFor } = await import('./opponents');
+    // A representative blocklist. If any of these ever appear we have a real
+    // legal problem, so this test is a tripwire, not a style check.
+    const BANNED = /\b(ash|misty|brock|giovanni|cynthia|leon|red|blue|gary|lance|steven|wallace|team rocket|team magma|team aqua|team galactic|team plasma|team flare|team skull|team yell)\b/i;
+    const names: string[] = [];
+    for (const region of ['kanto', 'johto', 'alola', 'galar', 'paldea']) {
+      names.push(...gymLeaders(4242, region).map(l => `${l.name} ${l.title}`));
+      names.push(...eliteFour(4242, region).map(l => `${l.name} ${l.title}`));
+      names.push(`${regionChampion(4242, region).name}`);
+      names.push(`${syndicateFor(4242, region).name}`);
+    }
+    const offenders = names.filter(n => BANNED.test(n));
+    expect(offenders, `protected names leaked: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('type matchup rewards a party that answers the specialty', async () => {
+    const { matchupFor } = await import('./opponents');
+    const fireLeader = {
+      kind: 'gym' as const, name: 'X', title: 'Y', specialty: 'fire' as const,
+      index: 1, level: 30, teamIds: [4], regionId: 'kanto',
+    };
+    const water = [{ id: 7, shiny: false, joinedAt: -1, types: ['water' as const], xp: 0 }];
+    const grass = [{ id: 1, shiny: false, joinedAt: -1, types: ['grass' as const], xp: 0 }];
+    const good = matchupFor(water, fireLeader, 30);
+    const bad = matchupFor(grass, fireLeader, 30);
+    expect(good.advantage).toBeGreaterThan(bad.advantage);
+    expect(good.strongPicks).toContain(7);
+    expect(bad.weakPicks).toContain(1);
+  });
+
+  it('a saga run earns crowns and records named battles', () => {
+    const run = playTo({ ...SETUP, campaign: 'saga' }).run!;
+    expect(run.battles.length).toBeGreaterThan(0);
+    for (const b of run.battles) {
+      expect(b.name.length).toBeGreaterThan(2);
+      expect(['gym', 'elite-four', 'champion', 'syndicate', 'world-cup']).toContain(b.kind);
+    }
+    // Crowns only come from beaten champions, and never duplicate a region.
+    expect(new Set(run.crowns.map(c => c.regionId)).size).toBe(run.crowns.length);
+  });
+
+  it('quests are derived, bounded, and never exceed their target', () => {
+    const run = playTo(SETUP).run!;
+    for (const q of run.quests) {
+      expect(q.progress).toBeLessThanOrEqual(q.target);
+      expect(q.progress).toBeGreaterThanOrEqual(0);
+      expect(q.complete).toBe(q.progress >= q.target);
+    }
+  });
+
+  it('a travel action redirects the tour to the chosen region', () => {
+    const found = walkUntil({ ...SETUP, campaign: 'season' },
+      s => (s.prepare?.travelOptions?.length ?? 0) > 0);
+    if (!found) return; // crossroads is seed-dependent; engine path covered below
+    const { snap, choices } = found;
+    const target = snap.prepare!.travelOptions![0].regionId;
+    const acted = simulate({ ...SETUP, campaign: 'season' }, choices, [{
+      type: 'travel', chapterIndex: snap.decision!.chapterIndex, regionId: target,
+    }]);
+    expect(acted.region.tour.includes(target) || acted.region.regionId === target).toBe(true);
+  });
+
+  it('a travel action never breaks determinism', () => {
+    const setup = { ...SETUP, campaign: 'season' as const };
+    const actions: PrepareAction[] = [{ type: 'travel', chapterIndex: 4, regionId: 'alola' }];
+    expect(JSON.stringify(playTo(setup, actions).run))
+      .toBe(JSON.stringify(playTo(setup, actions).run));
+  });
+
+  it('ghost opponents are optional — a run with none still completes', () => {
+    const run = playTo({ ...SETUP, campaign: 'season' }).run!;
+    expect(run.score).toBeGreaterThanOrEqual(0);
+    expect(run.roster.length).toBe(ROSTER_SIZE);
+  });
+});

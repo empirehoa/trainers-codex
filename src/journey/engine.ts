@@ -24,8 +24,8 @@ import {
   chapterRng, chance, namedRng, pick, randInt, sample, type Rng,
 } from './prng';
 import {
-  CHAPTER_BEATS, CHAPTER_TITLES, cardsForPhase, DECISION_CARD_BY_ID,
-  describeMon, getPace, getPools, getRegion, monTypes,
+  CHAPTER_BEATS, CHAPTER_TITLES, cardsForPhase, DECISION_CARDS, DECISION_CARD_BY_ID,
+  describeMon, getPace, getPools, getRegion, monTypes, JOURNEY_REGIONS,
 } from './content';
 import {
   evolutionsOf, isValidEvolution, typesOf,
@@ -41,6 +41,11 @@ import {
   buildStakes, campaignChapterCount, eventFor, eventMultiplier, getCampaign,
   regionAt, regionTour,
 } from './campaign';
+import {
+  eliteFour, gymLeaders, matchupFor, matchupWinRateDelta, regionChampion,
+  syndicateFor, worldCupField, type Opponent,
+} from './opponents';
+import { questBoard, questFame, questMultiplier } from './quests';
 import { resolveVerdict, scoreCareer } from './scoring';
 import {
   BADGES_PER_REGION,
@@ -49,7 +54,8 @@ import {
   type EvolveTarget, type JourneyEvent, type JourneyRun, type JourneySetup,
   type PendingDecision, type PrepareAction, type PrepareAvailability,
   type RecordedChoice, type RosterEntry, type SimSnapshot,
-  type Stake, type StatDelta,
+  type OpponentResult, type Quest, type RegionCrown, type Stake, type StatDelta,
+  type TravelOption,
 } from './types';
 
 export const MIN_CHAPTERS = 12;
@@ -90,10 +96,14 @@ export function chapterCountFor(seedOrSetup: number | JourneySetup): number {
 export function phaseFor(index: number, chapterCount: number): ChapterPhase {
   if (index >= chapterCount - 1) return 'retirement';
   const t = index / (chapterCount - 1);
-  if (t < 0.30) return 'gym-circuit';
-  if (t < 0.50) return 'regional';
+  if (t < 0.28) return 'gym-circuit';
+  // The Elite Four sits right after the gym circuit — it is the region's exam.
+  if (t < 0.38) return 'elite-four';
+  if (t < 0.52) return 'regional';
   if (t < 0.66) return 'national';
-  if (t < 0.82) return 'worlds';
+  if (t < 0.80) return 'worlds';
+  // The World Cup is the finale, just before the veteran wind-down.
+  if (t < 0.86) return 'world-cup';
   return 'veteran';
 }
 
@@ -142,7 +152,10 @@ function selectCard(
   // so a Collector run leans toward catch-flavoured dilemmas without ever
   // being locked out of the others.
   const weighted = pool.flatMap(c => (c.affinity?.includes(archetype) ? [c, c] : [c]));
-  return pick(namedRng(seed, `card-${chapterIndex}`), weighted);
+  // A phase with no cards would otherwise crash the sim. Fall back to the
+  // whole deck rather than dying — a wrong-flavoured card beats a dead run.
+  const safe = weighted.length ? weighted : DECISION_CARDS;
+  return pick(namedRng(seed, `card-${chapterIndex}`), safe);
 }
 
 /** The decision standing at `chapterIndex`, or null if that chapter has none. */
@@ -230,7 +243,9 @@ const PHASE_PROFILE: Record<ChapterPhase, {
   'gym-circuit': { battles: [10, 22], baseWinRate: 0.62, fatiguePerChapter: [3, 9],  tournamentChance: 0.15, fame: [1, 3] },
   'regional':    { battles: [14, 28], baseWinRate: 0.58, fatiguePerChapter: [5, 12], tournamentChance: 0.75, fame: [1, 5] },
   'national':    { battles: [18, 34], baseWinRate: 0.55, fatiguePerChapter: [6, 14], tournamentChance: 0.85, fame: [2, 6] },
+  'elite-four':  { battles: [12, 20], baseWinRate: 0.48, fatiguePerChapter: [12, 20], tournamentChance: 0.30, fame: [4, 10] },
   'worlds':      { battles: [16, 30], baseWinRate: 0.52, fatiguePerChapter: [8, 16], tournamentChance: 0.95, fame: [3, 9] },
+  'world-cup':   { battles: [10, 18], baseWinRate: 0.46, fatiguePerChapter: [10, 18], tournamentChance: 1.00, fame: [8, 18] },
   'veteran':     { battles: [10, 24], baseWinRate: 0.56, fatiguePerChapter: [6, 15], tournamentChance: 0.55, fame: [1, 4] },
   'retirement':  { battles: [2, 8],   baseWinRate: 0.60, fatiguePerChapter: [0, 3],  tournamentChance: 0.20, fame: [1, 5] },
 };
@@ -284,6 +299,8 @@ interface ChapterInput {
   regionGen: number;
   /** Region id currently being toured. */
   regionId: string;
+  /** Named adversary for this chapter, when the phase has one. */
+  opponent: Opponent | null;
 }
 
 function resolveChapter(input: ChapterInput): {
@@ -293,6 +310,7 @@ function resolveChapter(input: ChapterInput): {
   caughtAdded: number[];
   badgesWon: number;
   boxAdded: BoxEntry[];
+  battle: OpponentResult | null;
 } {
   const { setup, index, phase, risk } = input;
   const rng = chapterRng(setup.seed, index);
@@ -311,8 +329,16 @@ function resolveChapter(input: ChapterInput): {
   // Risk raises the mean a little and the spread a lot.
   const meanShift = (risk - 1) * 0.05;
   const spread = (rng() - 0.5) * 0.28 * risk;
+  // Type matchup + level gap vs a named opponent. This is the payoff for
+  // team-building: a party built to answer the specialty genuinely wins more.
+  const partyLevel = input.roster.length
+    ? Math.round(input.roster.reduce((n, m) => n + levelFromXp(m.xp ?? 0), 0) / input.roster.length)
+    : 5;
+  const matchup = input.opponent ? matchupFor(input.roster, input.opponent, partyLevel) : null;
+  const matchupDelta = matchup ? matchupWinRateDelta(matchup) : 0;
+
   const winRate = Math.min(0.95, Math.max(0.05,
-    profile.baseWinRate + mods.winRate + bondBonus - fatiguePenalty + meanShift + spread,
+    profile.baseWinRate + mods.winRate + bondBonus - fatiguePenalty + meanShift + spread + matchupDelta,
   ));
   const wins = Math.round(battles * winRate);
   const losses = battles - wins;
@@ -463,6 +489,9 @@ function resolveChapter(input: ChapterInput): {
     placement: placement ?? 0,
     chapter: index + 1,
     choice: input.choiceOptionId ?? '',
+    opponent: input.opponent?.name ?? '',
+    opponentTitle: input.opponent?.title ?? '',
+    specialty: input.opponent?.specialty ?? '',
   };
 
   const chapter: ChapterResult = {
@@ -495,7 +524,20 @@ function resolveChapter(input: ChapterInput): {
     }),
   }));
 
-  return { chapter, roster, seenAdded, caughtAdded, badgesWon: badges, boxAdded };
+  const battle: OpponentResult | null = input.opponent ? {
+    chapterIndex: index,
+    kind: input.opponent.kind,
+    name: input.opponent.name,
+    title: input.opponent.title,
+    specialty: input.opponent.specialty,
+    level: input.opponent.level,
+    // A named battle is won when the chapter's own win rate cleared the bar —
+    // the same roll that drives everything else, so it can't disagree with it.
+    won: winRate >= 0.5,
+    advantage: matchup?.advantage ?? 0,
+  } : null;
+
+  return { chapter, roster, seenAdded, caughtAdded, badgesWon: badges, boxAdded, battle };
 }
 
 // ============================================================
@@ -651,6 +693,12 @@ function applyPrepareActions(
       continue;
     }
 
+    if (action.type === 'travel') {
+      // Handled up-front when building the visited-region list; nothing to do
+      // to the party here.
+      continue;
+    }
+
     if (action.type === 'nickname') {
       const i = roster.findIndex(m => m.id === action.id);
       if (i === -1) continue;
@@ -713,6 +761,76 @@ function initialRoster(setup: JourneySetup): RosterEntry[] {
 }
 
 // ============================================================
+// OPPONENT SELECTION
+// ============================================================
+
+/**
+ * The named adversary standing at a chapter, if any.
+ *
+ * Gyms are indexed by how many badges the region has already yielded, so the
+ * circuit is walked in order. The Elite Four is walked by its own position
+ * within the phase. Syndicate operations interrupt the gym circuit at fixed
+ * local chapters, which is what makes the region feel inhabited.
+ */
+function opponentAt(opts: {
+  seed: number;
+  regionId: string;
+  phase: ChapterPhase;
+  localIndex: number;
+  earnedHere: number;
+  e4Step: number;
+  tour: string[];
+  ghosts: Opponent[];
+  wcStep: number;
+}): Opponent | null {
+  const { seed, regionId, phase, localIndex, earnedHere, e4Step, tour, ghosts, wcStep } = opts;
+
+  if (phase === 'gym-circuit') {
+    // Syndicate shows up twice per region, between gyms.
+    if (localIndex > 0 && localIndex % 4 === 3) return syndicateFor(seed, regionId);
+    const leaders = gymLeaders(seed, regionId);
+    return leaders[Math.min(earnedHere, leaders.length - 1)] ?? null;
+  }
+  if (phase === 'elite-four') {
+    const four = eliteFour(seed, regionId);
+    if (e4Step < four.length) return four[e4Step];
+    return regionChampion(seed, regionId);
+  }
+  if (phase === 'world-cup') {
+    const field = worldCupField(seed, tour, ghosts);
+    return field[Math.min(wcStep, field.length - 1)] ?? null;
+  }
+  return null;
+}
+
+/** Regions the player can travel to next, with what each offers. */
+function travelOptionsFor(seed: number, visited: string[], chapterIndex: number): TravelOption[] {
+  const remaining = JOURNEY_REGIONS.filter(r => !visited.includes(r.id));
+  if (remaining.length === 0) return [];
+  const rng = namedRng(seed, `travel-${chapterIndex}`);
+  const offer = sample(rng, remaining, Math.min(3, remaining.length));
+  return offer.map(r => {
+    const pools = getPools(r.gen, r.id);
+    const formLabel = REGION_FORM_LABEL[r.id];
+    return {
+      regionId: r.id,
+      label: r.label,
+      formLabel,
+      legendaryCount: pools.legendary.length,
+      previewIds: sample(namedRng(seed, `travel-preview-${r.id}`), pools.rare.length ? pools.rare : pools.common, 3),
+    };
+  });
+}
+
+/** Human-readable regional-variant line per region, for the travel card. */
+const REGION_FORM_LABEL: Record<string, string | undefined> = {
+  alola: 'Alolan forms',
+  galar: 'Galarian forms',
+  paldea: 'Paldean forms',
+  sinnoh: 'Hisuian forms',
+};
+
+// ============================================================
 // THE SIMULATION
 // ============================================================
 
@@ -728,6 +846,12 @@ export function simulate(
   setup: JourneySetup,
   choices: RecordedChoice[],
   actions: PrepareAction[] = [],
+  /**
+   * Other players' finished teams, used as World Cup opponents. Optional and
+   * additive: with none supplied the bracket fills with generated challengers,
+   * so the game is identical offline and on day one.
+   */
+  ghostOpponents: Opponent[] = [],
 ): SimSnapshot {
   const chapterCount = chapterCountFor(setup);
   const { decisionEvery } = getPace(setup.pace);
@@ -751,6 +875,20 @@ export function simulate(
   const events: JourneyEvent[] = [];
   const usedLegendary = new Set<string>();
   const regionBadgeCount = new Map<string, number>();
+  const crowns: RegionCrown[] = [];
+  const battles: OpponentResult[] = [];
+  // Player-chosen travel overrides the seeded tour; visited order is what the
+  // region resolver actually walks.
+  const travelByChapter = new Map(
+    actions.filter(a => a.type === 'travel').map(a => [a.chapterIndex, a.regionId]),
+  );
+  const visited: string[] = [tour[0]];
+  for (const [, regionId] of [...travelByChapter.entries()].sort((a, b) => a[0] - b[0])) {
+    if (!visited.includes(regionId)) visited.push(regionId);
+  }
+  let e4Step = 0;
+  let wcStep = 0;
+  let syndicateBeaten = 0;
 
   const mergeDex = (addSeen: number[], addCaught: number[]) => {
     for (const id of addSeen) if (!seen.includes(id)) seen.push(id);
@@ -763,9 +901,17 @@ export function simulate(
   for (let index = 0; index < chapterCount; index++) {
     const phase = phaseFor(index, chapterCount);
     const here = regionAt(setup, index);
-    const regionId = here.regionId;
+    // Player travel choices replace the seeded tour stop for their leg.
+    const regionId = visited[Math.min(here.tourIndex, visited.length - 1)] ?? here.regionId;
     const regionGen = getRegion(regionId).gen;
     const earnedHere = regionBadgeCount.get(regionId) ?? 0;
+
+    const opponent = opponentAt({
+      seed: setup.seed, regionId, phase, localIndex: here.localIndex,
+      earnedHere, e4Step, tour: visited, ghosts: ghostOpponents, wcStep,
+    });
+    if (phase === 'elite-four') e4Step++;
+    if (phase === 'world-cup') wcStep++;
 
     let risk = 1;
     let choiceDelta: StatDelta | null = null;
@@ -795,8 +941,20 @@ export function simulate(
       stats = prepped.stats;
       mergeDex(prepped.seen, prepped.caught);
 
+      // Quest board for THIS decision only — the final board is recomputed at
+      // the end of the run, so this local never needs to outlive the return.
+      const boardNow = questBoard({
+        seed: setup.seed, stats, roster, dex: { seen, caught }, badges,
+        regionId, events, syndicateBeaten,
+      });
+
       const recorded = choiceByChapter.get(index);
       if (!recorded) {
+        // A crossroads opens at the END of a region's Elite Four, when there
+        // is somewhere left to go — that's the "go international" moment.
+        const atCrossroads = phase === 'elite-four'
+          && crowns.some(c => c.regionId === regionId)
+          && visited.length < getCampaign(setup.campaign).regions;
         return {
           status: 'awaiting-decision',
           chapters,
@@ -817,7 +975,28 @@ export function simulate(
             card,
             vars: decisionVars(setup, roster, stats, index),
           },
-          prepare: computePrepare(roster, box, stats, inventory),
+          quests: boardNow,
+          crowns: [...crowns],
+          battles: [...battles],
+          opponent: opponent ? {
+            kind: opponent.kind, name: opponent.name, title: opponent.title,
+            specialty: opponent.specialty, level: opponent.level,
+            teamIds: opponent.teamIds, ghost: opponent.ghost,
+          } : undefined,
+          opponentAdvantage: opponent
+            ? matchupFor(
+                roster, opponent,
+                roster.length
+                  ? Math.round(roster.reduce((n, m) => n + levelFromXp(m.xp ?? 0), 0) / roster.length)
+                  : 5,
+              ).advantage
+            : undefined,
+          prepare: {
+            ...computePrepare(roster, box, stats, inventory),
+            travelOptions: atCrossroads
+              ? travelOptionsFor(setup.seed, visited, index)
+              : undefined,
+          },
         };
       }
 
@@ -829,12 +1008,22 @@ export function simulate(
 
     const resolved = resolveChapter({
       setup, index, phase, stats, roster, risk, choiceDelta, choiceOptionId,
-      badgeRoom: BADGES_PER_REGION - earnedHere, regionGen, regionId,
+      badgeRoom: BADGES_PER_REGION - earnedHere, regionGen, regionId, opponent,
     });
     chapters.push(resolved.chapter);
     stats = resolved.chapter.stats;
     roster = resolved.roster;
     mergeDex(resolved.seenAdded, resolved.caughtAdded);
+
+    if (resolved.battle) {
+      battles.push(resolved.battle);
+      if (resolved.battle.won && resolved.battle.kind === 'syndicate') syndicateBeaten++;
+      // Beating a region Champion crowns the region.
+      if (resolved.battle.won && resolved.battle.kind === 'champion'
+          && !crowns.some(c => c.regionId === regionId)) {
+        crowns.push({ regionId, chapterIndex: index, championName: resolved.battle.name });
+      }
+    }
 
     // Record each badge individually so the UI can render a real badge track.
     if (resolved.badgesWon > 0) {
@@ -884,7 +1073,14 @@ export function simulate(
   // Stacked event multipliers apply to the final total, so a run that hit a
   // legendary event genuinely outscores one that didn't. Antes are then banked
   // against their escalating targets.
-  const mult = eventMultiplier(events);
+  // Final quest board, then the stacked multipliers: events × quests.
+  const quests: Quest[] = questBoard({
+    seed: setup.seed, stats, roster, dex, badges,
+    regionId: regionAt(setup, Math.max(0, chapterCount - 1)).regionId,
+    events, syndicateBeaten,
+  });
+  stats = applyDelta(stats, { fame: questFame(quests) });
+  const mult = eventMultiplier(events) * questMultiplier(quests);
   const finalScore = Math.min(999, Math.round(breakdown.total * mult));
   const spec = getCampaign(setup.campaign);
   const bankedStakes: Stake[] = stakes.map((st, i) => {
@@ -917,6 +1113,9 @@ export function simulate(
     },
     stakes: bankedStakes,
     events,
+    quests,
+    crowns,
+    battles,
     verdict,
     score: finalScore,
     breakdown: { ...breakdown, total: finalScore },
@@ -925,7 +1124,8 @@ export function simulate(
 
   return {
     status: 'complete', chapters, stats, roster, box, dex, badges,
-    region: run.region, stakes: bankedStakes, events, inventory, chapterCount, run,
+    region: run.region, stakes: bankedStakes, events, quests, crowns, battles,
+    inventory, chapterCount, run,
   };
 }
 
