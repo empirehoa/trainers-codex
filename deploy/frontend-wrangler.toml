@@ -1,0 +1,20 @@
+# Public-facing frontend worker for trainerscodex.com (custom domain -> this
+# worker). It serves the single-file bundle + PWA assets from a staged dir.
+#
+# Deploy:
+#   node scripts/inject-config.mjs          # writes /tmp/tc-deploy/index.html
+#   cp public/{manifest.webmanifest,sw.js,apple-touch-icon.png,icon-*.png,icons.svg,og-journey.jpg} /tmp/tc-deploy/
+#   (cd worker && node_modules/.bin/wrangler deploy --config ../deploy/frontend-wrangler.toml)
+#   # then purge the Cloudflare cache for the zone (edge caches / aggressively)
+#
+# NOTE: no _redirects file. The Workers-Assets validator rejects the SPA splat
+# (`/journey/* /index.html 200`) as a potential .html/index loop. SPA
+# not_found_handling below is the supported equivalent: every unmatched route
+# resolves to index.html with 200 and the query string preserved — exactly what
+# the ?seed= / ?daily= deep-links need.
+name = "tiny-fire-5e03"
+compatibility_date = "2026-05-01"
+
+[assets]
+directory = "/tmp/tc-deploy"
+not_found_handling = "single-page-application"

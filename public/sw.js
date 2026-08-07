@@ -13,7 +13,7 @@
 //
 // Bump CACHE_VERSION on any shipped change to the shell so clients refresh.
 
-const CACHE_VERSION = 'tc-v1';
+const CACHE_VERSION = 'tc-v7';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 
 // The shell + install-metadata. '/' is the inlined app; the rest let the
