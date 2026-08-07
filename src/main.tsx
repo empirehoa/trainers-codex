@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { I18nProvider } from '@/i18n/I18nProvider'
+import { stampProvenance } from '@/lib/provenance'
+
+// Attribution + build fingerprint, before anything renders.
+stampProvenance()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

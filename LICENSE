@@ -1,0 +1,76 @@
+Trainer's Codex — Proprietary Software License
+Copyright (c) 2026 Empire Management Group, LLC. All rights reserved.
+
+================================================================================
+THIS IS NOT OPEN SOURCE SOFTWARE.
+================================================================================
+
+1. OWNERSHIP
+
+   The Trainer's Codex application, including without limitation its source
+   code, compiled bundles, generated data files, simulation engine, scoring
+   and verdict systems, poster and merchandise renderers, procedurally
+   generated character and organisation names, written content, layout,
+   design, and documentation (collectively, the "Software") is the exclusive
+   property of Empire Management Group, LLC ("EMG") and is protected by
+   United States and international copyright law.
+
+2. NO LICENSE GRANTED
+
+   No license, express or implied, is granted to any person or entity to use,
+   copy, modify, merge, publish, distribute, sublicense, sell, host, deploy,
+   rebrand, or create derivative works from the Software, in whole or in
+   part, except by a separate written agreement signed by an authorized
+   officer of EMG.
+
+   Serving the Software (including a copy of `bundle.html`, any file derived
+   from it, or any substantial portion of the source) from any domain, host,
+   application, or distribution channel not operated by EMG is expressly
+   prohibited.
+
+3. PERMITTED PERSONAL USE
+
+   End users accessing an EMG-operated deployment of the Software (including
+   trainerscodex.com) are granted a personal, non-exclusive, non-transferable,
+   revocable license to use the Software for their own non-commercial
+   entertainment, including saving, downloading, and sharing artwork the
+   Software generates from their own inputs. This does not grant any right to
+   the Software itself.
+
+4. NO REVERSE ENGINEERING FOR REDEPLOYMENT
+
+   Because the Software is delivered to browsers as client-side code, its
+   contents are necessarily readable. Readability does not imply permission.
+   Extracting, deobfuscating, or reconstructing the Software for the purpose
+   of operating a competing or derivative service is a violation of this
+   license and of applicable copyright law.
+
+5. THIRD-PARTY MATERIAL
+
+   The Software depends on third-party open-source packages, each governed by
+   its own license; those licenses are unaffected by this one and continue to
+   apply to those packages. The Software also references publicly available
+   Pokémon sprite and card data at runtime from third-party sources. All
+   Pokémon-related names, characters, sprites, and trademarks are the property
+   of Nintendo, Creatures Inc., GAME FREAK inc., and The Pokémon Company. EMG
+   claims no ownership of them, is not affiliated with or endorsed by those
+   entities, and asserts copyright only over its own original code, content,
+   and generated works.
+
+6. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+   EMG BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT
+   OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+7. ENFORCEMENT
+
+   EMG actively monitors for unauthorized deployments. The Software embeds
+   provenance markers that allow EMG to identify copies of its build output.
+   Unauthorized use will be pursued through DMCA takedown notices to the
+   infringing host, registrar, and CDN, and through such other remedies as
+   are available at law.
+
+Contact: legal@trainerscodex.com
