@@ -12,6 +12,13 @@ export type Archetype = 'aggro' | 'stall' | 'balance' | 'collector' | 'shiny-hun
 /** Where this run came from — reported as `source` on the run_started event. */
 export type RunSource = 'fresh' | 'seed-link' | 'daily';
 
+/**
+ * Campaign length. `short` is the original 3-minute single-region run;
+ * `season` and `saga` are the long-form modes — more regions, more gyms, more
+ * chapters, designed to be picked up across a week or a month.
+ */
+export type Campaign = 'short' | 'season' | 'saga';
+
 export interface JourneySetup {
   seed: number;
   trainerName: string;
@@ -20,6 +27,8 @@ export interface JourneySetup {
   archetype: Archetype;
   pace: Pace;
   source: RunSource;
+  /** Defaults to 'short' when absent, so old links and saves still replay. */
+  campaign?: Campaign;
   /** Set only when source === 'daily' — the local date the seed came from. */
   dailyDate?: string;
 }
@@ -137,12 +146,16 @@ export interface RecordedChoice {
 // deep-link, which carries setup, not history).
 
 export type PrepareAction =
-  /** Evolve a roster member (fromId → toId). `viaItem` bypasses the hold gate. */
+  /** Evolve a roster member (fromId → toId). Consumes a stone/cord when required. */
   | { type: 'evolve'; chapterIndex: number; fromId: number; toId: number; viaItem?: boolean }
   /** Promote a roster member to the ace slot (index 0). */
   | { type: 'ace'; chapterIndex: number; id: number }
-  /** Consume an item. `targetId` is required for rare-candy (which member). */
-  | { type: 'item'; chapterIndex: number; item: ItemId; targetId?: number };
+  /** Consume an item. `targetId` names the member for targeted items. */
+  | { type: 'item'; chapterIndex: number; item: ItemId; targetId?: number }
+  /** Swap a party member out for one from the box. */
+  | { type: 'swap'; chapterIndex: number; outId: number; inId: number }
+  /** Give a party member a nickname (empty string clears it). */
+  | { type: 'nickname'; chapterIndex: number; id: number; name: string };
 
 // ============================================================
 // POKÉDEX
@@ -153,6 +166,71 @@ export interface DexState {
   seen: number[];
   /** Species ids the trainer has actually caught (superset includes roster). */
   caught: number[];
+}
+
+// ============================================================
+// BADGES + REGION PROGRESSION
+// ============================================================
+
+/** Gyms per region — the story runs the full circuit before moving on. */
+export const BADGES_PER_REGION = 8;
+
+export interface BadgeEarned {
+  regionId: string;
+  /** 1-8 within the region. */
+  index: number;
+  /** Chapter it was won at. */
+  chapterIndex: number;
+}
+
+/** Where the career currently stands in its region tour. */
+export interface RegionProgress {
+  /** Region currently being played. */
+  regionId: string;
+  /** Ordered list of regions this campaign will visit. */
+  tour: string[];
+  /** Index into `tour`. */
+  tourIndex: number;
+  /** Badges earned in the CURRENT region. */
+  regionBadges: number;
+}
+
+// ============================================================
+// STAKES + EVENTS (the Balatro layer)
+// ============================================================
+
+/**
+ * An "ante": an escalating score target the career must clear. Each region tour
+ * stop raises the bar, so a long campaign keeps applying pressure instead of
+ * flattening out.
+ */
+export interface Stake {
+  /** 1-based ante number. */
+  ante: number;
+  /** Score the player must reach by the end of this ante. */
+  target: number;
+  /** Score actually banked when the ante closed. */
+  banked?: number;
+  cleared?: boolean;
+}
+
+export type EventRarity = 'common' | 'rare' | 'legendary';
+
+/** A special encounter fired at a chapter — the "something happened" beat. */
+export interface JourneyEvent {
+  id: string;
+  rarity: EventRarity;
+  chapterIndex: number;
+  /** i18n key for the headline. */
+  titleKey: string;
+  /** i18n key for the body. */
+  bodyKey: string;
+  /** Interpolation values. */
+  vars: Record<string, string | number>;
+  /** Score multiplier this event contributed (1 = none). */
+  mult?: number;
+  /** Species this event granted, if any. */
+  grantedId?: number;
 }
 
 // ============================================================
@@ -168,6 +246,19 @@ export interface RosterEntry {
   types: PokemonType[];
   /** How many times this member has evolved this run (0 = base form as caught). */
   evolved?: number;
+  /** Cumulative XP. Level is derived from this (see levels.ts). */
+  xp?: number;
+  /** Nickname, if the player set one. */
+  nickname?: string;
+}
+
+/** A Pokémon sitting in the box — caught, not currently in the party. */
+export interface BoxEntry {
+  id: number;
+  shiny: boolean;
+  xp: number;
+  /** Chapter it was caught at. */
+  caughtAt: number;
 }
 
 export interface Verdict {
@@ -198,7 +289,12 @@ export interface JourneyRun {
   actions: PrepareAction[];
   stats: CareerStats;
   roster: RosterEntry[];
+  box: BoxEntry[];
   dex: DexState;
+  badges: BadgeEarned[];
+  region: RegionProgress;
+  stakes: Stake[];
+  events: JourneyEvent[];
   verdict: Verdict;
   score: number;
   breakdown: ScoreBreakdown;
@@ -210,21 +306,36 @@ export interface JourneyRun {
 // PREPARE AVAILABILITY — what the UI can offer at a decision
 // ============================================================
 
+/** One evolution target, with whether it can be taken right now and why not. */
+export interface EvolveTarget {
+  id: number;
+  to: string;
+  how: string;
+  level: number | null;
+  ready: boolean;
+  /** Short i18n key explaining the block when `ready` is false. */
+  blockKey?: string;
+  /** Value for the block message ({n}). */
+  blockValue?: number;
+}
+
 /** One member's evolve options at the current decision point. */
 export interface EvolveOffer {
   fromId: number;
-  /** Legal targets (id + display), from the evolution map. */
-  options: { id: number; to: string }[];
-  /** True when the normal hold gate is met (no Rare Candy needed). */
+  options: EvolveTarget[];
+  /** True when at least one target is takeable right now. */
   eligible: boolean;
 }
 
 /** Everything the prepare step can present at the pending decision. */
 export interface PrepareAvailability {
-  /** Evolve offers keyed by the member's current species id. */
+  /** Evolve offers keyed by the member's current species id. Members with NO
+   *  evolutions are omitted entirely — the UI shows "fully evolved" for those. */
   evolves: EvolveOffer[];
   /** Whether reordering the ace is meaningful (roster length > 1). */
   canSetAce: boolean;
+  /** Box members available to swap in. */
+  box: BoxEntry[];
 }
 
 // ============================================================
@@ -239,7 +350,12 @@ export interface SimSnapshot {
   chapters: ChapterResult[];
   stats: CareerStats;
   roster: RosterEntry[];
+  box: BoxEntry[];
   dex: DexState;
+  badges: BadgeEarned[];
+  region: RegionProgress;
+  stakes: Stake[];
+  events: JourneyEvent[];
   inventory: Inventory;
   chapterCount: number;
   /** Present when status === 'awaiting-decision'. */

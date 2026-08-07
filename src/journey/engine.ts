@@ -28,16 +28,28 @@ import {
   describeMon, getPace, getPools, getRegion, monTypes,
 } from './content';
 import {
-  evolutionsOf, evolveEligible, isValidEvolution, typesOf,
+  evolutionsOf, isValidEvolution, typesOf,
 } from './evolution';
 import {
-  emptyInventory, ITEM_STAT_EFFECT, type Inventory, type ItemId,
+  emptyInventory, ITEM_LEVEL_GRANT, ITEM_PARTY_XP, ITEM_STAT_EFFECT,
+  type Inventory, type ItemId,
 } from './items';
+import {
+  canEvolveNow, chapterXp, levelForNewCatch, levelFromXp, xpForLevel,
+} from './levels';
+import {
+  buildStakes, campaignChapterCount, eventFor, eventMultiplier, getCampaign,
+  regionAt, regionTour,
+} from './campaign';
 import { resolveVerdict, scoreCareer } from './scoring';
-import type {
-  CareerStats, ChapterPhase, ChapterResult, DecisionCardSpec, DexState,
-  EvolveOffer, JourneyRun, JourneySetup, PendingDecision, PrepareAction,
-  PrepareAvailability, RecordedChoice, RosterEntry, SimSnapshot, StatDelta,
+import {
+  BADGES_PER_REGION,
+  type BadgeEarned, type BoxEntry, type CareerStats, type ChapterPhase,
+  type ChapterResult, type DecisionCardSpec, type DexState, type EvolveOffer,
+  type EvolveTarget, type JourneyEvent, type JourneyRun, type JourneySetup,
+  type PendingDecision, type PrepareAction, type PrepareAvailability,
+  type RecordedChoice, type RosterEntry, type SimSnapshot,
+  type Stake, type StatDelta,
 } from './types';
 
 export const MIN_CHAPTERS = 12;
@@ -52,9 +64,22 @@ export const UNRANKED = 999;
 // CAREER SHAPE
 // ============================================================
 
-/** How many chapters this career runs for. Depends on the seed alone. */
-export function chapterCountFor(seed: number): number {
-  return randInt(namedRng(seed, 'career-length'), MIN_CHAPTERS, MAX_CHAPTERS);
+/**
+ * How many chapters this career runs for.
+ *
+ * Legacy signature (seed only) still works and yields the original short-run
+ * length, so old seed links replay unchanged. Pass a full setup to get the
+ * campaign-aware count (season/saga are multi-region and much longer).
+ */
+export function chapterCountFor(seedOrSetup: number | JourneySetup): number {
+  if (typeof seedOrSetup === 'number') {
+    return randInt(namedRng(seedOrSetup, 'career-length'), MIN_CHAPTERS, MAX_CHAPTERS);
+  }
+  const setup = seedOrSetup;
+  if (!setup.campaign || setup.campaign === 'short') {
+    return randInt(namedRng(setup.seed, 'career-length'), MIN_CHAPTERS, MAX_CHAPTERS);
+  }
+  return campaignChapterCount(setup);
 }
 
 /**
@@ -82,7 +107,7 @@ export function isDecisionChapter(index: number, chapterCount: number, decisionE
 
 /** Every chapter index that will present a decision, for progress display. */
 export function decisionChapterIndices(setup: JourneySetup): number[] {
-  const count = chapterCountFor(setup.seed);
+  const count = chapterCountFor(setup);
   const { decisionEvery } = getPace(setup.pace);
   const out: number[] = [];
   for (let i = 0; i < count; i++) {
@@ -253,6 +278,12 @@ interface ChapterInput {
   choiceDelta: StatDelta | null;
   /** Option id taken, so the recap can echo it. */
   choiceOptionId: string | null;
+  /** Badges still available in the region being played. */
+  badgeRoom: number;
+  /** Region generation, for the recruit/catch pools on a multi-region tour. */
+  regionGen: number;
+  /** Region id currently being toured. */
+  regionId: string;
 }
 
 function resolveChapter(input: ChapterInput): {
@@ -260,6 +291,8 @@ function resolveChapter(input: ChapterInput): {
   roster: RosterEntry[];
   seenAdded: number[];
   caughtAdded: number[];
+  badgesWon: number;
+  boxAdded: BoxEntry[];
 } {
   const { setup, index, phase, risk } = input;
   const rng = chapterRng(setup.seed, index);
@@ -302,11 +335,18 @@ function resolveChapter(input: ChapterInput): {
   }
 
   // ---- badges ----
-  const badges = phase === 'gym-circuit' && chance(rng, 0.72) ? randInt(rng, 1, 2) : 0;
+  // Badges are capped at BADGES_PER_REGION per region so the gym circuit is a
+  // real, completable track rather than an unbounded counter. `badgeRoom` is
+  // what's left in the current region.
+  const badgeRoom = Math.max(0, input.badgeRoom);
+  const badgeRoll = phase === 'gym-circuit' && chance(rng, 0.72) ? randInt(rng, 1, 2) : 0;
+  const badges = Math.min(badgeRoll, badgeRoom);
 
   // ---- catches + shinies ----
-  const region = getRegion(setup.regionId);
-  const pools = getPools(region.gen);
+  // Pools follow the CURRENT tour region, not the starting one, so a saga's
+  // later regions actually offer their own species.
+  const region = getRegion(input.regionId);
+  const pools = getPools(input.regionGen, input.regionId);
   const seenAdded: number[] = [];
   const caughtAdded: number[] = [];
   const catchRolls = randInt(rng, 1, 4);
@@ -339,6 +379,12 @@ function resolveChapter(input: ChapterInput): {
     }
   }
 
+  // Catches beyond the party go to the BOX, so "swap in something I caught"
+  // has real inventory behind it.
+  const boxAdded: BoxEntry[] = caughtAdded.map(id => ({
+    id, shiny: false, xp: xpForLevel(levelForNewCatch(stats, index)), caughtAt: index,
+  }));
+
   // ---- roster recruitment ----
   let roster = input.roster;
   let recruitedId: number | undefined;
@@ -361,6 +407,7 @@ function resolveChapter(input: ChapterInput): {
         joinedAt: index,
         types: monTypes(recruitedId),
         evolved: 0,
+        xp: xpForLevel(levelForNewCatch(stats, index)),
       }];
       seenAdded.push(recruitedId);
       caughtAdded.push(recruitedId);
@@ -404,7 +451,7 @@ function resolveChapter(input: ChapterInput): {
   const aceId = roster[0]?.id;
   const vars: Record<string, string | number> = {
     trainer: setup.trainerName,
-    region: getRegion(setup.regionId).label,
+    region: region.label,
     age: stats.age,
     wins, losses, battles,
     badges: stats.badges,
@@ -436,7 +483,19 @@ function resolveChapter(input: ChapterInput): {
     placement,
   };
 
-  return { chapter, roster, seenAdded, caughtAdded };
+  // ---- party XP ----
+  // Awarded AFTER recruitment so a member that joined this chapter also earns
+  // from it (with the catch-up multiplier), and levels visibly tick up every
+  // chapter instead of the party sitting flat.
+  roster = roster.map((m, i) => ({
+    ...m,
+    xp: (m.xp ?? 0) + chapterXp({
+      phase, wins, battles, memberIndex: i,
+      joinedAt: m.joinedAt, chapterIndex: index, partySize: roster.length,
+    }),
+  }));
+
+  return { chapter, roster, seenAdded, caughtAdded, badgesWon: badges, boxAdded };
 }
 
 // ============================================================
@@ -447,31 +506,65 @@ function resolveChapter(input: ChapterInput): {
 function itemGrantFor(seed: number, index: number): ItemId | null {
   const rng = namedRng(seed, `item-grant-${index}`);
   // ~70% of decision chapters hand out something, so the inventory grows
-  // steadily but a run isn't drowning in items. Rare Candy is the scarcest.
+  // steadily but a run isn't drowning in items.
   if (!chance(rng, 0.7)) return null;
   const roll = rng();
-  if (roll < 0.42) return 'soothe-bell';
-  if (roll < 0.82) return 'energy-root';
-  return 'rare-candy';
+  if (roll < 0.26) return 'soothe-bell';
+  if (roll < 0.50) return 'energy-root';
+  if (roll < 0.68) return 'exp-share';
+  if (roll < 0.84) return 'rare-candy';
+  if (roll < 0.95) return 'evo-stone';
+  return 'link-cord';
 }
 
-/** What the prepare step can offer at the pending decision. */
-function computePrepare(roster: RosterEntry[], chapterIndex: number): PrepareAvailability {
+/**
+ * What the prepare step can offer at the pending decision.
+ *
+ * Members with NO evolutions are omitted entirely — that's the fix for
+ * "it offers to evolve Pokémon that don't evolve". Each remaining target
+ * reports whether it is takeable RIGHT NOW and, if not, exactly why (level /
+ * friendship / stone / link cord), so the UI can say "Lv.16 required" instead
+ * of an opaque disabled button.
+ */
+function computePrepare(
+  roster: RosterEntry[],
+  box: BoxEntry[],
+  stats: CareerStats,
+  inventory: Inventory,
+): PrepareAvailability {
   const evolves: EvolveOffer[] = [];
+  const hasStone = (inventory['evo-stone'] ?? 0) > 0;
+  const hasLinkCord = (inventory['link-cord'] ?? 0) > 0;
+
   for (const m of roster) {
     const opts = evolutionsOf(m.id);
-    if (opts.length === 0) continue;
-    evolves.push({
-      fromId: m.id,
-      options: opts.map(o => ({ id: o.id, to: o.to })),
-      eligible: evolveEligible(m.joinedAt, chapterIndex),
+    if (opts.length === 0) continue; // fully evolved — never offered
+    const targets: EvolveTarget[] = opts.map(o => {
+      const gate = canEvolveNow({
+        memberXp: m.xp ?? 0, how: o.how, evoLevel: o.level,
+        bond: stats.bond, hasStone, hasLinkCord,
+      });
+      if (gate.ok) return { id: o.id, to: o.to, how: o.how, level: o.level, ready: true };
+      const blockKey =
+        gate.reason === 'level' ? 'journey.prepare.needLevel'
+        : gate.reason === 'friendship' ? 'journey.prepare.needBond'
+        : gate.reason === 'item' ? 'journey.prepare.needStone'
+        : 'journey.prepare.needCord';
+      const blockValue =
+        gate.reason === 'level' ? gate.needLevel
+        : gate.reason === 'friendship' ? gate.needBond
+        : undefined;
+      return { id: o.id, to: o.to, how: o.how, level: o.level, ready: false, blockKey, blockValue };
     });
+    evolves.push({ fromId: m.id, options: targets, eligible: targets.some(t => t.ready) });
   }
-  return { evolves, canSetAce: roster.length > 1 };
+
+  return { evolves, canSetAce: roster.length > 1, box };
 }
 
 interface PrepareState {
   roster: RosterEntry[];
+  box: BoxEntry[];
   inventory: Inventory;
   stats: CareerStats;
   seen: number[];
@@ -489,6 +582,7 @@ function applyPrepareActions(
   chapterIndex: number,
 ): PrepareState {
   let roster = state.roster;
+  let box = state.box;
   const inventory: Inventory = { ...state.inventory };
   let stats = state.stats;
   const seen = [...state.seen];
@@ -503,12 +597,19 @@ function applyPrepareActions(
       if (!isValidEvolution(action.fromId, action.toId)) continue;
       if (roster.some(m => m.id === action.toId)) continue; // keep the six unique
       const member = roster[i];
-      const gateMet = evolveEligible(member.joinedAt, chapterIndex);
-      if (!gateMet) {
-        // Off-gate evolution requires (and consumes) a Rare Candy.
-        if (!action.viaItem || (inventory['rare-candy'] ?? 0) <= 0) continue;
-        inventory['rare-candy'] -= 1;
-      }
+      const edge = evolutionsOf(action.fromId).find(e => e.id === action.toId);
+      if (!edge) continue;
+      const gate = canEvolveNow({
+        memberXp: member.xp ?? 0, how: edge.how, evoLevel: edge.level,
+        bond: stats.bond,
+        hasStone: (inventory['evo-stone'] ?? 0) > 0,
+        hasLinkCord: (inventory['link-cord'] ?? 0) > 0,
+      });
+      if (!gate.ok) continue; // level/friendship not met → no-op (soft replay)
+      // Stone/cord evolutions consume the item that unlocked them.
+      if (edge.how === 'item') inventory['evo-stone'] -= 1;
+      else if (edge.how === 'trade') inventory['link-cord'] -= 1;
+
       roster = roster.map((m, idx) => idx === i
         ? { ...m, id: action.toId, types: typesOf(action.toId), evolved: (m.evolved ?? 0) + 1 }
         : m);
@@ -525,18 +626,72 @@ function applyPrepareActions(
       continue;
     }
 
+    if (action.type === 'swap') {
+      const outIdx = roster.findIndex(m => m.id === action.outId);
+      const inIdx = box.findIndex(b => b.id === action.inId);
+      if (outIdx === -1 || inIdx === -1) continue;
+      if (roster.some(m => m.id === action.inId)) continue; // no duplicates
+      const outgoing = roster[outIdx];
+      const incoming = box[inIdx];
+      roster = roster.map((m, idx) => idx === outIdx ? {
+        id: incoming.id,
+        shiny: incoming.shiny,
+        joinedAt: chapterIndex,
+        types: typesOf(incoming.id),
+        evolved: 0,
+        xp: incoming.xp,
+      } : m);
+      // The benched member keeps its XP — swapping is reversible, not a cull.
+      box = [
+        ...box.slice(0, inIdx), ...box.slice(inIdx + 1),
+        { id: outgoing.id, shiny: outgoing.shiny, xp: outgoing.xp ?? 0, caughtAt: outgoing.joinedAt },
+      ];
+      if (!seen.includes(incoming.id)) seen.push(incoming.id);
+      if (!caught.includes(incoming.id)) caught.push(incoming.id);
+      continue;
+    }
+
+    if (action.type === 'nickname') {
+      const i = roster.findIndex(m => m.id === action.id);
+      if (i === -1) continue;
+      // Trimmed and length-capped here so the cap holds on replay too, not
+      // just in the input that produced it.
+      const clean = String(action.name).replace(/\s+/g, ' ').trim().slice(0, 14);
+      roster = roster.map((m, idx) => idx === i
+        ? { ...m, nickname: clean.length ? clean : undefined }
+        : m);
+      continue;
+    }
+
     if (action.type === 'item') {
       const item = action.item;
       if ((inventory[item] ?? 0) <= 0) continue;
-      const effect = ITEM_STAT_EFFECT[item];
-      if (!effect) continue;
+      const statEffect = ITEM_STAT_EFFECT[item];
+      const levelGrant = ITEM_LEVEL_GRANT[item];
+      const partyXp = ITEM_PARTY_XP[item];
+      // Stones and cords are consumed by the evolution they enable, not here.
+      if (!statEffect && !levelGrant && !partyXp) continue;
+
+      if (levelGrant) {
+        // Rare Candy: +1 level to the named member (or the ace by default).
+        const targetId = action.targetId ?? roster[0]?.id;
+        const i = roster.findIndex(m => m.id === targetId);
+        if (i === -1) continue;
+        const cur = levelFromXp(roster[i].xp ?? 0);
+        roster = roster.map((m, idx) => idx === i
+          ? { ...m, xp: xpForLevel(Math.min(100, cur + levelGrant)) }
+          : m);
+      }
+      if (partyXp) {
+        roster = roster.map(m => ({ ...m, xp: (m.xp ?? 0) + partyXp }));
+      }
       inventory[item] -= 1;
-      stats = applyDelta(stats, effect);
+      if (statEffect) stats = applyDelta(stats, statEffect);
       continue;
     }
   }
 
-  return { roster, inventory, stats, seen, caught };
+  return { roster, box, inventory, stats, seen, caught };
 }
 
 // ============================================================
@@ -574,11 +729,12 @@ export function simulate(
   choices: RecordedChoice[],
   actions: PrepareAction[] = [],
 ): SimSnapshot {
-  const chapterCount = chapterCountFor(setup.seed);
+  const chapterCount = chapterCountFor(setup);
   const { decisionEvery } = getPace(setup.pace);
 
   let stats = initialStats();
   let roster = initialRoster(setup);
+  let box: BoxEntry[] = [];
   let inventory = emptyInventory();
   // Dex seeded with the starter — the trainer has, at minimum, met their own.
   const seen: number[] = [setup.starterId];
@@ -587,6 +743,14 @@ export function simulate(
   const chapters: ChapterResult[] = [];
   const usedCardIds = new Set<string>();
   const choiceByChapter = new Map(choices.map(c => [c.chapterIndex, c]));
+
+  // Region tour, badges, stakes and events — the long-campaign + Balatro layer.
+  const tour = regionTour(setup);
+  const badges: BadgeEarned[] = [];
+  const stakes: Stake[] = buildStakes(setup);
+  const events: JourneyEvent[] = [];
+  const usedLegendary = new Set<string>();
+  const regionBadgeCount = new Map<string, number>();
 
   const mergeDex = (addSeen: number[], addCaught: number[]) => {
     for (const id of addSeen) if (!seen.includes(id)) seen.push(id);
@@ -598,6 +762,10 @@ export function simulate(
 
   for (let index = 0; index < chapterCount; index++) {
     const phase = phaseFor(index, chapterCount);
+    const here = regionAt(setup, index);
+    const regionId = here.regionId;
+    const regionGen = getRegion(regionId).gen;
+    const earnedHere = regionBadgeCount.get(regionId) ?? 0;
 
     let risk = 1;
     let choiceDelta: StatDelta | null = null;
@@ -619,9 +787,10 @@ export function simulate(
       // team the player shaped (evolutions, ace, items) is what faces the
       // chapter — and is what the awaiting-decision snapshot shows.
       const prepped = applyPrepareActions(
-        { roster, inventory, stats, seen, caught }, actions, index,
+        { roster, box, inventory, stats, seen, caught }, actions, index,
       );
       roster = prepped.roster;
+      box = prepped.box;
       inventory = prepped.inventory;
       stats = prepped.stats;
       mergeDex(prepped.seen, prepped.caught);
@@ -633,7 +802,14 @@ export function simulate(
           chapters,
           stats,
           roster,
+          box,
           dex: { seen: [...seen], caught: [...caught] },
+          badges: [...badges],
+          region: {
+            regionId, tour, tourIndex: here.tourIndex, regionBadges: earnedHere,
+          },
+          stakes: stakes.map(st => ({ ...st })),
+          events: [...events],
           inventory,
           chapterCount,
           decision: {
@@ -641,7 +817,7 @@ export function simulate(
             card,
             vars: decisionVars(setup, roster, stats, index),
           },
-          prepare: computePrepare(roster, index),
+          prepare: computePrepare(roster, box, stats, inventory),
         };
       }
 
@@ -653,11 +829,47 @@ export function simulate(
 
     const resolved = resolveChapter({
       setup, index, phase, stats, roster, risk, choiceDelta, choiceOptionId,
+      badgeRoom: BADGES_PER_REGION - earnedHere, regionGen, regionId,
     });
     chapters.push(resolved.chapter);
     stats = resolved.chapter.stats;
     roster = resolved.roster;
     mergeDex(resolved.seenAdded, resolved.caughtAdded);
+
+    // Record each badge individually so the UI can render a real badge track.
+    if (resolved.badgesWon > 0) {
+      for (let b = 0; b < resolved.badgesWon; b++) {
+        badges.push({ regionId, index: earnedHere + b + 1, chapterIndex: index });
+      }
+      regionBadgeCount.set(regionId, earnedHere + resolved.badgesWon);
+    }
+
+    // Box the overflow catches.
+    if (resolved.boxAdded.length) {
+      const held = new Set([...roster.map(r => r.id), ...box.map(b => b.id)]);
+      for (const entry of resolved.boxAdded) {
+        if (held.has(entry.id)) continue;
+        held.add(entry.id);
+        box = [...box, entry];
+      }
+    }
+
+    // Special event for this chapter — the rare/legendary pull.
+    const ev = eventFor({ seed: setup.seed, chapterIndex: index, phase, regionGen, usedLegendary });
+    if (ev) {
+      if (ev.rarity === 'legendary') usedLegendary.add(ev.id);
+      events.push(ev);
+      if (ev.grantedId !== undefined) {
+        mergeDex([ev.grantedId], [ev.grantedId]);
+        const held = new Set([...roster.map(r => r.id), ...box.map(b => b.id)]);
+        if (!held.has(ev.grantedId)) {
+          box = [...box, {
+            id: ev.grantedId, shiny: ev.rarity === 'legendary',
+            xp: xpForLevel(levelForNewCatch(stats, index)), caughtAt: index,
+          }];
+        }
+      }
+    }
   }
 
   // Complete the six from the species the trainer actually CAUGHT this run
@@ -667,7 +879,23 @@ export function simulate(
 
   const dex: DexState = { seen: [...seen], caught: [...caught] };
   const breakdown = scoreCareer(stats, setup.archetype, chapterCount);
-  const verdict = resolveVerdict(stats, setup.archetype, breakdown.total);
+
+  // ---- the Balatro layer lands on the score ----
+  // Stacked event multipliers apply to the final total, so a run that hit a
+  // legendary event genuinely outscores one that didn't. Antes are then banked
+  // against their escalating targets.
+  const mult = eventMultiplier(events);
+  const finalScore = Math.min(999, Math.round(breakdown.total * mult));
+  const spec = getCampaign(setup.campaign);
+  const bankedStakes: Stake[] = stakes.map((st, i) => {
+    // Each ante banks the share of the score earned by the end of its region.
+    const share = spec.regions > 0 ? (i + 1) / spec.regions : 1;
+    const banked = Math.round(finalScore * share);
+    return { ...st, banked, cleared: banked >= st.target };
+  });
+
+  const verdict = resolveVerdict(stats, setup.archetype, finalScore);
+  const lastRegion = regionAt(setup, Math.max(0, chapterCount - 1));
 
   const run: JourneyRun = {
     setup,
@@ -678,14 +906,27 @@ export function simulate(
     actions: actions.filter(a => a.chapterIndex < chapterCount),
     stats,
     roster,
+    box,
     dex,
+    badges,
+    region: {
+      regionId: lastRegion.regionId,
+      tour,
+      tourIndex: lastRegion.tourIndex,
+      regionBadges: regionBadgeCount.get(lastRegion.regionId) ?? 0,
+    },
+    stakes: bankedStakes,
+    events,
     verdict,
-    score: breakdown.total,
-    breakdown,
+    score: finalScore,
+    breakdown: { ...breakdown, total: finalScore },
     chapterCount,
   };
 
-  return { status: 'complete', chapters, stats, roster, dex, inventory, chapterCount, run };
+  return {
+    status: 'complete', chapters, stats, roster, box, dex, badges,
+    region: run.region, stakes: bankedStakes, events, inventory, chapterCount, run,
+  };
 }
 
 function padRoster(setup: JourneySetup, roster: RosterEntry[], caught: number[] = []): RosterEntry[] {

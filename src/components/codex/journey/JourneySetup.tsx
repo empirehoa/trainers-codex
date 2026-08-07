@@ -6,6 +6,7 @@ import { useI18n } from '@/i18n/useI18n';
 import {
   ARCHETYPES, JOURNEY_REGIONS, PACES, TRAINER_NAMES, getRegion, rosterCaption,
 } from '@/journey/content';
+import { CAMPAIGNS } from '@/journey/campaign';
 import { dailyIssueNumber, localDateString, namedRng, pick, randomSeed } from '@/journey/prng';
 import { currentStreak, hasPlayedToday, loadStreak } from '@/journey/streak';
 import { pixelSprite } from '@/lib/pokemon';
@@ -166,6 +167,22 @@ export function JourneySetup({
               title={t(`journey.pace.${p.id}`)}
               sub={t(`journey.pace.${p.id}.desc`, { minutes: p.approxMinutes })}
               testId={`journey-pace-${p.id}`}
+            />
+          ))}
+        </div>
+      </Field>
+
+      {/* ---- campaign length ---- */}
+      <Field label={t('journey.campaign.label')}>
+        <div className="space-y-1">
+          {CAMPAIGNS.map(c => (
+            <OptionRow
+              key={c.id}
+              active={(draft.campaign ?? 'short') === c.id}
+              onClick={() => onChange({ ...draft, campaign: c.id })}
+              title={`${t(c.nameKey)} · ${c.approx}`}
+              sub={t(c.descKey)}
+              testId={`journey-campaign-${c.id}`}
             />
           ))}
         </div>

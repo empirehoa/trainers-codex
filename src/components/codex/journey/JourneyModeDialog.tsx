@@ -341,6 +341,8 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
             chapterCount={snapshot.chapterCount}
             roster={snapshot.roster}
             dex={snapshot.dex}
+            badges={snapshot.badges}
+            region={snapshot.region}
             onContinue={continueOn}
             onSkipToEnd={snapshot.status === 'awaiting-decision' ? skipToEnd : null}
           />
@@ -353,6 +355,9 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
             chapterCount={snapshot.chapterCount}
             roster={snapshot.roster}
             dex={snapshot.dex}
+            badges={snapshot.badges}
+            region={snapshot.region}
+            stakes={snapshot.stakes}
             inventory={snapshot.inventory}
             prepare={snapshot.prepare}
             actionsThisChapter={actions.filter(a => a.chapterIndex === snapshot.decision!.chapterIndex).length}

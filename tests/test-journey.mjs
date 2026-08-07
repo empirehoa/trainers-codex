@@ -712,6 +712,124 @@ const tests = [
         `ace sprite should be the evolved species (#2 Ivysaur); got ${aceSrc}`);
     },
   },
+
+  // ---------- levels / badges / box / nicknames (v9) ----------
+
+  {
+    name: 'the badge track renders 8 slots and a region label',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      assert(await has(page, '[data-testid="journey-badges"]'), 'badge track should render');
+      const count = await page.$eval('[data-testid="journey-badge-count"]', el => el.innerText.trim());
+      assert(/\/\s*8/.test(count), `badge counter should be out of 8, got: ${count}`);
+    },
+  },
+
+  {
+    name: 'party members show a level, and levels rise as the career runs',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-intense"]').click());
+      await sleep(60);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+
+      const readLevel = async () => {
+        await page.evaluate(() => document.querySelector('[data-testid="journey-prepare-toggle"]')?.click());
+        await sleep(120);
+        const txt = await page.evaluate(() => {
+          const el = document.querySelector('[data-testid^="journey-level-"]');
+          return el ? el.innerText.trim() : '';
+        });
+        await page.evaluate(() => document.querySelector('[data-testid="journey-prepare-toggle"]')?.click());
+        return parseInt((txt.match(/(\d+)/) || [])[1] || '0', 10);
+      };
+
+      const first = await readLevel();
+      assertGte(first, 1, 'a level should be displayed');
+
+      // Advance several chapters, then read again.
+      for (let i = 0; i < 12; i++) {
+        const moved = await page.evaluate(() => {
+          const c = document.querySelector('[data-testid="journey-continue"]');
+          if (c) { c.click(); return true; }
+          const o = [...document.querySelectorAll('[data-journey-option="1"]')];
+          if (o.length) { o[0].click(); return true; }
+          return false;
+        });
+        if (!moved) break;
+        await sleep(70);
+      }
+      if (await has(page, '[data-testid="journey-decision"]')) {
+        const later = await readLevel();
+        assertGte(later, first, `level should not go backwards (${first} -> ${later})`);
+      }
+    },
+  },
+
+  {
+    name: 'a party member can be given a nickname that sticks',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-prepare-toggle"]').click());
+      await sleep(150);
+      const opened = await page.evaluate(() => {
+        const b = document.querySelector('[data-testid^="journey-nick-open-"]');
+        if (!b) return false;
+        b.click();
+        return true;
+      });
+      assert(opened, 'nickname control should be present');
+      await sleep(150);
+      await page.evaluate(() => {
+        const input = document.querySelector('[data-testid^="journey-nick-input-"]');
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(input, 'Spike');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('[data-testid^="journey-nick-save-"]').click();
+      });
+      await sleep(250);
+      const txt = await page.evaluate(() =>
+        document.querySelector('[data-testid="journey-prepare"]')?.innerText || '');
+      assert(/Spike/.test(txt), 'the nickname should render on the member row');
+    },
+  },
+
+  {
+    name: 'a season campaign runs longer than a single-region run',
+    async fn(page) {
+      await openJourney(page);
+      const shortTotal = await page.evaluate(() => {
+        document.querySelector('[data-testid="journey-campaign-short"]')?.click();
+        return true;
+      });
+      assert(shortTotal, 'campaign picker should offer the short option');
+      await sleep(80);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-progress"]', { timeout: 8000 });
+      const a = await page.$eval('[data-testid="journey-progress"]', el => el.innerText.trim());
+      const aTotal = parseInt((a.match(/of\s+(\d+)/) || [])[1] || '0', 10);
+
+      // Restart with a season campaign and compare the chapter total.
+      // NOTE: never closePage(page) here — the harness owns that page's
+      // lifecycle and will close it again, which throws on a dead session.
+      const p2 = await newPage();
+      await openJourney(p2);
+      await p2.evaluate(() => document.querySelector('[data-testid="journey-campaign-season"]').click());
+      await sleep(80);
+      await startRun(p2);
+      await p2.waitForSelector('[data-testid="journey-progress"]', { timeout: 8000 });
+      const b = await p2.$eval('[data-testid="journey-progress"]', el => el.innerText.trim());
+      const bTotal = parseInt((b.match(/of\s+(\d+)/) || [])[1] || '0', 10);
+      await closePage(p2);
+
+      assertGte(bTotal, aTotal + 1, `season (${bTotal}) should exceed short (${aTotal})`);
+    },
+  },
 ];
 
 const result = await runSuite('journey-mode', tests);

@@ -3,9 +3,12 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
 import { ProgressHeader, StatStrip } from './JourneyDecision';
 import { PartyRail } from './PartyRail';
+import { BadgeTrack } from './BadgeTrack';
 import { pixelSprite } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
-import type { ChapterResult, DexState, RosterEntry } from '@/journey/types';
+import type {
+  BadgeEarned, ChapterResult, DexState, RegionProgress, RosterEntry,
+} from '@/journey/types';
 
 interface Props {
   /** The chapters resolved since the player last looked. */
@@ -14,11 +17,15 @@ interface Props {
   /** Live team + dex, so the six stays in view between decisions. */
   roster: RosterEntry[];
   dex: DexState;
+  badges: BadgeEarned[];
+  region: RegionProgress;
   onContinue: () => void;
   onSkipToEnd: (() => void) | null;
 }
 
-export function JourneyRecap({ chapters, chapterCount, roster, dex, onContinue, onSkipToEnd }: Props) {
+export function JourneyRecap({
+  chapters, chapterCount, roster, dex, badges, region, onContinue, onSkipToEnd,
+}: Props) {
   const { t } = useI18n();
   const last = chapters[chapters.length - 1];
   if (!last) return null;
@@ -26,6 +33,8 @@ export function JourneyRecap({ chapters, chapterCount, roster, dex, onContinue, 
   return (
     <div className="p-4 space-y-4" data-testid="journey-recap">
       <ProgressHeader chapter={last.index + 1} total={chapterCount} age={last.age} />
+
+      <BadgeTrack badges={badges} region={region} />
 
       <PartyRail roster={roster} dex={dex} />
 

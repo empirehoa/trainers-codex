@@ -64,18 +64,54 @@ interface Pools {
 
 const poolCache = new Map<string, Pools>();
 
-function buildPools(regionGen: number): Pools {
+/**
+ * Regional forms belong to the region that produced them.
+ *
+ * Touring Alola should surface Alolan Vulpix, not just Kanto's — that's the
+ * whole point of a region tour. Each region id maps to the `form` tag its
+ * variants carry in the dataset; regions with no variant line map to none.
+ */
+const REGION_FORM_TAG: Record<string, string | null> = {
+  kanto: null, johto: null, hoenn: null, sinnoh: null, unova: null,
+  kalos: null,
+  alola: 'alolan',
+  galar: 'galarian',
+  paldea: 'paldean',
+};
+
+/** Hisuian forms are Legends-Arceus era; surface them alongside Sinnoh. */
+const EXTRA_FORM_TAGS: Record<string, string[]> = {
+  sinnoh: ['hisuian'],
+};
+
+function formTagsFor(regionId: string | undefined): Set<string> {
+  if (!regionId) return new Set();
+  const tags = new Set<string>();
+  const main = REGION_FORM_TAG[regionId];
+  if (main) tags.add(main);
+  for (const extra of EXTRA_FORM_TAGS[regionId] ?? []) tags.add(extra);
+  return tags;
+}
+
+function buildPools(regionGen: number, regionId?: string): Pools {
   const common: number[] = [];
   const rare: number[] = [];
   const legendary: number[] = [];
+  const formTags = formTagsFor(regionId);
 
   for (const entry of POKEMON_LIST) {
     const p = POKEMON_BY_ID[entry.id];
-    if (!p || p.form) continue;
-    const gen = getGen(p.id);
-    // A career is regionally rooted but not sealed off — the home region's
-    // dex plus everything from earlier generations is reachable.
-    if (gen > regionGen) continue;
+    if (!p) continue;
+    if (p.form) {
+      // Only the CURRENT region's own variant line is catchable, and only
+      // regional variants — never Megas, Gigantamax, or story-only forms.
+      if (!formTags.has(p.form)) continue;
+    } else {
+      const gen = getGen(p.id);
+      // A career is regionally rooted but not sealed off — the home region's
+      // dex plus everything from earlier generations is reachable.
+      if (gen > regionGen) continue;
+    }
     if (p.legendary || p.mythical) legendary.push(p.id);
     else if (p.bst >= 500) rare.push(p.id);
     else common.push(p.id);
@@ -83,11 +119,16 @@ function buildPools(regionGen: number): Pools {
   return { common, rare, legendary };
 }
 
-export function getPools(regionGen: number): Pools {
-  const key = String(regionGen);
+/**
+ * Species pools for a region. Pass the region id to include that region's
+ * own regional forms; the gen-only signature stays for callers that don't
+ * care (and keeps older behaviour).
+ */
+export function getPools(regionGen: number, regionId?: string): Pools {
+  const key = `${regionGen}:${regionId ?? '-'}`;
   let pools = poolCache.get(key);
   if (!pools) {
-    pools = buildPools(regionGen);
+    pools = buildPools(regionGen, regionId);
     poolCache.set(key, pools);
   }
   return pools;

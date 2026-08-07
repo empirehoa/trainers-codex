@@ -3,10 +3,11 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
 import { cn } from '@/lib/utils';
 import { PartyRail } from './PartyRail';
+import { BadgeTrack } from './BadgeTrack';
 import { JourneyPrepare } from './JourneyPrepare';
 import type {
-  CareerStats, DexState, PendingDecision, PrepareAction, PrepareAvailability,
-  RosterEntry,
+  BadgeEarned, CareerStats, DexState, PendingDecision, PrepareAction,
+  PrepareAvailability, RegionProgress, RosterEntry, Stake,
 } from '@/journey/types';
 import type { Inventory } from '@/journey/items';
 
@@ -16,6 +17,9 @@ interface Props {
   chapterCount: number;
   roster: RosterEntry[];
   dex: DexState;
+  badges: BadgeEarned[];
+  region: RegionProgress;
+  stakes: Stake[];
   inventory: Inventory;
   prepare: PrepareAvailability;
   actionsThisChapter: number;
@@ -26,8 +30,8 @@ interface Props {
 }
 
 export function JourneyDecision({
-  decision, stats, chapterCount, roster, dex, inventory, prepare,
-  actionsThisChapter, onPick, onAction, onUndoPrep, onUndo,
+  decision, stats, chapterCount, roster, dex, badges, region, stakes, inventory,
+  prepare, actionsThisChapter, onPick, onAction, onUndoPrep, onUndo,
 }: Props) {
   const { t } = useI18n();
   const { card, vars } = decision;
@@ -40,10 +44,12 @@ export function JourneyDecision({
         age={stats.age}
       />
 
+      <BadgeTrack badges={badges} region={region} stakes={stakes} />
+
       <PartyRail
         roster={roster}
         dex={dex}
-        evolvableIds={prepare.evolves.map(e => e.fromId)}
+        evolvableIds={prepare.evolves.filter(e => e.eligible).map(e => e.fromId)}
       />
 
       <JourneyPrepare

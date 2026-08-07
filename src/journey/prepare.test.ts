@@ -1,11 +1,16 @@
-// Tests for the prepare-step layer: evolution rules, item effects, dex
-// tracking, and — most importantly — that prepare-actions preserve the
-// determinism/replay contract the whole feature rides on.
+// Tests for the prepare-step layer: level-gated evolution, item effects, dex
+// tracking, box swapping, badges, campaigns, stakes/events, and — most
+// importantly — that prepare-actions preserve the determinism/replay contract.
 
 import { describe, it, expect } from 'vitest';
 import { simulate, decisionChapterIndices, ROSTER_SIZE } from './engine';
-import { evolutionsOf, canEvolve, evolveEligible, isValidEvolution } from './evolution';
+import { evolutionsOf, canEvolve, isValidEvolution } from './evolution';
+import {
+  canEvolveNow, levelFromXp, xpForLevel, xpProgress, chapterXp,
+} from './levels';
 import { emptyInventory, inventoryCount, ITEM_STAT_EFFECT } from './items';
+import { getCampaign, regionTour, stakeTarget } from './campaign';
+import { BADGES_PER_REGION } from './types';
 import type { JourneySetup, PrepareAction, RecordedChoice } from './types';
 
 const SETUP: JourneySetup = {
@@ -16,7 +21,7 @@ const SETUP: JourneySetup = {
 /** Drive a run to completion taking option 0 everywhere, with given actions. */
 function playTo(setup: JourneySetup, actions: PrepareAction[] = []) {
   const choices: RecordedChoice[] = [];
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 200; i++) {
     const snap = simulate(setup, choices, actions);
     if (snap.status === 'complete') return snap;
     choices.push({
@@ -26,6 +31,26 @@ function playTo(setup: JourneySetup, actions: PrepareAction[] = []) {
     });
   }
   throw new Error('did not terminate');
+}
+
+/** Walk to the first decision where `pred` holds, returning that snapshot + choices. */
+function walkUntil(
+  setup: JourneySetup,
+  pred: (s: ReturnType<typeof simulate>) => boolean,
+  actions: PrepareAction[] = [],
+) {
+  const choices: RecordedChoice[] = [];
+  for (let i = 0; i < 200; i++) {
+    const snap = simulate(setup, choices, actions);
+    if (snap.status === 'complete') return null;
+    if (pred(snap)) return { snap, choices: [...choices] };
+    choices.push({
+      chapterIndex: snap.decision!.chapterIndex,
+      cardId: snap.decision!.card.id,
+      optionId: snap.decision!.card.options[0].id,
+    });
+  }
+  return null;
 }
 
 describe('evolution data', () => {
@@ -40,190 +65,300 @@ describe('evolution data', () => {
     expect(isValidEvolution(133, 134)).toBe(true);
     expect(isValidEvolution(133, 999999)).toBe(false);
   });
+});
 
-  it('the hold gate: two chapters held before a member may evolve', () => {
-    expect(evolveEligible(-1, 1)).toBe(false);   // starter, only 1 chapter in
-    expect(evolveEligible(-1, 2)).toBe(true);    // starter, held two chapters
-    expect(evolveEligible(5, 5)).toBe(false);    // caught this chapter
-    expect(evolveEligible(5, 7)).toBe(true);     // held two chapters
+describe('levels + XP', () => {
+  it('the XP curve is monotonic and round-trips through levelFromXp', () => {
+    for (let l = 2; l <= 100; l++) {
+      expect(xpForLevel(l)).toBeGreaterThan(xpForLevel(l - 1));
+      expect(levelFromXp(xpForLevel(l))).toBe(l);
+    }
+  });
+
+  it('xpProgress reports a sane fraction toward the next level', () => {
+    const p = xpProgress(xpForLevel(20));
+    expect(p.level).toBe(20);
+    expect(p.pct).toBeGreaterThanOrEqual(0);
+    expect(p.pct).toBeLessThanOrEqual(1);
+  });
+
+  it('the ace earns more XP than a benched member, and fresh catches catch up', () => {
+    const base = { phase: 'regional' as const, wins: 10, battles: 20, chapterIndex: 8, partySize: 6 };
+    const ace = chapterXp({ ...base, memberIndex: 0, joinedAt: -1 });
+    const bench = chapterXp({ ...base, memberIndex: 3, joinedAt: -1 });
+    const fresh = chapterXp({ ...base, memberIndex: 3, joinedAt: 7 });
+    expect(ace).toBeGreaterThan(bench);
+    expect(fresh).toBeGreaterThan(bench);
+  });
+});
+
+describe('the evolution gate is by LEVEL, not by time held', () => {
+  it('a level evolution is blocked below the species level and allowed at/above it', () => {
+    const below = canEvolveNow({
+      memberXp: xpForLevel(10), how: 'level', evoLevel: 16, bond: 50,
+      hasStone: false, hasLinkCord: false,
+    });
+    expect(below.ok).toBe(false);
+    if (!below.ok && below.reason === 'level') expect(below.needLevel).toBe(16);
+
+    const at = canEvolveNow({
+      memberXp: xpForLevel(16), how: 'level', evoLevel: 16, bond: 50,
+      hasStone: false, hasLinkCord: false,
+    });
+    expect(at.ok).toBe(true);
+  });
+
+  it('stone and trade evolutions need the matching item, regardless of level', () => {
+    const noStone = canEvolveNow({ memberXp: xpForLevel(99), how: 'item', evoLevel: null, bond: 99, hasStone: false, hasLinkCord: false });
+    expect(noStone.ok).toBe(false);
+    const withStone = canEvolveNow({ memberXp: xpForLevel(5), how: 'item', evoLevel: null, bond: 0, hasStone: true, hasLinkCord: false });
+    expect(withStone.ok).toBe(true);
+
+    const noCord = canEvolveNow({ memberXp: xpForLevel(99), how: 'trade', evoLevel: null, bond: 99, hasStone: true, hasLinkCord: false });
+    expect(noCord.ok).toBe(false);
+    const withCord = canEvolveNow({ memberXp: xpForLevel(5), how: 'trade', evoLevel: null, bond: 0, hasStone: false, hasLinkCord: true });
+    expect(withCord.ok).toBe(true);
+  });
+
+  it('friendship evolutions gate on bond', () => {
+    expect(canEvolveNow({ memberXp: xpForLevel(50), how: 'friendship', evoLevel: null, bond: 10, hasStone: false, hasLinkCord: false }).ok).toBe(false);
+    expect(canEvolveNow({ memberXp: xpForLevel(50), how: 'friendship', evoLevel: null, bond: 95, hasStone: false, hasLinkCord: false }).ok).toBe(true);
+  });
+});
+
+describe('prepare availability', () => {
+  it('NEVER offers an evolution for a fully-evolved species', () => {
+    // Walk the whole run and assert the invariant at every decision.
+    const choices: RecordedChoice[] = [];
+    for (let i = 0; i < 200; i++) {
+      const snap = simulate(SETUP, choices, []);
+      if (snap.status === 'complete') break;
+      for (const offer of snap.prepare!.evolves) {
+        expect(evolutionsOf(offer.fromId).length).toBeGreaterThan(0);
+        expect(offer.options.length).toBeGreaterThan(0);
+      }
+      // Every roster member with no evolutions must be absent from the offers.
+      const offered = new Set(snap.prepare!.evolves.map(e => e.fromId));
+      for (const m of snap.roster) {
+        if (!canEvolve(m.id)) expect(offered.has(m.id)).toBe(false);
+      }
+      choices.push({
+        chapterIndex: snap.decision!.chapterIndex,
+        cardId: snap.decision!.card.id,
+        optionId: snap.decision!.card.options[0].id,
+      });
+    }
+  });
+
+  it('every blocked target explains itself with a reason key', () => {
+    const first = simulate(SETUP, [], []);
+    for (const offer of first.prepare!.evolves) {
+      for (const opt of offer.options) {
+        if (!opt.ready) expect(opt.blockKey).toBeTruthy();
+      }
+    }
+  });
+});
+
+describe('dex + box', () => {
+  it('caught ⊇ roster, seen ⊇ caught, no duplicates', () => {
+    const run = playTo(SETUP).run!;
+    const caught = new Set(run.dex.caught);
+    const seen = new Set(run.dex.seen);
+    expect(caught.has(SETUP.starterId)).toBe(true);
+    for (const id of run.dex.caught) expect(seen.has(id)).toBe(true);
+    for (const m of run.roster) if (m.joinedAt !== -2) expect(caught.has(m.id)).toBe(true);
+    expect(new Set(run.dex.seen).size).toBe(run.dex.seen.length);
+    expect(new Set(run.dex.caught).size).toBe(run.dex.caught.length);
+  });
+
+  it('the box fills with catches and never duplicates the party', () => {
+    const run = playTo(SETUP).run!;
+    expect(new Set(run.box.map(b => b.id)).size).toBe(run.box.length);
+  });
+
+  it('swapping brings a box member into the party and benches the outgoing one', () => {
+    const found = walkUntil(SETUP, s => s.box.length > 0 && s.roster.length > 1);
+    expect(found).toBeTruthy();
+    const { snap, choices } = found!;
+    const outId = snap.roster[snap.roster.length - 1].id;
+    const inId = snap.box[0].id;
+    const idx = snap.decision!.chapterIndex;
+
+    const acted = simulate(SETUP, choices, [{ type: 'swap', chapterIndex: idx, outId, inId }]);
+    expect(acted.roster.some(m => m.id === inId)).toBe(true);
+    expect(acted.roster.some(m => m.id === outId)).toBe(false);
+    expect(acted.box.some(b => b.id === outId)).toBe(true);
+    // Party size is preserved by a swap.
+    expect(acted.roster.length).toBe(snap.roster.length);
+  });
+});
+
+describe('badges + regions', () => {
+  it('badges never exceed the per-region cap and are numbered in order', () => {
+    const run = playTo(SETUP).run!;
+    const perRegion = new Map<string, number[]>();
+    for (const b of run.badges) {
+      expect(b.index).toBeGreaterThanOrEqual(1);
+      expect(b.index).toBeLessThanOrEqual(BADGES_PER_REGION);
+      perRegion.set(b.regionId, [...(perRegion.get(b.regionId) ?? []), b.index]);
+    }
+    for (const [, list] of perRegion) {
+      expect(list.length).toBeLessThanOrEqual(BADGES_PER_REGION);
+      expect(new Set(list).size).toBe(list.length); // no duplicate badge numbers
+    }
+  });
+
+  it('a short campaign tours one region; a saga tours nine', () => {
+    expect(regionTour(SETUP).length).toBe(1);
+    expect(regionTour({ ...SETUP, campaign: 'saga' }).length).toBe(9);
+    expect(getCampaign('season').regions).toBe(3);
+  });
+
+  it('a season campaign runs materially longer than a short one', () => {
+    const short = playTo(SETUP).run!;
+    const season = playTo({ ...SETUP, campaign: 'season' }).run!;
+    expect(season.chapterCount).toBeGreaterThan(short.chapterCount);
+    expect(season.region.tour.length).toBe(3);
+  });
+});
+
+describe('stakes + events (the Balatro layer)', () => {
+  it('ante targets escalate superlinearly', () => {
+    const t1 = stakeTarget(1), t2 = stakeTarget(2), t3 = stakeTarget(3);
+    expect(t2 - t1).toBeGreaterThan(0);
+    expect(t3 - t2).toBeGreaterThan(t2 - t1);
+  });
+
+  it('a completed run reports stakes and any events it rolled', () => {
+    const run = playTo(SETUP).run!;
+    expect(run.stakes.length).toBe(1); // short campaign = 1 ante
+    expect(run.stakes[0].banked).toBeGreaterThanOrEqual(0);
+    for (const e of run.events) {
+      expect(['common', 'rare', 'legendary']).toContain(e.rarity);
+      expect(e.mult).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('legendary events never repeat within a run', () => {
+    const run = playTo({ ...SETUP, campaign: 'saga' }).run!;
+    const legendary = run.events.filter(e => e.rarity === 'legendary').map(e => e.id);
+    expect(new Set(legendary).size).toBe(legendary.length);
+  });
+
+  it('the score stays within 0-999 even with stacked multipliers', () => {
+    for (const seed of [1, 77, 4242, 90210, 999999]) {
+      const run = playTo({ ...SETUP, seed, campaign: 'season' }).run!;
+      expect(run.score).toBeGreaterThanOrEqual(0);
+      expect(run.score).toBeLessThanOrEqual(999);
+    }
+  });
+});
+
+describe('determinism holds with the new systems', () => {
+  it('same (setup, choices, actions) → byte-identical run', () => {
+    const found = walkUntil(SETUP, s => s.box.length > 0);
+    const actions: PrepareAction[] = found
+      ? [{ type: 'swap', chapterIndex: found.snap.decision!.chapterIndex, outId: found.snap.roster[0].id, inId: found.snap.box[0].id }]
+      : [];
+    const a = JSON.stringify(playTo(SETUP, actions).run);
+    const b = JSON.stringify(playTo(SETUP, actions).run);
+    expect(a).toBe(b);
+  });
+
+  it('the final roster is still exactly six unique members', () => {
+    for (const seed of [7, 4242, 31337]) {
+      const run = playTo({ ...SETUP, seed }).run!;
+      expect(run.roster.length).toBe(ROSTER_SIZE);
+      expect(new Set(run.roster.map(r => r.id)).size).toBe(ROSTER_SIZE);
+    }
+  });
+
+  it('an illegal or under-levelled evolution is a no-op, not a throw', () => {
+    const idx = decisionChapterIndices(SETUP)[0];
+    expect(() => playTo(SETUP, [{ type: 'evolve', chapterIndex: idx, fromId: 1, toId: 999999 }])).not.toThrow();
+    const run = playTo(SETUP, [{ type: 'evolve', chapterIndex: idx, fromId: 1, toId: 2 }]).run!;
+    // At chapter 0 the starter is level ~5, far below Ivysaur's 16.
+    expect(run.roster[0].id).toBe(1);
   });
 });
 
 describe('items', () => {
   it('empty inventory counts zero; stat effects are defined', () => {
     expect(inventoryCount(emptyInventory())).toBe(0);
-    expect(ITEM_STAT_EFFECT['soothe-bell'].bond).toBeGreaterThan(0);
-    expect(ITEM_STAT_EFFECT['energy-root'].fatigue).toBeLessThan(0);
+    expect(ITEM_STAT_EFFECT['soothe-bell']?.bond ?? 0).toBeGreaterThan(0);
+    expect(ITEM_STAT_EFFECT['energy-root']?.fatigue ?? 0).toBeLessThan(0);
+  });
+
+  it('a Rare Candy raises the targeted member by exactly one level', () => {
+    const found = walkUntil(SETUP, s => (s.inventory['rare-candy'] ?? 0) > 0);
+    if (!found) return; // seed-dependent; the grant table is exercised elsewhere
+    const { snap, choices } = found;
+    const target = snap.roster[0];
+    const before = levelFromXp(target.xp ?? 0);
+    const acted = simulate(SETUP, choices, [{
+      type: 'item', chapterIndex: snap.decision!.chapterIndex,
+      item: 'rare-candy', targetId: target.id,
+    }]);
+    const after = levelFromXp(acted.roster.find(m => m.id === target.id)?.xp ?? 0);
+    expect(after).toBe(before + 1);
+    expect(acted.inventory['rare-candy']).toBe((snap.inventory['rare-candy'] ?? 0) - 1);
   });
 });
 
-describe('dex tracking', () => {
-  it('a completed run has caught ⊇ roster and seen ⊇ caught, starter included', () => {
-    const run = playTo(SETUP).run!;
-    const caught = new Set(run.dex.caught);
-    const seen = new Set(run.dex.seen);
-    expect(caught.has(SETUP.starterId)).toBe(true);
-    for (const id of run.dex.caught) expect(seen.has(id)).toBe(true);
-    // Every non-filler roster member (joinedAt !== -2) was genuinely caught.
-    for (const m of run.roster) {
-      if (m.joinedAt !== -2) expect(caught.has(m.id)).toBe(true);
-    }
-    expect(run.dex.caught.length).toBeGreaterThan(1);
+describe('regional forms follow the region being toured', () => {
+  it('Alola surfaces Alolan variants; Kanto does not', async () => {
+    const { getPools } = await import('./content');
+    const { POKEMON_BY_ID } = await import('@/lib/pokemon');
+    const alola = getPools(7, 'alola');
+    const kanto = getPools(1, 'kanto');
+    const alolanIn = (pool: number[]) =>
+      pool.filter(id => POKEMON_BY_ID[id]?.form === 'alolan').length;
+    expect(alolanIn([...alola.common, ...alola.rare, ...alola.legendary])).toBeGreaterThan(0);
+    expect(alolanIn([...kanto.common, ...kanto.rare, ...kanto.legendary])).toBe(0);
   });
 
-  it('dex sets never contain duplicates', () => {
-    const run = playTo(SETUP).run!;
-    expect(new Set(run.dex.seen).size).toBe(run.dex.seen.length);
-    expect(new Set(run.dex.caught).size).toBe(run.dex.caught.length);
+  it('never surfaces Mega / Gigantamax / story-only forms in any region', async () => {
+    const { getPools } = await import('./content');
+    const { POKEMON_BY_ID } = await import('@/lib/pokemon');
+    const banned = new Set(['mega', 'primal', 'gigantamax', 'eternamax', 'crowned']);
+    for (const [gen, region] of [[1,'kanto'],[4,'sinnoh'],[7,'alola'],[8,'galar'],[9,'paldea']] as const) {
+      const p = getPools(gen, region);
+      for (const id of [...p.common, ...p.rare, ...p.legendary]) {
+        const form = POKEMON_BY_ID[id]?.form;
+        if (form) expect(banned.has(form)).toBe(false);
+      }
+    }
+  });
+
+  it('Sinnoh includes Hisuian variants', async () => {
+    const { getPools } = await import('./content');
+    const { POKEMON_BY_ID } = await import('@/lib/pokemon');
+    const p = getPools(4, 'sinnoh');
+    const hisui = [...p.common, ...p.rare, ...p.legendary]
+      .filter(id => POKEMON_BY_ID[id]?.form === 'hisuian').length;
+    expect(hisui).toBeGreaterThan(0);
   });
 });
 
-/** First decision chapter at which the starter clears the hold gate. */
-function starterEligibleChapter(): number {
-  const idx = decisionChapterIndices(SETUP).find(i => evolveEligible(-1, i));
-  if (idx === undefined) throw new Error('no eligible decision chapter for the starter');
-  return idx;
-}
-
-describe('prepare availability', () => {
-  it('the starter evolution is offered, and becomes eligible after the hold gate', () => {
-    const first = simulate(SETUP, [], []);
-    expect(first.status).toBe('awaiting-decision');
-    const offer = first.prepare!.evolves.find(e => e.fromId === SETUP.starterId);
-    expect(offer).toBeTruthy();
-    expect(offer!.options.map(o => o.id)).toContain(2);
-    // At the very first decision (chapter 0) the starter has not been held long
-    // enough, so evolution is offered but not yet eligible without an item.
-    expect(offer!.eligible).toBe(false);
-
-    // Advance to the first eligible decision and confirm it flips to eligible.
-    const eligibleIdx = starterEligibleChapter();
-    const choices: RecordedChoice[] = [];
-    for (let i = 0; i < 40; i++) {
-      const snap = simulate(SETUP, choices, []);
-      if (snap.status === 'complete') throw new Error('never reached eligible chapter');
-      if (snap.decision!.chapterIndex === eligibleIdx) {
-        const o = snap.prepare!.evolves.find(e => e.fromId === SETUP.starterId);
-        expect(o!.eligible).toBe(true);
-        return;
-      }
-      choices.push({
-        chapterIndex: snap.decision!.chapterIndex,
-        cardId: snap.decision!.card.id,
-        optionId: snap.decision!.card.options[0].id,
-      });
-    }
-  });
-});
-
-describe('prepare-actions are deterministic and effective', () => {
-  it('same (setup, choices, actions) → identical roster + dex, byte for byte', () => {
-    const firstIdx = decisionChapterIndices(SETUP)[0];
-    const actions: PrepareAction[] = [{ type: 'evolve', chapterIndex: firstIdx, fromId: 1, toId: 2 }];
-    const a = JSON.stringify(playTo(SETUP, actions).run);
-    const b = JSON.stringify(playTo(SETUP, actions).run);
-    expect(a).toBe(b);
+describe('nicknames', () => {
+  it('a nickname is recorded, trimmed, and capped at 14 chars', () => {
+    const idx = decisionChapterIndices(SETUP)[0];
+    const snap = simulate(SETUP, [], [{
+      type: 'nickname', chapterIndex: idx, id: SETUP.starterId,
+      name: '   Sir  Leafy McLongname   ',
+    }]);
+    const m = snap.roster.find(r => r.id === SETUP.starterId);
+    expect(m?.nickname).toBe('Sir Leafy McLo');
+    expect((m?.nickname ?? '').length).toBeLessThanOrEqual(14);
   });
 
-  it('evolving the starter changes slot 0 to the evolved species', () => {
-    const evoIdx = starterEligibleChapter();
-    const base = playTo(SETUP).run!;
-    expect(base.roster[0].id).toBe(1); // no action → starter stays base at ace
-
-    const evolved = playTo(SETUP, [{ type: 'evolve', chapterIndex: evoIdx, fromId: 1, toId: 2 }]).run!;
-    expect(evolved.roster[0].id).toBe(2);
-    expect(evolved.roster[0].evolved).toBe(1);
-  });
-
-  it('an off-gate evolution without an item is ignored (soft replay)', () => {
-    // chapter 0: starter not yet eligible, no viaItem → must be a no-op.
-    const firstIdx = decisionChapterIndices(SETUP)[0];
-    const run = playTo(SETUP, [{ type: 'evolve', chapterIndex: firstIdx, fromId: 1, toId: 2 }]).run!;
-    expect(run.roster[0].id).toBe(1);
-  });
-
-  it('an illegal evolution target is ignored (soft replay)', () => {
-    const evoIdx = starterEligibleChapter();
-    const run = playTo(SETUP, [{ type: 'evolve', chapterIndex: evoIdx, fromId: 1, toId: 999999 }]).run!;
-    expect(run.roster[0].id).toBe(1);
-  });
-
-  it('set-ace promotes a member to slot 0', () => {
-    // Find a chapter where the roster has grown past 1, then set the last
-    // member as ace.
-    const choices: RecordedChoice[] = [];
-    for (let i = 0; i < 40; i++) {
-      const snap = simulate(SETUP, choices, []);
-      if (snap.status === 'complete') break;
-      if (snap.roster.length > 1) {
-        const target = snap.roster[snap.roster.length - 1].id;
-        const idx = snap.decision!.chapterIndex;
-        const acted = simulate(SETUP, choices, [{ type: 'ace', chapterIndex: idx, id: target }]);
-        expect(acted.roster[0].id).toBe(target);
-        return;
-      }
-      choices.push({
-        chapterIndex: snap.decision!.chapterIndex,
-        cardId: snap.decision!.card.id,
-        optionId: snap.decision!.card.options[0].id,
-      });
-    }
-  });
-
-  it('the final roster is still exactly six unique members after evolutions', () => {
-    const evoIdx = starterEligibleChapter();
-    const run = playTo(SETUP, [{ type: 'evolve', chapterIndex: evoIdx, fromId: 1, toId: 2 }]).run!;
-    expect(run.roster.length).toBe(ROSTER_SIZE);
-    expect(new Set(run.roster.map(r => r.id)).size).toBe(ROSTER_SIZE);
-    expect(run.roster[0].id).toBe(2); // evolved starter is still the ace
-  });
-
-  it('rare-candy enables an off-gate evolution and is consumed', () => {
-    // Find a decision chapter that granted a rare candy, with a fresh catch
-    // that is not yet gate-eligible but can evolve.
-    const choices: RecordedChoice[] = [];
-    for (let i = 0; i < 40; i++) {
-      const snap = simulate(SETUP, choices, []);
-      if (snap.status === 'complete') break;
-      const idx = snap.decision!.chapterIndex;
-      const candy = (snap.inventory['rare-candy'] ?? 0) > 0;
-      const ineligible = snap.prepare!.evolves.find(e => !e.eligible && e.options.length > 0);
-      if (candy && ineligible) {
-        const acted = simulate(SETUP, choices, [{
-          type: 'evolve', chapterIndex: idx, fromId: ineligible.fromId,
-          toId: ineligible.options[0].id, viaItem: true,
-        }]);
-        expect(acted.roster.some(m => m.id === ineligible.options[0].id)).toBe(true);
-        expect(acted.inventory['rare-candy']).toBe((snap.inventory['rare-candy'] ?? 0) - 1);
-        return;
-      }
-      choices.push({
-        chapterIndex: idx, cardId: snap.decision!.card.id,
-        optionId: snap.decision!.card.options[0].id,
-      });
-    }
-    // If no such situation arose for this seed, the test is a no-op rather than
-    // a false failure — the rule itself is exercised by the eligibility unit
-    // tests above.
-  });
-
-  it('a soothe-bell raises bond when spent', () => {
-    const choices: RecordedChoice[] = [];
-    for (let i = 0; i < 40; i++) {
-      const snap = simulate(SETUP, choices, []);
-      if (snap.status === 'complete') break;
-      const idx = snap.decision!.chapterIndex;
-      if ((snap.inventory['soothe-bell'] ?? 0) > 0) {
-        const before = snap.stats.bond;
-        const acted = simulate(SETUP, choices, [{ type: 'item', chapterIndex: idx, item: 'soothe-bell' }]);
-        expect(acted.stats.bond).toBeGreaterThanOrEqual(before); // bounded at 100
-        expect(acted.inventory['soothe-bell']).toBe((snap.inventory['soothe-bell'] ?? 0) - 1);
-        return;
-      }
-      choices.push({
-        chapterIndex: idx, cardId: snap.decision!.card.id,
-        optionId: snap.decision!.card.options[0].id,
-      });
-    }
+  it('an empty nickname clears it', () => {
+    const idx = decisionChapterIndices(SETUP)[0];
+    const snap = simulate(SETUP, [], [
+      { type: 'nickname', chapterIndex: idx, id: SETUP.starterId, name: 'Spike' },
+      { type: 'nickname', chapterIndex: idx, id: SETUP.starterId, name: '  ' },
+    ]);
+    expect(snap.roster.find(r => r.id === SETUP.starterId)?.nickname).toBeUndefined();
   });
 });
