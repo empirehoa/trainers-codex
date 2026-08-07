@@ -72,10 +72,14 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
                   <Sparkles size={9} className="absolute top-0.5 right-0.5 text-yellow-400" />
                 )}
                 {evolvable.has(m.id) && (
+                  // NB: testid is deliberately NOT prefixed "journey-evolve-" —
+                  // that prefix belongs to the prepare step's action buttons,
+                  // and a shared prefix makes `[data-testid^="journey-evolve-"]`
+                  // match this decorative marker too.
                   <span
                     className="absolute bottom-0 inset-x-0 h-1 rounded-b bg-emerald-400/80"
                     title={t('journey.party.evolveReady')}
-                    data-testid="journey-evolve-ready"
+                    data-testid="journey-party-evolvable"
                   />
                 )}
               </>
