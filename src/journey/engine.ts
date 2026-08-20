@@ -46,7 +46,7 @@ import {
   syndicateFor, worldCupField, type Opponent,
 } from './opponents';
 import { questBoard, questFame, questMultiplier } from './quests';
-import { resolveVerdict, scoreCareer } from './scoring';
+import { MAX_SCORE, resolveVerdict, scoreCareer } from './scoring';
 import {
   BADGES_PER_REGION,
   type BadgeEarned, type BoxEntry, type CareerStats, type ChapterPhase,
@@ -281,6 +281,37 @@ const ARCHETYPE_MODIFIERS: Record<JourneySetup['archetype'], {
  */
 const FATIGUE_RECOVERY_RATE = 0.24;
 
+/**
+ * Fame and bond decay the same way fatigue recovers, and for the same reason.
+ *
+ * Both were pure one-way ratchets: fame only went up with results, bond only
+ * went up with chapters survived. Measured over 3,000 careers, each pinned to
+ * its 100 ceiling in ~62% of runs and sat >= 90 in ~76%. Two consequences, both
+ * bad:
+ *
+ *   1. As SCORE components (0.10-0.18 weight each) they became near-constant —
+ *      a flat offset added to everybody rather than something that separates
+ *      careers.
+ *   2. As VERDICT conditions they became meaningless. `bond >= 90 && titles
+ *      === 0` reads like a specific kind of career; with bond saturated it
+ *      resolves to plain "titleless", which is half of all players. That one
+ *      substitution is what let a single consolation verdict swallow 20-29% of
+ *      every outcome, and no amount of re-tuning the predicates fixed it —
+ *      the ceiling was the bug.
+ *
+ * Decay also models the things better than a ratchet does. Fame is a stock that
+ * leaks: last season's notability doesn't survive a quiet year, it has to be
+ * re-earned. Bond is a relationship, not a tenure counter — it needs
+ * maintaining, which is what the loyalty-flavoured decision cards are for.
+ * Equilibrium sits at roughly (per-chapter gain ÷ rate), so both now spread
+ * across their range instead of collapsing onto the cap.
+ */
+const FAME_DECAY_RATE = 0.12;
+const BOND_DECAY_RATE = 0.10;
+
+/** Bond value treated as "maxed" for gameplay effects. Mirrors TARGETS.bond. */
+const BOND_EFFECTIVE_MAX = 70;
+
 interface ChapterInput {
   setup: JourneySetup;
   index: number;
@@ -301,6 +332,13 @@ interface ChapterInput {
   regionId: string;
   /** Named adversary for this chapter, when the phase has one. */
   opponent: Opponent | null;
+  /**
+   * Flavor lines this career has already spent. MUTATED by resolveChapter —
+   * the one intentional piece of shared state, so a run never repeats a beat.
+   * Owned by simulate() and rebuilt per replay, which keeps simulate() itself
+   * a pure function of (setup, choices).
+   */
+  usedBeats: Set<string>;
 }
 
 function resolveChapter(input: ChapterInput): {
@@ -325,7 +363,10 @@ function resolveChapter(input: ChapterInput): {
   // ---- battles ----
   const battles = randInt(rng, profile.battles[0], profile.battles[1]);
   const fatiguePenalty = (stats.fatigue / 100) * 0.22;
-  const bondBonus = (stats.bond / 100) * 0.10;
+  // Scaled against the post-decay bond range, not the 0-100 cap. Dividing by
+  // 100 here silently halved the bonus once bond stopped saturating, which
+  // dragged win rates down and pushed the titleless share from 51% to 67%.
+  const bondBonus = Math.min(1, stats.bond / BOND_EFFECTIVE_MAX) * 0.10;
   // Risk raises the mean a little and the spread a lot.
   const meanShift = (risk - 1) * 0.05;
   const spread = (rng() - 0.5) * 0.28 * risk;
@@ -460,9 +501,9 @@ function resolveChapter(input: ChapterInput): {
   const delta: StatDelta = {
     age: 1,
     wins, losses, badges, catches, shinies, titles,
-    fame: fameGain,
+    fame: fameGain - Math.round(stats.fame * FAME_DECAY_RATE),
     fatigue: fatigueGain - fatigueRecovered,
-    bond: mods.bondPerChapter,
+    bond: mods.bondPerChapter - Math.round(stats.bond * BOND_DECAY_RATE),
     rivalWins, rivalLosses,
   };
   stats = applyDelta(stats, delta);
@@ -470,9 +511,22 @@ function resolveChapter(input: ChapterInput): {
   stats.peakRank = peakRank;
 
   // ---- flavor ----
+  // Beats are drawn from the lines this career has NOT used yet. Sampling the
+  // full pool every chapter made 99.7% of careers repeat a line (measured over
+  // 6,000 runs), which is the single loudest "this is a small game" tell — the
+  // player reads the same sentence twice and stops trusting the rest.
+  //
+  // `usedBeats` is fed only by earlier chapters' beat draws, and those depend
+  // on (seed, chapterIndex) alone — so this stays choice-independent and the
+  // Daily Journey guarantee holds.
   const beatPool = CHAPTER_BEATS[phase];
+  const fresh = beatPool.filter(id => !input.usedBeats.has(id));
+  // Fall back to the whole pool only once a phase has genuinely run dry.
+  const drawFrom = fresh.length > 0 ? fresh : beatPool;
   const beatCount = phase === 'retirement' ? 2 : randInt(rng, 1, 2);
-  const beatKeys = sample(rng, beatPool, beatCount).map(id => `journey.beat.${id}`);
+  const drawn = sample(rng, drawFrom, beatCount);
+  for (const id of drawn) input.usedBeats.add(id);
+  const beatKeys = drawn.map(id => `journey.beat.${id}`);
 
   const aceId = roster[0]?.id;
   const vars: Record<string, string | number> = {
@@ -866,6 +920,7 @@ export function simulate(
   const grantedFor = new Set<number>();
   const chapters: ChapterResult[] = [];
   const usedCardIds = new Set<string>();
+  const usedBeats = new Set<string>();
   const choiceByChapter = new Map(choices.map(c => [c.chapterIndex, c]));
 
   // Region tour, badges, stakes and events — the long-campaign + Balatro layer.
@@ -1009,6 +1064,7 @@ export function simulate(
     const resolved = resolveChapter({
       setup, index, phase, stats, roster, risk, choiceDelta, choiceOptionId,
       badgeRoom: BADGES_PER_REGION - earnedHere, regionGen, regionId, opponent,
+      usedBeats,
     });
     chapters.push(resolved.chapter);
     stats = resolved.chapter.stats;
@@ -1081,7 +1137,24 @@ export function simulate(
   });
   stats = applyDelta(stats, { fame: questFame(quests) });
   const mult = eventMultiplier(events) * questMultiplier(quests);
-  const finalScore = Math.min(999, Math.round(breakdown.total * mult));
+  // The multiplier closes the gap to the ceiling instead of multiplying through
+  // it. `total * mult` clamped at 999, and the clamp was binding for more than
+  // 15% of runs — measured p85 through p99 were ALL exactly 999. Two things
+  // broke at once: the score stopped discriminating between good and superb
+  // careers (everyone in the top sixth shares one number on the share card),
+  // and because every one of those runs cleared the top verdict tier
+  // simultaneously, the ELITE *fallback* verdicts became the most common
+  // outcomes in the game — THE COLLECTOR alone was 10.1% of all runs, more than
+  // any ordinary verdict. A prestige tier that fires for a sixth of players is
+  // not a prestige tier.
+  //
+  // Closing a fraction of the remaining headroom keeps every property the
+  // Balatro layer wants — strictly increasing in `mult`, so hitting a legendary
+  // event always beats not hitting one — while making 999 an asymptote that no
+  // stack can reach. High scores gain less in absolute terms than middling ones,
+  // which is correct: they had less room left to win.
+  const base = breakdown.total / MAX_SCORE;
+  const finalScore = Math.round(MAX_SCORE * (1 - (1 - base) / Math.max(1, mult)));
   const spec = getCampaign(setup.campaign);
   const bankedStakes: Stake[] = stakes.map((st, i) => {
     // Each ante banks the share of the score earned by the end of its region.

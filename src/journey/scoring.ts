@@ -22,13 +22,27 @@ export const MAX_SCORE = 999;
 const TARGETS = {
   titles: 3,
   badges: 8,
-  catches: 65,
+  /** Measured max catches over a full career is ~70, and the p90 is 45. A
+   *  target of 65 meant only the extreme tail approached 1.0, which capped the
+   *  Collector's ceiling (its own heaviest component, at 0.30) below every
+   *  other archetype's. 55 is reachable by a genuinely dedicated run. */
+  catches: 55,
   shinies: 5,
   chapters: 20,
   /** Peak rank at or below this counts as a full-credit peak. */
   topRank: 1,
-  /** Rank beyond this earns no peak credit. */
-  floorRank: 48,
+  /**
+   * Rank beyond which a peak earns no credit.
+   *
+   * This was 48, and it made `peak` a dead component: measured across 6,000
+   * careers the observed peak rank never fell outside the top 8, so the
+   * normalised value ran p10 0.957 / p50 1.000 / min 0.851. A component with
+   * that little variance does not measure anything — it just pays every run a
+   * flat premium proportional to its weight, which is how the archetypes drifted
+   * 113 points apart at the median. 12 is the same band treatment already
+   * applied to `winRate`: outside the top twelve of a circuit is not a peak.
+   */
+  floorRank: 12,
   /**
    * Win rate is normalised against a realistic band, not against 1.0.
    *
@@ -41,6 +55,19 @@ const TARGETS = {
    */
   winRateFloor: 0.35,
   winRateCeil: 0.80,
+  /**
+   * Fame and bond are scored against an ACHIEVABLE ceiling, not against 100.
+   *
+   * Both stats decay (see FAME_DECAY_RATE / BOND_DECAY_RATE in engine.ts), so
+   * they now settle into a real spread instead of pinning at the cap — which is
+   * what makes them useful signals at all. But dividing by the raw 0-100 range
+   * would then mean nobody ever scores above ~0.6 on either, depressing every
+   * career's total by a constant. These are set just above the measured p97 of
+   * the post-decay distributions, so an excellent run approaches 1.0 and a
+   * mediocre one doesn't.
+   */
+  fame: 95,
+  bond: 70,
 };
 
 export type ComponentKey =
@@ -48,13 +75,27 @@ export type ComponentKey =
   | 'shinies' | 'fame' | 'bond' | 'durability' | 'longevity';
 
 const WEIGHTS: Record<Archetype, Record<ComponentKey, number>> = {
+  // Aggro and Stall sat at opposite ends of a variance problem. Aggro's two
+  // heaviest components were `winRate` (p50 0.52) and `titles` (p50 0.00 — half
+  // of all careers end titleless), so its median was dragged down by weights
+  // that mostly pay nothing. Stall's were `durability` (p50 0.64) and
+  // `longevity` (p50 0.80) — near-guaranteed, and stall's own mechanic lowers
+  // fatigue, so it was being paid twice for the same thing. Net effect: stall's
+  // median score ran 113 points above aggro's, which showed up as Aggro players
+  // landing MODEST verdicts while Stall players landed GREAT.
+  //
+  // The rebalance moves both toward components that actually discriminate,
+  // WITHOUT flattening identity: stall still carries the highest `bond`,
+  // `durability` and `longevity` of any archetype, and aggro still carries the
+  // highest `winRate`. Cross-archetype median parity is asserted in
+  // content-health.test.ts so this cannot drift back silently.
   aggro: {
-    winRate: 0.26, titles: 0.22, peak: 0.18, badges: 0.08, fame: 0.12,
+    winRate: 0.26, titles: 0.18, peak: 0.20, badges: 0.10, fame: 0.12,
     catches: 0.02, shinies: 0.02, bond: 0.04, durability: 0.03, longevity: 0.03,
   },
   stall: {
-    winRate: 0.16, titles: 0.14, peak: 0.12, badges: 0.10, fame: 0.04,
-    catches: 0.01, shinies: 0.01, bond: 0.14, durability: 0.16, longevity: 0.12,
+    winRate: 0.18, titles: 0.18, peak: 0.12, badges: 0.10, fame: 0.05,
+    catches: 0.01, shinies: 0.01, bond: 0.15, durability: 0.12, longevity: 0.08,
   },
   // Balance carries only 0.03 on shinies. Its shiny modifier is the second
   // lowest of any archetype, so weighting shinies like the others charged the
@@ -95,8 +136,8 @@ export function componentValues(stats: CareerStats, chapterCount: number): Recor
     badges: clamp01(stats.badges / TARGETS.badges),
     catches: clamp01(stats.catches / TARGETS.catches),
     shinies: clamp01(stats.shinies / TARGETS.shinies),
-    fame: clamp01(stats.fame / 100),
-    bond: clamp01(stats.bond / 100),
+    fame: clamp01(stats.fame / TARGETS.fame),
+    bond: clamp01(stats.bond / TARGETS.bond),
     durability: clamp01(1 - stats.fatigue / 100),
     longevity: clamp01(chapterCount / TARGETS.chapters),
   };

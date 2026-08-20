@@ -258,6 +258,47 @@ Two normalisation choices matter:
   Balance player for an outcome their own build cannot produce. It was the one
   archetype that could not reach the elite tier. The freed weight went to
   `titles`, which a Balance run genuinely competes for.
+- **`peak` is scored against the top 12, not against a 48-deep ladder.** With
+  `floorRank: 48` the component measured nothing: across 6,000 careers the peak
+  rank never fell outside the top 8, so the normalised value ran p10 0.957 /
+  p50 1.000 / min 0.851. A component with that little variance does not
+  discriminate between runs — it pays every run a flat premium proportional to
+  its weight, which is precisely how the archetypes drifted apart (below).
+- **`catches` targets 55, not 65.** Measured career max is ~70 and the p90 is
+  45, so a target of 65 left only the extreme tail near 1.0 — and since
+  `catches` is the Collector's heaviest component at 0.30, that capped the
+  Collector's ceiling below every other archetype's.
+
+### Cross-archetype parity
+
+Verdict *labels* are archetype-specific at every tier, so a Stall player and an
+Aggro player who both land SOLID each get their own archetype's name for it —
+that half is fair by construction. The *score* is not: it is cross-archetype
+comparable and it is printed on the share card.
+
+Stall's median once ran **113 points above Aggro's** (now 74). The cause was
+variance, not favouritism:
+
+| | heaviest components | their measured p50 |
+|---|---|---|
+| aggro | `winRate` 0.26, `titles` 0.22 | 0.52, **0.00** |
+| stall | `durability` 0.16, `bond` 0.14, `longevity` 0.12 | 0.64, 0.76, 0.80 |
+
+Half of all careers end titleless, so Aggro's second-heaviest weight mostly paid
+nothing, while Stall's three heaviest were near-guaranteed — and Stall's own
+mechanic lowers fatigue, so it was paid twice for `durability`. In play this
+showed up as Aggro players landing MODEST verdicts while Stall players landed
+GREAT.
+
+The rebalance moved both toward components that actually discriminate without
+flattening identity: Stall still carries the highest `bond`, `durability` and
+`longevity` of any archetype, and Aggro still carries the highest `winRate`.
+
+Some spread is correct and wanted — a Shiny Hunter who finds no shinies *should*
+score badly, and erasing that would make the five archetypes interchangeable.
+So `no archetype is a systematically better bet than the others` in
+`content-health.test.ts` is a **drift guard, not a parity target**: it bounds the
+median spread at 140 and prints every archetype's median when it trips.
 
 ### Measured distribution
 
@@ -267,19 +308,78 @@ better):
 
 | Archetype | min | p50 | p95 | max |
 |---|---|---|---|---|
-| aggro | 481 | 653 | 822 | 878 |
-| stall | 545 | 746 | 867 | 916 |
-| balance | 502 | 674 | 819 | 865 |
-| collector | 496 | 669 | 785 | 886 |
-| shiny-hunter | 355 | 619 | 829 | 905 |
+| aggro | 434 | 645 | 791 | 886 |
+| stall | 502 | 721 | 864 | 942 |
+| balance | 444 | 669 | 818 | 913 |
+| collector | 493 | 718 | 839 | 909 |
+| shiny-hunter | 334 | 675 | 840 | 909 |
 
-Tiers were set from this table, not the reverse: `ELITE = 850` is clear of every
-archetype's max with margin, which is the fairness property the tests enforce.
+Across all three paces (400 seeds × 5 archetypes × 3 paces = 6,000 careers) the
+whole-population curve is:
 
-**If you change engine numbers, re-derive these.** The
-`every archetype can reach a top-tier verdict` and
-`every archetype reaches its own top-tier verdict` tests will fail loudly if a
-tuning change makes an archetype a dead end — that's their whole job.
+```
+p2=473  p5=513  p10=544 p25=597 p50=661 p75=730
+p85=764 p90=785 p95=813 p97=830 p99=863   min=300 max=941
+```
+
+### The multiplier is an asymptote, not a multiplication
+
+v10 added the Balatro layer — stacked event and quest multipliers on the final
+total — as `Math.min(999, total * mult)`. That clamp was **binding for more than
+15% of runs**: measured p85 through p99 were all exactly 999. Two things broke
+at once, and neither failed a test:
+
+- The score stopped discriminating at the top. Everyone in the best sixth of
+  runs shared one number, on the one artifact whose whole job is to be worth
+  comparing.
+- Because all of those runs cleared the top tier simultaneously, the ELITE
+  *fallback* verdicts became the most common outcomes in the game.
+  `THE COLLECTOR` alone was **10.1%** of all runs — more than any ordinary
+  verdict. A prestige tier that fires for a sixth of players is not a prestige
+  tier.
+
+The multiplier now closes a fraction of the remaining headroom instead of
+multiplying through it:
+
+```ts
+const base = breakdown.total / MAX_SCORE;
+finalScore = MAX_SCORE * (1 - (1 - base) / Math.max(1, mult));
+```
+
+This keeps every property the Balatro layer wants — strictly increasing in
+`mult`, so hitting a legendary event always beats not hitting one — while making
+999 an asymptote no stack can reach. High scores gain less in absolute terms than
+middling ones, which is correct: they had less room left to win. Post-fix, the
+top verdict is an ordinary SOLID one at 13.4% and no ELITE verdict appears in the
+top fourteen.
+
+The same v10 curve shift stranded two `requires` gates that had been written
+against the old battle counts — see [Verdict table](#verdict-table).
+
+### Tiers are anchored to percentiles, not to round numbers
+
+`ELITE 800 · GREAT 720 · SOLID 540 · MODEST 400` ≈ **p97 · p85 · p25 · p2**.
+
+The first draft used round thresholds (850/760/560/280) and they went stale the
+moment engine numbers moved: the bond/fame decay pass compressed the score
+distribution, `ELITE = 850` landed 2 points *under* Collector's own maximum, and
+three ELITE verdicts became unreachable content. Nothing failed. Percentile
+anchors would have moved with the distribution.
+
+**If you change engine numbers, re-derive this whole section.** Three tests
+enforce what it claims:
+
+| Test | Catches |
+|---|---|
+| `every archetype reaches its own top-tier verdict` | a tuning change making an archetype a dead end |
+| `every verdict in the table is actually reachable` | a tier threshold or `requires` gate stranding content |
+| `no archetype is a systematically better bet…` | median drift between archetypes |
+
+The reachability guard also catches the subtler failure: a signature `requires`
+that is *implied* by the score gating it. `catches >= 45` is a near-certainty for
+any Collector clearing ELITE, so the fallback verdict behind it could never fire.
+Signature conditions have to be harder than what the tier already guarantees —
+they now sit roughly a decile above it.
 
 ---
 
@@ -297,12 +397,18 @@ clearing `minScore`, and satisfying its `requires` predicate.
 
 | Tier | Score | Entries |
 |---|---|---|
-| ELITE | 850 | 5 signature (conditional) + 4 unconditional fallbacks |
-| GREAT | 760 | one per archetype |
-| colour | 620 / 600 | `NEARLY-MAN`, `CULT HERO OF {region}` |
-| SOLID | 560 | `ONE-REGION LEGEND` + one per archetype |
-| MODEST | 280 | one per archetype |
+| ELITE | 800 | 5 signature (conditional) + 4 unconditional fallbacks |
+| GREAT | 720 | `NEARLY-MAN` (conditional), then one per archetype |
+| colour | 600 | `CULT HERO OF {region}` |
+| SOLID | 540 | `ONE-REGION LEGEND` + one per archetype |
+| MODEST | 400 | one per archetype |
 | FLOOR | 0 | `THE ROAD-WALKER` — universal, unconditional |
+
+`NEARLY-MAN` sits *above* the GREAT block rather than in a band of its own: a
+first-match table only reaches it if nothing more prestigious claims the run, so
+"good enough to win and never did" has to outrank the tier it is a consolation
+for. It began at 620 with `peakRank <= 4` and fired for **19.1% of all runs** —
+a consolation label as the single most common outcome in the table.
 
 The floor entry guarantees `resolveVerdict` never returns undefined, so callers
 never null-check a verdict. Asserted by
@@ -312,11 +418,31 @@ Signature ELITE conditions:
 
 | Verdict | Archetype | Requires |
 |---|---|---|
-| `THE UNDEFEATED` | aggro | `titles ≥ 3 && losses ≤ wins × 0.6` |
-| `THE IMMOVABLE` | stall | `bond ≥ 70` |
-| `THE PROFESSOR'S PRIDE` | collector | `catches ≥ 45` |
-| `CHROMATIC LEGEND` | shiny-hunter | `shinies ≥ 4` |
+| `THE UNDEFEATED` | aggro | `titles ≥ 2 && losses ≤ wins × 0.75` |
+| `THE IMMOVABLE` | stall | `bond ≥ 60` |
+| `THE PROFESSOR'S PRIDE` | collector | `catches ≥ 55` |
+| `CHROMATIC LEGEND` | shiny-hunter | `shinies ≥ 5` |
 | `THE COMPLETE TRAINER` | balance | — |
+
+Each of these sits roughly a decile above what clearing ELITE as that archetype
+already implies — otherwise the unconditional fallback behind it is unreachable.
+`catches ≥ 45` and `shinies ≥ 4` were both *implied* by the tier, which is why
+`THE COLLECTOR` and `ODDS BREAKER` were dead content.
+
+Cross-archetype `requires` gates read off the **post-decay** stat curves, not the
+nominal 0–100 range (`bond` p50 42 / p90 61 / max 89; `fame` p50 48 / p90 66).
+`CULT HERO` shows why this matters: at `fame ≥ 65` — the p90 — combined with a
+peak outside the top four, it fired for **0 of 6,000 runs**, because high fame
+correlates with a strong peak. It needs "well known", not "famous".
+
+`THE UNDEFEATED` is the same failure from the other direction, caused by an
+engine change rather than a decay pass. `titles ≥ 3 && losses ≤ wins × 0.6` was
+written against pre-v10 battle counts; v10's gym / Elite Four / World Cup ladder
+capped titles at 4 (p90 = 1) and floored the loss:win ratio at 0.540 with a p10
+of 0.686, making `≤ 0.6` roughly a top-1% outcome on its own. Together the two
+clauses matched **1 run in 6,000** — alive only by luck of the seed, and one
+tuning pass from dead. Gates written against a stat curve have to be re-derived
+when the engine moves that curve; that is what the reachability guard is for.
 
 ---
 

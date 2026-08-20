@@ -447,15 +447,38 @@ export const DECISION_CARD_BY_ID = new Map(DECISION_CARDS.map(c => [c.id, c]));
 // Beat ids per phase; the engine picks from these with the chapter's stream.
 // Keys resolve to `journey.beat.<id>`.
 
+// Pool size is load-bearing, not cosmetic. A phase covers 4-6 chapters and each
+// chapter draws 1-2 beats, so a 6-line pool made a repeat inside one career
+// near-certain — a 6,000-run sweep measured 99.7% of careers reusing a line.
+// Twelve per phase (six for the single retirement chapter) plus the run-level
+// dedup in engine.ts drops that to ~0. If you add a phase or raise the per-
+// chapter beat count, re-check with the same sweep.
 export const CHAPTER_BEATS: Record<ChapterPhase, string[]> = {
-  'gym-circuit': ['first-badge', 'route-grind', 'gym-upset', 'crowd-notices', 'lost-close', 'training-camp'],
-  'regional':    ['bracket-run', 'regional-final', 'meta-read', 'sponsor-scout', 'bad-matchup', 'clutch-set'],
-  'national':    ['national-stage', 'travel-toll', 'top-cut', 'rival-rematch', 'format-lock', 'press-row'],
-  'elite-four':  ['e4-gauntlet', 'e4-no-heal', 'e4-final-door', 'e4-crowd-hush'],
-  'worlds':      ['worlds-debut', 'day-two', 'stage-lights', 'heartbreak', 'trophy-lift', 'stream-clip'],
-  'world-cup':   ['wc-opening', 'wc-bracket', 'wc-upset', 'wc-final-stage'],
-  'veteran':     ['veteran-grind', 'young-guns', 'legacy-set', 'body-aches', 'mentor-role', 'last-ladder'],
-  'retirement':  ['final-bow', 'hall-of-fame', 'quiet-exit', 'passing-torch'],
+  'gym-circuit': [
+    'first-badge', 'route-grind', 'gym-upset', 'crowd-notices', 'lost-close', 'training-camp',
+    'rival-intro', 'night-grind', 'small-crowd', 'type-lesson', 'lucky-break', 'mentor-note',
+  ],
+  'regional': [
+    'bracket-run', 'regional-final', 'meta-read', 'sponsor-scout', 'bad-matchup', 'clutch-set',
+    'seed-upset', 'travel-budget', 'bracket-luck', 'team-gel', 'first-stream', 'coach-offer',
+  ],
+  'national': [
+    'national-stage', 'travel-toll', 'top-cut', 'rival-rematch', 'format-lock', 'press-row',
+    'hotel-prep', 'nemesis', 'tech-pick', 'crowd-turn', 'burnout-signs', 'roster-swap',
+  ],
+  'elite-four': ['e4-gauntlet', 'e4-no-heal', 'e4-final-door', 'e4-crowd-hush'],
+  'worlds': [
+    'worlds-debut', 'day-two', 'stage-lights', 'heartbreak', 'trophy-lift', 'stream-clip',
+    'opening-round', 'far-from-home', 'bracket-reset', 'ace-carry', 'photo-finish', 'locker-room',
+  ],
+  'world-cup': ['wc-opening', 'wc-bracket', 'wc-upset', 'wc-final-stage'],
+  'veteran': [
+    'veteran-grind', 'young-guns', 'legacy-set', 'body-aches', 'mentor-role', 'last-ladder',
+    'coaching-gig', 'rival-retires', 'format-nostalgia', 'travel-lighter', 'one-more-major', 'signature-set',
+  ],
+  'retirement': [
+    'final-bow', 'hall-of-fame', 'quiet-exit', 'passing-torch', 'last-interview', 'number-retired',
+  ],
 };
 
 /** Chapter headline keys per phase — resolve to `journey.chapterTitle.<id>`. */
@@ -484,11 +507,18 @@ export const CHAPTER_TITLES: Record<ChapterPhase, string> = {
 /** Score tiers. Calibrated against the engine's actual output distribution —
  *  see docs/JOURNEY_MODE.md § Calibration for the measured p50/p95/max per
  *  archetype that these were set from. ELITE must stay reachable by all five. */
+/** Anchored to percentiles of the measured sweep, not to round numbers:
+ *  ELITE ≈ p97, GREAT ≈ p85, SOLID ≈ p25, MODEST ≈ p2. Anchoring this way is
+ *  what keeps every tier populated when engine numbers move — the first draft
+ *  used round thresholds, and after the bond/fame decay pass compressed scores
+ *  ELITE (850) landed 2 points under collector's own maximum (852), which
+ *  silently killed three ELITE verdicts. Percentile anchors would have moved
+ *  with the distribution. Re-derive from `docs/JOURNEY_MODE.md § Calibration`. */
 export const TIER = {
-  ELITE: 850,
-  GREAT: 760,
-  SOLID: 560,
-  MODEST: 280,
+  ELITE: 800,
+  GREAT: 720,
+  SOLID: 540,
+  MODEST: 400,
   FLOOR: 0,
 } as const;
 
@@ -497,12 +527,30 @@ export const TIER = {
 // verdict placed after the archetype's lower tiers can never fire, because the
 // lower tier matches first. Keep entries grouped by minScore, descending, with
 // conditional entries ahead of unconditional ones at the same score.
+// NOTE ON bond/fame THRESHOLDS: these are calibrated against the POST-DECAY
+// distributions (bond p50 42 / p90 61 / max 89; fame p50 48 / p90 66 / max 100),
+// not the 0-100 nominal range. Before decay both stats pinned at 100 in ~62% of
+// runs, so any `>= 90` gate was really just "titleless" and swallowed a fifth of
+// all outcomes. Re-measure before moving them — see docs/JOURNEY_MODE.md.
 export const VERDICTS: Verdict[] = [
   // ---- ELITE (850+) — one per archetype, each with a signature condition ----
-  { id: 'undefeated',        archetype: 'aggro',        minScore: TIER.ELITE, titleKey: 'journey.verdict.undefeated.title',        blurbKey: 'journey.verdict.undefeated.blurb',        requires: s => s.titles >= 3 && s.losses <= s.wins * 0.6 },
-  { id: 'immovable',         archetype: 'stall',        minScore: TIER.ELITE, titleKey: 'journey.verdict.immovable.title',         blurbKey: 'journey.verdict.immovable.blurb',         requires: s => s.bond >= 70 },
-  { id: 'professors-pride',  archetype: 'collector',    minScore: TIER.ELITE, titleKey: 'journey.verdict.professors-pride.title',  blurbKey: 'journey.verdict.professors-pride.blurb',  requires: s => s.catches >= 45 },
-  { id: 'chromatic-legend',  archetype: 'shiny-hunter', minScore: TIER.ELITE, titleKey: 'journey.verdict.chromatic-legend.title',  blurbKey: 'journey.verdict.chromatic-legend.blurb',  requires: s => s.shinies >= 4 },
+  // `titles >= 3 && losses <= wins * 0.6` was written against the pre-v10
+  // battle counts. v10's gym/Elite Four/World Cup ladder compressed both curves:
+  // titles now top out at 4 (p90 is 1), and the loss:win ratio bottoms out at
+  // 0.540 with a p10 of 0.686 — so `<= 0.6` is roughly the top 1% on its own.
+  // Together they matched 1 run in 6,000, which is alive only by luck of the
+  // seed. `titles >= 2 && <= 0.75` is top-quartile on record and top ~4% on
+  // titles: still "dominant", and it survives the next tuning pass.
+  { id: 'undefeated',        archetype: 'aggro',        minScore: TIER.ELITE, titleKey: 'journey.verdict.undefeated.title',        blurbKey: 'journey.verdict.undefeated.blurb',        requires: s => s.titles >= 2 && s.losses <= s.wins * 0.75 },
+  { id: 'immovable',         archetype: 'stall',        minScore: TIER.ELITE, titleKey: 'journey.verdict.immovable.title',         blurbKey: 'journey.verdict.immovable.blurb',         requires: s => s.bond >= 60 },
+  // The signature gates have to be HARDER than what the score already implies,
+  // or the fallback below can never fire. `catches >= 45` and `shinies >= 4`
+  // were both implied by clearing ELITE as that archetype — catches and shinies
+  // are the heaviest components of those two archetypes' own weightings — so
+  // THE COLLECTOR and ODDS BREAKER were unreachable content. The gates now sit
+  // roughly a decile above what the tier itself guarantees.
+  { id: 'professors-pride',  archetype: 'collector',    minScore: TIER.ELITE, titleKey: 'journey.verdict.professors-pride.title',  blurbKey: 'journey.verdict.professors-pride.blurb',  requires: s => s.catches >= 55 },
+  { id: 'chromatic-legend',  archetype: 'shiny-hunter', minScore: TIER.ELITE, titleKey: 'journey.verdict.chromatic-legend.title',  blurbKey: 'journey.verdict.chromatic-legend.blurb',  requires: s => s.shinies >= 5 },
   { id: 'complete-trainer',  archetype: 'balance',      minScore: TIER.ELITE, titleKey: 'journey.verdict.complete-trainer.title',  blurbKey: 'journey.verdict.complete-trainer.blurb' },
   // Fallbacks at the same tier, so clearing 850 without the signature
   // condition still reads as elite rather than dropping a whole tier.
@@ -510,6 +558,21 @@ export const VERDICTS: Verdict[] = [
   { id: 'attrition-master',  archetype: 'stall',        minScore: TIER.ELITE, titleKey: 'journey.verdict.attrition-master.title',  blurbKey: 'journey.verdict.attrition-master.blurb' },
   { id: 'the-collector',     archetype: 'collector',    minScore: TIER.ELITE, titleKey: 'journey.verdict.the-collector.title',     blurbKey: 'journey.verdict.the-collector.blurb' },
   { id: 'odds-breaker',      archetype: 'shiny-hunter', minScore: TIER.ELITE, titleKey: 'journey.verdict.odds-breaker.title',      blurbKey: 'journey.verdict.odds-breaker.blurb' },
+
+  // ---- "so close" — must outrank the GREAT tier to be reachable at all ----
+  // Two measured corrections live in this one entry. It began at minScore 620
+  // with `peakRank <= 4` and fired for 19.1% of ALL runs — a consolation label
+  // was the most common outcome in the table, because roughly half of careers
+  // end titleless and a top-4 peak is easy across ~8 tournaments. Tightening
+  // to <= 2 alone only moved it to 16.4%: the real problem was the THRESHOLD,
+  // not the predicate. At 620 it outranked every SOLID entry across the fattest
+  // part of the score distribution (p50 is ~660), so it stole the archetype's
+  // own identity from ordinary careers.
+  //
+  // At GREAT it means what the name promises: you were good enough to win and
+  // never did. Sits above the GREAT block because a first-match table only
+  // reaches it if nothing earlier claims the run.
+  { id: 'nearly-man',        archetype: 'any', minScore: TIER.GREAT, titleKey: 'journey.verdict.nearly-man.title',        blurbKey: 'journey.verdict.nearly-man.blurb',        requires: s => s.titles === 0 && s.peakRank <= 2 },
 
   // ---- GREAT (760+) ----
   { id: 'ranked-terror',     archetype: 'aggro',        minScore: TIER.GREAT, titleKey: 'journey.verdict.ranked-terror.title',     blurbKey: 'journey.verdict.ranked-terror.blurb' },
@@ -519,11 +582,25 @@ export const VERDICTS: Verdict[] = [
   { id: 'rare-light',        archetype: 'shiny-hunter', minScore: TIER.GREAT, titleKey: 'journey.verdict.rare-light.title',        blurbKey: 'journey.verdict.rare-light.blurb' },
 
   // ---- Cross-archetype colour, above the SOLID tier so it can actually fire ----
-  { id: 'nearly-man',        archetype: 'any', minScore: 620, titleKey: 'journey.verdict.nearly-man.title',        blurbKey: 'journey.verdict.nearly-man.blurb',        requires: s => s.titles === 0 && s.peakRank <= 4 },
-  { id: 'cult-hero',         archetype: 'any', minScore: 600, titleKey: 'journey.verdict.cult-hero.title',         blurbKey: 'journey.verdict.cult-hero.blurb',         requires: s => s.fame >= 80 && s.titles === 0 },
+  // `fame >= 80 && titles === 0` was effectively just "titleless": fame nearly
+  // saturates in any decent career, and ~half of careers end without a title.
+  // Once NEARLY-MAN moved up to GREAT, this inherited its problem and became
+  // 21.0% of all outcomes.
+  //
+  // The fix is semantic, not numeric. A cult hero is loved and never came
+  // close — so a weak peak is part of the definition, not a tuning knob, and it
+  // makes this mutually exclusive with NEARLY-MAN (which needs peak <= 2)
+  // instead of the two fighting over the same careers.
+  //
+  // The fame gate then has to be read off the post-decay curve. `>= 65` sat at
+  // the p90 of fame, and high fame correlates with a strong peak — so requiring
+  // both top-decile fame AND a peak outside the top four made this
+  // unreachable: it fired for 0 of 6,000 sweep runs. `>= 55` is ~p70, which is
+  // "well known" rather than "famous", and that is what the verdict means.
+  { id: 'cult-hero',         archetype: 'any', minScore: 600, titleKey: 'journey.verdict.cult-hero.title',         blurbKey: 'journey.verdict.cult-hero.blurb',         requires: s => s.fame >= 55 && s.titles === 0 && s.peakRank > 3 },
 
   // ---- SOLID (560+) ----
-  { id: 'one-region-legend', archetype: 'any',          minScore: TIER.SOLID, titleKey: 'journey.verdict.one-region-legend.title', blurbKey: 'journey.verdict.one-region-legend.blurb', requires: s => s.bond >= 90 && s.titles === 0 },
+  { id: 'one-region-legend', archetype: 'any',          minScore: TIER.SOLID, titleKey: 'journey.verdict.one-region-legend.title', blurbKey: 'journey.verdict.one-region-legend.blurb', requires: s => s.bond >= 65 && s.titles === 0 },
   { id: 'glass-cannon',      archetype: 'aggro',        minScore: TIER.SOLID, titleKey: 'journey.verdict.glass-cannon.title',      blurbKey: 'journey.verdict.glass-cannon.blurb' },
   { id: 'long-game',         archetype: 'stall',        minScore: TIER.SOLID, titleKey: 'journey.verdict.long-game.title',         blurbKey: 'journey.verdict.long-game.blurb' },
   { id: 'steady-hand',       archetype: 'balance',      minScore: TIER.SOLID, titleKey: 'journey.verdict.steady-hand.title',       blurbKey: 'journey.verdict.steady-hand.blurb' },
