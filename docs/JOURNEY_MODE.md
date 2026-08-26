@@ -15,6 +15,7 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 - [Blocked items](#blocked-items)
 - [Architecture](#architecture)
 - [The engine](#the-engine)
+- [Named battles, badges, and the ladders](#named-battles-badges-and-the-ladders)
 - [Scoring and calibration](#scoring-and-calibration)
 - [Verdict table](#verdict-table)
 - [Seeds and deep-links](#seeds-and-deep-links)
@@ -35,7 +36,7 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 
 | Definition-of-Done item | State | Evidence |
 |---|---|---|
-| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 106 tests |
+| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 190 tests |
 | 2. Express run completes under 2:30 on mobile viewport | ✅ | `test-journey.mjs` asserts <150s |
 | 3. Legend Card renders, shares, downloads | ✅ | `canShare`-gated; download always offered |
 | 4. Daily seed identical across sessions; streak survives TZ change | ✅ | browser + unit tests |
@@ -228,6 +229,92 @@ fatigue an equilibrium at `gain ÷ rate`, so pace becomes a genuine trade-off an
 "rest the team" buys something real.
 
 ---
+
+### Named battles, badges, and the ladders
+
+A chapter resolves a **chain** of named opponents: fight, and on a win move to
+the next; the first loss ends the day. Every fight past the first carries a
+compounding tiredness penalty and costs real fatigue.
+
+**Why a chain and not one fight per chapter.** Two ladders were arithmetically
+impossible before:
+
+| Ladder | Fights needed | Phase length | Result |
+|---|---|---|---|
+| Gym circuit | 8 badges/region | ~26% of 12–20 chapters ≈ 5 | capped at 5 badges |
+| Elite Four | 4 members + champion | ~1.5 chapters | members 3–4 and the champion **never faced** |
+
+Measured over 6,000 careers the region champion was faced 0 times, which also
+made `RegionCrown` dead content — crowns are awarded for beating a champion. The
+alternative to a chain was widening the gym phase until half the career is gyms,
+which is not a career sim.
+
+**Badges are won, never rolled.** A badge comes from beating a gym leader, one
+per leader. It used to come from a blind `chance(rng, 0.72)` roll that never
+looked at the opponent, so a player could lose the battle and collect two badges
+or win it and collect none — and `battle.won` was `winRate >= 0.5`, a threshold
+on the chapter's aggregate rate (median ~0.53), so essentially every named battle
+was a win.
+
+Because `earnedHere` only advances when a badge lands, **losing a gym leaves that
+leader standing** — the same leader is selected next chapter and the result is
+flagged `rematch`. A loss costs a chapter and stings on fatigue; it is never a
+dead end.
+
+Nothing else in the game grants a badge. The `go-pro` decision card used to hand
+one out as a choice reward, which desynced the badge *stat* from the badge
+*track*: a run could report 5 badges with 4 on the track behind 4 gym wins.
+
+**Measured, 6,000 careers** (mechanical player — a real one preparing for type
+matchups should do better):
+
+| Ladder | Win rate |
+|---|---|
+| gym | 66% |
+| syndicate | 64% |
+| elite-four | 40% |
+| region champion | 32% (reached by 908 runs) |
+| world cup | 30% |
+
+~2.9 rematches per run, and 0 runs finish with a badge they did not win.
+
+### Opponent levels have to track the party the engine produces
+
+Every ladder in `opponents.ts` was scaled against an XP curve the game does not
+have: gym leaders ran 12→54, the Elite Four 58→70, the champion 76, the World Cup
+~70. The party's **measured end-of-run level is p50 25, max 39**.
+
+`matchupFor` prices level gap as `levelGap / 20` clamped to ±1, so every late
+battle sat pinned at maximum disadvantage — the level term had stopped being a
+variable, which is why no amount of win-rate tuning moved the boss ladders. The
+ladders now run 6→20 (gyms), 15→21 (Elite Four), ~25 (champion), ~27 (World Cup),
+and `battles.test.ts` asserts no ladder exceeds 40.
+
+**If you change the XP economy, re-derive these together.** A level curve and an
+opponent ladder are one number in two places.
+
+### Shinies and event Pokémon are properties of a Pokémon, not of a counter
+
+`shinies` was a counter incremented next to a `BoxEntry` built with
+`shiny: false` hardcoded. A Shiny Hunter could finish a career claiming eight
+shinies and hold none — nothing to look at, swap in, or put on the card.
+
+The flag on the Pokémon is now the single source of truth and the count derives
+from it, so the two cannot disagree. At the end of a run the stat is reconciled
+against the distinct shiny Pokémon actually held: a shiny catch of a species you
+already own is dropped as a duplicate, and 101 runs in 6,000 finished claiming a
+shiny they did not have.
+
+**Origin is separate from colour.** `MonOrigin` is `starter | wild | event | gift`.
+An event grant used to be marked `shiny` when the event's rarity was
+`'legendary'`, which conflated two unrelated facts three ways: every legendary
+encounter came out shiny, `SHINY FLASH` — an event whose entire premise is the
+colour — granted an ordinary Pokémon, and the player had no way to tell a shiny
+catch from a legendary one. Events now declare `grantsShiny` themselves.
+
+Provenance survives a round trip through the box. The swap path rebuilt the
+roster entry without `origin`/`eventId`, laundering an event Pokémon into an
+ordinary one.
 
 ## Scoring and calibration
 
@@ -859,8 +946,9 @@ separate static asset and doesn't count against this.
 ## Testing
 
 ```bash
-pnpm test:unit      # vitest — 106 tests, engine + i18n + deeplink + streak + analytics
-pnpm test:browser   # puppeteer — 7 suites, 75 tests (48 pre-existing + 27 journey)
+pnpm test:unit      # vitest — 190 tests: engine, battles/badges/shinies, content health,
+                    #          i18n, deeplink, streak, analytics, prepare
+pnpm test:browser   # puppeteer — 19 suites, 187 tests (incl. 37 journey)
 pnpm test:all       # both
 pnpm ship           # build + inline + test:all
 ```
@@ -885,7 +973,7 @@ test runner, and the engine's determinism makes unit testing it nearly free.
 
 ### What the browser tests cover
 
-27 tests including: the full run through a real DOM, the card rasterising with
+37 tests including: the full run through a real DOM, the card rasterising with
 **all network blocked**, `?seed=` reproducing a run across two fresh incognito
 contexts, malformed seeds failing soft, `?daily=` matching across sessions, the
 streak surviving a Kiritimati → Midway (25-hour) timezone swing, all three flags

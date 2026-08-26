@@ -77,6 +77,66 @@ async function revealCard(page) {
 // ---------- tests ----------
 
 const tests = [
+  // ---- gym battles, shinies, event Pokemon (v11) ----
+
+  {
+    name: 'gym battles are shown as battles, with the badge attached to a win',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      // Walk far enough to clear the gym circuit, collecting every battle row.
+      let rows = [];
+      for (let step = 0; step < 40 && rows.length === 0; step++) {
+        await page.evaluate(() => {
+          const cont = document.querySelector('[data-testid="journey-continue"]');
+          if (cont) { cont.click(); return; }
+          const opts = [...document.querySelectorAll('[data-journey-option="1"]')];
+          if (opts.length) opts[0].click();
+        });
+        await sleep(70);
+        rows = await page.evaluate(() => [...document.querySelectorAll('[data-testid="journey-battle-row"]')]
+          .map(el => ({ won: el.getAttribute('data-won'), txt: el.innerText })));
+      }
+      assertGte(rows.length, 1, 'a gym-circuit recap should show at least one battle row');
+      // A row must say who was fought and whether it was won — the old build
+      // moved a badge counter and showed nothing about the leader.
+      for (const r of rows) {
+        assert(r.won === '1' || r.won === '0', `battle row missing a result: ${JSON.stringify(r)}`);
+        assertGte(r.txt.trim().length, 3, 'battle row should carry text');
+      }
+      // A badge is only ever attached to a won row.
+      const badgeOnLoss = rows.some(r => r.won === '0' && /BADGE|MEDALLA/.test(r.txt));
+      assert(!badgeOnLoss, 'a lost battle must never show a badge');
+      const body = await text(page);
+      assert(!/journey\.battle\./.test(body), 'battle rows must not leak raw i18n keys');
+    },
+  },
+
+  {
+    name: 'a shiny starter actually renders as shiny in the party rail',
+    // Seed 4 + shiny-hunter gives a shiny starter, verified against
+    // initialRoster's own `starter-shiny` roll. The engine half of the shiny fix
+    // is covered exhaustively in src/journey/battles.test.ts; this is the render
+    // half — a shiny that the player cannot see is the bug we just fixed.
+    pageOpts: { query: 'seed=4' },
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => {
+        const b = document.querySelector('[data-testid="journey-archetype-shiny-hunter"]');
+        if (b) b.click();
+      });
+      await sleep(80);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      const shown = await page.evaluate(() => ({
+        marker: document.querySelectorAll('[data-testid="journey-party-shiny"]').length,
+        sprite: document.querySelectorAll('img[src*="shiny"]').length,
+      }));
+      assert(shown.marker > 0 || shown.sprite > 0,
+        `a shiny party member should render a marker or shiny sprite, got ${JSON.stringify(shown)}`);
+    },
+  },
   {
     name: 'journey button appears in the header and opens the dialog',
     async fn(page) {

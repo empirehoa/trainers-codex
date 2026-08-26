@@ -134,8 +134,20 @@ function buildGymLeaders(seed: number, regionId: string): Opponent[] {
   for (let i = 0; i < 8; i++) {
     const r = namedRng(seed, `gym-${regionId}-${i}`);
     const specialty = specialties[i] ?? ALL_TYPES[i % ALL_TYPES.length];
-    // Levels climb across the circuit: ~12 at gym 1 to ~52 at gym 8.
-    const level = 12 + i * 6 + randInt(r, -2, 2);
+    // Levels climb across the circuit: ~6 at gym 1 to ~20 at gym 8.
+    //
+    // These were 12 -> 54, and every ladder in this file was scaled the same
+    // way — against an XP curve the game does not have. Measured over 6,000
+    // careers the party's END-of-run level is p50 25 / max 37, and the gym
+    // circuit happens in the first quarter of a career when the party is
+    // level 5-12. Against a level-54 eighth gym, `matchupFor`'s level term
+    // (levelGap / 20, clamped to -1) was pinned at its floor for the entire
+    // late game, which is why no amount of win-rate tuning moved the boss
+    // ladders: the level term had stopped being a variable.
+    //
+    // The gaps below are sized so the term stays live — a well-levelled party
+    // is genuinely favoured and an under-levelled one genuinely is not.
+    const level = 6 + i * 2 + randInt(r, -1, 1);
     out.push({
       kind: 'gym',
       name: makeName(r),
@@ -171,7 +183,8 @@ function buildEliteFour(seed: number, regionId: string): Opponent[] {
       title: E4_TITLE,
       specialty,
       index: i + 1,
-      level: 58 + i * 4 + randInt(r, -2, 2),
+      // Party is ~11-14 through the Elite Four phase. See buildGymLeaders.
+      level: 15 + i * 2 + randInt(r, -1, 1),
       teamIds: teamOfType(r, regionId, specialty, 5, true),
       regionId,
     };
@@ -197,7 +210,8 @@ function buildChampion(seed: number, regionId: string): Opponent {
     title: CHAMP_TITLE,
     specialty,
     index: 1,
-    level: 76 + randInt(r, -3, 4),
+    // The region's wall. Clearly above the Elite Four, still on the curve.
+    level: 25 + randInt(r, -2, 3),
     teamIds: teamOfType(r, regionId, specialty, 6, true),
     regionId,
   };
@@ -222,7 +236,8 @@ function buildSyndicate(seed: number, regionId: string): Opponent {
     title: 'Syndicate Operation',
     specialty: s.motif,
     index: 1,
-    level: 40 + randInt(r, -6, 12),
+    // Syndicate shows up mid gym-circuit, so it sits just above those gyms.
+    level: 14 + randInt(r, -2, 4),
     teamIds: teamOfType(r, regionId, s.motif, 4, false),
     regionId,
   };
@@ -320,8 +335,17 @@ export function worldCupField(
   size = 8,
 ): Opponent[] {
   const field: Opponent[] = [];
-  for (const regionId of tour) field.push(regionChampion(seed, regionId));
-  field.push(...ghosts);
+  // Region champions enter the World Cup as COMPETITORS, so they are re-tagged
+  // `world-cup`. Leaving them as `kind: 'champion'` meant that on a
+  // single-region tour the World Cup's opening match — the only one most runs
+  // ever reach — was recorded as a champion fight. No battle in a 6,000-run
+  // sweep carried the `world-cup` kind at all, and beating one spuriously
+  // "crowned" a region the player had already crowned in the Elite Four.
+  for (const regionId of tour) {
+    const champ = regionChampion(seed, regionId);
+    field.push({ ...champ, kind: 'world-cup', title: `${champ.title} · ${getRegion(regionId).label}` });
+  }
+  field.push(...ghosts.map(g => ({ ...g, kind: 'world-cup' as const })));
   for (const regionId of tour) {
     const leaders = gymLeaders(seed, regionId);
     const top = leaders[leaders.length - 1];
@@ -338,7 +362,8 @@ export function worldCupField(
       title: 'International Challenger',
       specialty: pick(r, ALL_TYPES),
       index: field.length + 1,
-      level: 70 + randInt(r, -4, 8),
+      // World Cup is late — party is ~20-24 by then.
+      level: 27 + randInt(r, -2, 4),
       teamIds: teamOfType(r, regionId, pick(r, ALL_TYPES), 6, true),
       regionId,
     });

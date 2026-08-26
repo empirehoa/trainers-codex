@@ -127,6 +127,13 @@ interface EventSpec {
   mult: number;
   /** Grants a Pokémon from the given tier. */
   grants?: 'common' | 'rare' | 'legendary';
+  /**
+   * The granted Pokémon is SHINY. Only for events whose whole premise is the
+   * colour — SHINY FLASH promised one in its name and body copy and then handed
+   * over an ordinary Pokémon, because "shiny" was being derived from the
+   * event's rarity instead of being a property the event could declare.
+   */
+  grantsShiny?: boolean;
 }
 
 /**
@@ -144,7 +151,7 @@ export const EVENT_TABLE: EventSpec[] = [
   { id: 'swarm',         rarity: 'rare', phases: ['gym-circuit', 'regional', 'national'], mult: 1.10, grants: 'rare' },
   { id: 'perfect-run',   rarity: 'rare', phases: ['regional', 'national', 'worlds'], mult: 1.15 },
   { id: 'sponsor-bidding', rarity: 'rare', phases: ['national', 'worlds'], mult: 1.12 },
-  { id: 'shiny-flash',   rarity: 'rare', phases: ['gym-circuit', 'regional', 'national', 'veteran'], mult: 1.14, grants: 'rare' },
+  { id: 'shiny-flash',   rarity: 'rare', phases: ['gym-circuit', 'regional', 'national', 'veteran'], mult: 1.14, grants: 'rare', grantsShiny: true },
   // ---- legendary (run-defining, once each) ----
   { id: 'legendary-stirs', rarity: 'legendary', phases: ['worlds', 'veteran', 'national'], mult: 1.45, grants: 'legendary' },
   { id: 'hall-of-fame',    rarity: 'legendary', phases: ['worlds', 'veteran'], mult: 1.35 },
@@ -208,6 +215,7 @@ export function eventFor(opts: {
     vars: {},
     mult: spec.mult,
     grantedId,
+    grantedShiny: spec.grantsShiny && grantedId !== undefined ? true : undefined,
   };
 }
 

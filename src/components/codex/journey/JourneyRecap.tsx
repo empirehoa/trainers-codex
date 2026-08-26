@@ -1,4 +1,4 @@
-import { ArrowRight, FastForward, Trophy } from 'lucide-react';
+import { ArrowRight, FastForward, Trophy, Swords, Sparkles, Gift, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
 import { ProgressHeader, StatStrip } from './JourneyDecision';
@@ -6,9 +6,54 @@ import { PartyRail } from './PartyRail';
 import { BadgeTrack } from './BadgeTrack';
 import { pixelSprite } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
+import { TYPE_COLORS } from '@/lib/constants';
 import type {
-  BadgeEarned, ChapterResult, DexState, RegionProgress, RosterEntry,
+  BadgeEarned, ChapterResult, DexState, OpponentResult, RegionProgress, RosterEntry,
 } from '@/journey/types';
+
+/**
+ * One named fight's outcome.
+ *
+ * Gym badges are won by beating the leader now, so the result of the fight is
+ * the most consequential thing in the chapter — it used to leave no trace in
+ * the recap beyond the badge counter moving.
+ */
+function BattleRow({ battle: b }: { battle: OpponentResult }) {
+  const { t } = useI18n();
+  const colour = TYPE_COLORS[b.specialty] ?? 'hsl(var(--primary))';
+  return (
+    <div className="flex items-start gap-2 mt-2 pt-2 border-t"
+         style={{ borderColor: 'hsl(var(--border))' }}
+         data-testid="journey-battle-row"
+         data-won={b.won ? '1' : '0'}>
+      <Swords size={11} className="mt-0.5 shrink-0" style={{ color: colour }} />
+      <div className="min-w-0 flex-1">
+        <div className="font-mono text-[10px] flex items-center gap-1.5 flex-wrap">
+          <span className={b.won ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>
+            {t(b.won ? 'journey.battle.beat' : 'journey.battle.lostTo', { name: b.name })}
+          </span>
+          <span className="text-muted-foreground">· {b.title}</span>
+          {b.rematch && (
+            <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+              <RotateCcw size={9} />{t('journey.battle.rematch')}
+            </span>
+          )}
+          {!!b.badgeAwarded && (
+            <span className="px-1 py-0.5 rounded font-bold"
+                  style={{ background: `${colour}22`, color: colour }}>
+              {t('journey.battle.badge')}
+            </span>
+          )}
+        </div>
+        <div className="font-mono text-[9px] text-muted-foreground mt-0.5">
+          {t('journey.battle.level', { level: b.level })} · {b.specialty}
+          {b.strongPicks?.length ? ` · ${t('journey.battle.strong', { n: b.strongPicks.length })}` : ''}
+          {b.weakPicks?.length ? ` · ${t('journey.battle.weak', { n: b.weakPicks.length })}` : ''}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   /** The chapters resolved since the player last looked. */
@@ -69,6 +114,25 @@ export function JourneyRecap({
                 </span>
               )}
             </div>
+
+            {ch.battles?.map((b, i) => <BattleRow key={`${b.name}-${i}`} battle={b} />)}
+
+            {ch.eventMonId !== undefined && (
+              <div className="flex items-center gap-2 mt-2 pt-2 border-t"
+                   style={{ borderColor: 'hsl(var(--border))' }}
+                   data-testid="journey-event-mon">
+                <img src={pixelSprite(ch.eventMonId, ch.eventMonShiny)} alt="" width={32} height={32}
+                     className="pixelated shrink-0" loading="lazy" />
+                <span className="font-mono text-[10px] flex items-center gap-1
+                                 text-fuchsia-600 dark:text-fuchsia-400">
+                  {ch.eventMonShiny
+                    ? <Sparkles size={10} className="text-yellow-500 dark:text-yellow-400" />
+                    : <Gift size={10} />}
+                  {t(ch.eventMonShiny ? 'journey.recap.eventShiny' : 'journey.recap.event',
+                     { mon: rosterCaption(ch.eventMonId) })}
+                </span>
+              </div>
+            )}
 
             {ch.recruitedId !== undefined && (
               <div className="flex items-center gap-2 mt-2 pt-2 border-t"

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Star, BookMarked, Sparkles } from 'lucide-react';
+import { Star, BookMarked, Sparkles, Gift } from 'lucide-react';
 import { useI18n } from '@/i18n/useI18n';
 import { pixelSprite } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
@@ -56,7 +56,9 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
               borderColor: i === 0 && m ? 'hsl(var(--primary))' : 'hsl(var(--border))',
               background: m ? 'hsl(var(--muted)/0.25)' : 'transparent',
             }}
-            title={m ? `${rosterCaption(m.id)}${m.shiny ? ' ★' : ''}` : undefined}
+            title={m
+              ? `${rosterCaption(m.id)}${m.shiny ? ' ★' : ''}${m.origin === 'event' ? ' (event)' : ''}`
+              : undefined}
           >
             {m ? (
               <>
@@ -69,7 +71,16 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
                   </span>
                 )}
                 {m.shiny && (
-                  <Sparkles size={9} className="absolute top-0.5 right-0.5 text-yellow-400" />
+                  <Sparkles size={9} className="absolute top-0.5 right-0.5 text-yellow-400"
+                            data-testid="journey-party-shiny" />
+                )}
+                {/* Event provenance is its own marker, not a reuse of the shiny
+                    sparkle — the two used to be the same fact and a player had
+                    no way to tell a shiny catch from a legendary encounter. */}
+                {m.origin === 'event' && (
+                  <Gift size={9}
+                        className="absolute bottom-0.5 right-0.5 text-fuchsia-500 dark:text-fuchsia-400"
+                        data-testid="journey-party-event" />
                 )}
                 {evolvable.has(m.id) && (
                   // NB: testid is deliberately NOT prefixed "journey-evolve-" —

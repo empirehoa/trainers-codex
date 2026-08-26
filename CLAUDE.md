@@ -125,7 +125,7 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 7 suites, 75 tests
+  test-*.mjs                       ← 19 suites, 187 tests
 ```
 
 ## Build + bundle workflow
@@ -154,8 +154,9 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 123 tests · engine, i18n, deeplink, streak, analytics, paste-url, share summary
-pnpm test:browser  # puppeteer · 18 suites / 168 tests (incl. 27 Journey Mode)
+pnpm test:unit     # vitest · 190 tests · engine, battles/badges/shinies/events, content health,
+                   #            i18n, deeplink, streak, analytics, paste-url, share summary, prepare
+pnpm test:browser  # puppeteer · 19 suites / 187 tests (incl. 37 Journey Mode)
 (cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
 

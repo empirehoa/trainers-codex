@@ -89,6 +89,18 @@ export interface ChapterResult {
   /** Set when this chapter added a Pokémon to the roster. */
   recruitedId?: number;
   recruitedShiny?: boolean;
+  /**
+   * The named fights this chapter resolved, in order.
+   *
+   * Carried on the chapter (not just on the run) so the recap can show the
+   * result while it is still the thing that just happened. Without this, the
+   * player earned or lost a badge and the only trace was a number moving in
+   * the stat strip.
+   */
+  battles?: OpponentResult[];
+  /** Event Pokémon this chapter granted, for the recap's event line. */
+  eventMonId?: number;
+  eventMonShiny?: boolean;
   /** Tournament placement, when the chapter was a tournament. */
   placement?: number;
 }
@@ -256,6 +268,17 @@ export interface OpponentResult {
   won: boolean;
   /** Party advantage at the time, -1..+1. */
   advantage: number;
+  /** Badges this battle awarded (gym wins only). */
+  badgeAwarded?: number;
+  /**
+   * True when this is a second attempt at an opponent a previous chapter lost
+   * to. Rematches are what stop a gym loss from being a dead end.
+   */
+  rematch?: boolean;
+  /** Party ids that hit the specialty super-effectively. */
+  strongPicks?: number[];
+  /** Party ids the specialty hits super-effectively. */
+  weakPicks?: number[];
 }
 
 // ============================================================
@@ -294,15 +317,32 @@ export interface JourneyEvent {
   mult?: number;
   /** Species this event granted, if any. */
   grantedId?: number;
+  /** The granted species arrives shiny (SHINY FLASH and friends). */
+  grantedShiny?: boolean;
 }
 
 // ============================================================
 // RESULT
 // ============================================================
 
+/**
+ * How a Pokémon came to be on the team. Independent of `shiny` — a mon can be
+ * an event grant AND shiny, or either alone.
+ *
+ * These were previously conflated: an event grant was marked `shiny` when the
+ * event's rarity was 'legendary', which made "shiny" mean two unrelated things
+ * and left the player unable to tell a genuinely shiny catch from a legendary
+ * encounter.
+ */
+export type MonOrigin = 'starter' | 'wild' | 'event' | 'gift';
+
 export interface RosterEntry {
   id: number;
   shiny: boolean;
+  /** Where this member came from. Absent is treated as 'wild'. */
+  origin?: MonOrigin;
+  /** For `origin: 'event'`, the event id that granted it — drives the badge. */
+  eventId?: string;
   /** Chapter index the Pokémon joined at. Starter is -1, dex-pad is -2. */
   joinedAt: number;
   /** Current types — updated when the member evolves. */
@@ -319,6 +359,10 @@ export interface RosterEntry {
 export interface BoxEntry {
   id: number;
   shiny: boolean;
+  /** Where this one came from. Absent is treated as 'wild'. */
+  origin?: MonOrigin;
+  /** For `origin: 'event'`, the event id that granted it. */
+  eventId?: string;
   xp: number;
   /** Chapter it was caught at. */
   caughtAt: number;

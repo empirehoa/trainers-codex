@@ -286,7 +286,12 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.go-pro.prompt',
     options: [
       { id: 'overseas', labelKey: 'journey.card.go-pro.overseas.label', flavorKey: 'journey.card.go-pro.overseas.flavor', delta: { fame: 14, fatigue: 12 }, riskMultiplier: 1.6 },
-      { id: 'regional', labelKey: 'journey.card.go-pro.regional.label', flavorKey: 'journey.card.go-pro.regional.flavor', delta: { badges: 1, bond: 6 }, riskMultiplier: 0.8 },
+      // NOT `badges: 1`. A badge now means "you beat a gym leader" and is
+      // recorded on the region badge track, so handing one out as a card reward
+      // desynced the badge STAT from the track: a run could report 5 badges
+      // with 4 on the track and 4 gym wins behind them. Nothing else in the
+      // game grants a badge, and nothing else should.
+      { id: 'regional', labelKey: 'journey.card.go-pro.regional.label', flavorKey: 'journey.card.go-pro.regional.flavor', delta: { fame: 6, bond: 8 }, riskMultiplier: 0.8 },
     ],
     affinity: ['balance'],
   },
@@ -406,6 +411,26 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     affinity: ['aggro', 'stall'],
   },
   {
+    id: 'e4-rest',
+    phases: ['elite-four'],
+    promptKey: 'journey.card.e4-rest.prompt',
+    options: [
+      { id: 'push-on',  labelKey: 'journey.card.e4-rest.push-on.label',  flavorKey: 'journey.card.e4-rest.push-on.flavor',  delta: { fame: 8, fatigue: 14 }, riskMultiplier: 1.35 },
+      { id: 'breathe',  labelKey: 'journey.card.e4-rest.breathe.label',  flavorKey: 'journey.card.e4-rest.breathe.flavor',  delta: { fatigue: -10, bond: 5 }, riskMultiplier: 0.8 },
+    ],
+    affinity: ['stall'],
+  },
+  {
+    id: 'e4-scout',
+    phases: ['elite-four'],
+    promptKey: 'journey.card.e4-scout.prompt',
+    options: [
+      { id: 'study',   labelKey: 'journey.card.e4-scout.study.label',   flavorKey: 'journey.card.e4-scout.study.flavor',   delta: { fatigue: 4, bond: 4 }, riskMultiplier: 0.85 },
+      { id: 'improvise', labelKey: 'journey.card.e4-scout.improvise.label', flavorKey: 'journey.card.e4-scout.improvise.flavor', delta: { fame: 7, fatigue: 8 }, riskMultiplier: 1.3 },
+    ],
+    affinity: ['balance'],
+  },
+  {
     id: 'e4-gambit',
     phases: ['elite-four'],
     promptKey: 'journey.card.e4-gambit.prompt',
@@ -466,7 +491,11 @@ export const CHAPTER_BEATS: Record<ChapterPhase, string[]> = {
     'national-stage', 'travel-toll', 'top-cut', 'rival-rematch', 'format-lock', 'press-row',
     'hotel-prep', 'nemesis', 'tech-pick', 'crowd-turn', 'burnout-signs', 'roster-swap',
   ],
-  'elite-four': ['e4-gauntlet', 'e4-no-heal', 'e4-final-door', 'e4-crowd-hush'],
+  'elite-four': [
+    'e4-gauntlet', 'e4-no-heal', 'e4-final-door', 'e4-crowd-hush',
+    'e4-first-room', 'e4-potion-count', 'e4-type-read', 'e4-ace-holds',
+    'e4-attendant', 'e4-long-walk', 'e4-scoreboard', 'e4-champion-waits',
+  ],
   'worlds': [
     'worlds-debut', 'day-two', 'stage-lights', 'heartbreak', 'trophy-lift', 'stream-clip',
     'opening-round', 'far-from-home', 'bracket-reset', 'ace-carry', 'photo-finish', 'locker-room',
@@ -539,9 +568,15 @@ export const VERDICTS: Verdict[] = [
   // titles now top out at 4 (p90 is 1), and the loss:win ratio bottoms out at
   // 0.540 with a p10 of 0.686 — so `<= 0.6` is roughly the top 1% on its own.
   // Together they matched 1 run in 6,000, which is alive only by luck of the
-  // seed. `titles >= 2 && <= 0.75` is top-quartile on record and top ~4% on
-  // titles: still "dominant", and it survives the next tuning pass.
-  { id: 'undefeated',        archetype: 'aggro',        minScore: TIER.ELITE, titleKey: 'journey.verdict.undefeated.title',        blurbKey: 'journey.verdict.undefeated.blurb',        requires: s => s.titles >= 2 && s.losses <= s.wins * 0.75 },
+  // seed.
+  //
+  // The replacement then has to clear a SECOND bar: Aggro's ELITE band is the
+  // thinnest of any archetype (p97 766 against a max of 877), so a signature
+  // this tier nearly implies leaves APEX PREDATOR — the fallback behind it —
+  // with nothing to catch. `titles >= 2 && <= 0.75` was that mistake; three
+  // titles and a 3:4 record is a genuinely dominant career and leaves the
+  // merely-elite ones to the fallback.
+  { id: 'undefeated',        archetype: 'aggro',        minScore: TIER.ELITE, titleKey: 'journey.verdict.undefeated.title',        blurbKey: 'journey.verdict.undefeated.blurb',        requires: s => s.titles >= 3 && s.losses <= s.wins * 0.72 },
   { id: 'immovable',         archetype: 'stall',        minScore: TIER.ELITE, titleKey: 'journey.verdict.immovable.title',         blurbKey: 'journey.verdict.immovable.blurb',         requires: s => s.bond >= 60 },
   // The signature gates have to be HARDER than what the score already implies,
   // or the fallback below can never fire. `catches >= 45` and `shinies >= 4`

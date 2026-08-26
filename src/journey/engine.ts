@@ -96,10 +96,17 @@ export function chapterCountFor(seedOrSetup: number | JourneySetup): number {
 export function phaseFor(index: number, chapterCount: number): ChapterPhase {
   if (index >= chapterCount - 1) return 'retirement';
   const t = index / (chapterCount - 1);
-  if (t < 0.28) return 'gym-circuit';
+  if (t < 0.26) return 'gym-circuit';
   // The Elite Four sits right after the gym circuit — it is the region's exam.
-  if (t < 0.38) return 'elite-four';
-  if (t < 0.52) return 'regional';
+  //
+  // Widened from 0.38 to 0.42 to give the gauntlet room. Four members plus a
+  // champion is five fights, and at ~1.5 chapters the phase could not hold
+  // them: measured over 6,000 careers, members 3 and 4 and the region champion
+  // were never faced at all. `e4Step` advances on wins and persists across
+  // chapters, so with room the player can chip through the ladder over two or
+  // three sittings and actually reach the champion.
+  if (t < 0.42) return 'elite-four';
+  if (t < 0.54) return 'regional';
   if (t < 0.66) return 'national';
   if (t < 0.80) return 'worlds';
   // The World Cup is the finale, just before the veteran wind-down.
@@ -330,8 +337,29 @@ interface ChapterInput {
   regionGen: number;
   /** Region id currently being toured. */
   regionId: string;
-  /** Named adversary for this chapter, when the phase has one. */
-  opponent: Opponent | null;
+  /**
+   * The named opponents standing in front of the player this chapter, in order.
+   *
+   * A chapter used to resolve exactly ONE named fight, and two multi-stage
+   * ladders were arithmetically impossible as a result:
+   *
+   *   * The gym circuit needs 8 badges per region but the gym phase is only
+   *     ~28% of a 12-20 chapter career, so five chapters at one badge each
+   *     capped out at five. `full-circuit` and the 8-slot badge track were
+   *     unreachable and the `badges` component sat at a p50 of 0.25.
+   *   * The Elite Four needs four members plus the champion — five fights — and
+   *     its phase spans ~1.5 chapters. Measured over 6,000 careers, members 3
+   *     and 4 and the region champion were NEVER faced, and because crowns are
+   *     awarded for beating a champion, `RegionCrown` was dead content too.
+   *
+   * So a chapter walks the chain instead: fight, and on a win move to the next.
+   * A loss ends the day there. Each extra fight carries a cumulative tiredness
+   * penalty, which is exactly the Elite Four's "no healing between battles" and
+   * makes pressing on at a gym a real gamble rather than free value.
+   */
+  chain: Opponent[];
+  /** True when a previous chapter already lost to chain[0]. */
+  rematch: boolean;
   /**
    * Flavor lines this career has already spent. MUTATED by resolveChapter —
    * the one intentional piece of shared state, so a run never repeats a beat.
@@ -348,7 +376,7 @@ function resolveChapter(input: ChapterInput): {
   caughtAdded: number[];
   badgesWon: number;
   boxAdded: BoxEntry[];
-  battle: OpponentResult | null;
+  battles: OpponentResult[];
 } {
   const { setup, index, phase, risk } = input;
   const rng = chapterRng(setup.seed, index);
@@ -375,7 +403,10 @@ function resolveChapter(input: ChapterInput): {
   const partyLevel = input.roster.length
     ? Math.round(input.roster.reduce((n, m) => n + levelFromXp(m.xp ?? 0), 0) / input.roster.length)
     : 5;
-  const matchup = input.opponent ? matchupFor(input.roster, input.opponent, partyLevel) : null;
+  // chain[0] is this chapter's headline opponent — the one the recap names and
+  // the one the chapter's win rate is tilted by.
+  const primary = input.chain[0] ?? null;
+  const matchup = primary ? matchupFor(input.roster, primary, partyLevel) : null;
   const matchupDelta = matchup ? matchupWinRateDelta(matchup) : 0;
 
   const winRate = Math.min(0.95, Math.max(0.05,
@@ -401,13 +432,92 @@ function resolveChapter(input: ChapterInput): {
     peakRank = Math.min(peakRank, placement);
   }
 
+  // ---- the named battle ----
+  // This is resolved BEFORE badges, because in the gym circuit the badge is
+  // what winning it pays out.
+  //
+  // It used to be neither contested nor consequential. `won` was
+  // `winRate >= 0.5` — a threshold on the chapter's aggregate rate, which sits
+  // near 0.53 at the median, so essentially every named battle was a win. And
+  // the badge came from a blind `chance(rng, 0.72)` roll that never looked at
+  // the opponent at all, so a player could lose to the gym leader and still
+  // collect two badges, or beat them and collect none. The leader was set
+  // dressing on both counts.
+  //
+  // Now it is one explicit roll, centred on the chapter's win rate and tilted
+  // by the matchup the player actually built for. A gym leader is beatable but
+  // not a formality, and the type/level work in the prepare step is what moves
+  // the odds.
+  const badgeRoomNow = Math.max(0, input.badgeRoom);
+
+  // Bosses are harder than gym leaders at the same matchup. The floor and
+  // ceiling keep a hopeless matchup from being unwinnable and a dominant one
+  // from being automatic — there is always a run to be had either way.
+  const oddsAgainst = (o: Opponent, tired: number): number => {
+    const bossPenalty = o.kind === 'gym' ? 0
+      : o.kind === 'syndicate' ? 0.04
+      : o.kind === 'elite-four' ? 0.05
+      : 0.12;
+    const m = matchupFor(input.roster, o, partyLevel);
+    return Math.min(0.93, Math.max(0.12,
+      winRate + matchupWinRateDelta(m) * 0.5 - bossPenalty - tired,
+    ));
+  };
+
+  // Walk the chain: each win advances, the first loss ends the day. Tiredness
+  // compounds per extra fight and scales with fatigue already carried, so a
+  // rested party gets further down the ladder than an exhausted one.
+  const fought: OpponentResult[] = [];
+  let gymWinsHere = 0;
+  for (let f = 0; f < input.chain.length; f++) {
+    const o = input.chain[f];
+    // A gym win with no badge left to award is not worth the fatigue.
+    if (o.kind === 'gym' && gymWinsHere >= badgeRoomNow) break;
+    // Kept deliberately small. The difficulty RAMP through a gauntlet is
+    // already carried by the level curve — Elite Four members run 58/62/66/70
+    // and the champion 76, and `matchupFor` prices level gap — so a steep
+    // per-fight penalty on top double-counted it and walled the ladder off:
+    // at 0.06 per fight the region champion was reached by 52 runs in 6,000.
+    // This is the cost of not healing, not a second difficulty curve.
+    const tired = f === 0 ? 0 : f * 0.03 + (stats.fatigue / 100) * 0.10;
+    const m = matchupFor(input.roster, o, partyLevel);
+    const won = chance(rng, oddsAgainst(o, tired));
+    if (won && o.kind === 'gym') gymWinsHere++;
+    fought.push({
+      chapterIndex: index,
+      kind: o.kind,
+      name: o.name,
+      title: o.title,
+      specialty: o.specialty,
+      level: o.level,
+      won,
+      advantage: m.advantage,
+      badgeAwarded: won && o.kind === 'gym' ? 1 : undefined,
+      rematch: f === 0 && input.rematch ? true : undefined,
+      // Surfaced so the recap can name WHICH of the six carried the fight and
+      // which one the specialty punished — the payoff for the prepare step is
+      // only motivating if the player can see it.
+      strongPicks: m.strongPicks.length ? m.strongPicks : undefined,
+      weakPicks: m.weakPicks.length ? m.weakPicks : undefined,
+    });
+    if (!won) break;
+  }
+  // Every fight past the first costs real fatigue — that is the price of the
+  // gauntlet, and what makes "press on" a decision instead of a freebie.
+  const chainFatigue = Math.max(0, fought.length - 1) * 4;
+
   // ---- badges ----
   // Badges are capped at BADGES_PER_REGION per region so the gym circuit is a
   // real, completable track rather than an unbounded counter. `badgeRoom` is
   // what's left in the current region.
-  const badgeRoom = Math.max(0, input.badgeRoom);
-  const badgeRoll = phase === 'gym-circuit' && chance(rng, 0.72) ? randInt(rng, 1, 2) : 0;
-  const badges = Math.min(badgeRoll, badgeRoom);
+  //
+  // One badge per gym leader beaten — never two, and never any without a win.
+  // `earnedHere` in simulate() only advances when a badge lands, so LOSING a
+  // gym leaves the same leader standing for the next chapter. That is the
+  // rematch: a loss costs a chapter and stings on fatigue, but it is never a
+  // dead end.
+  const badgeRoom = badgeRoomNow;
+  const badges = Math.min(gymWinsHere, badgeRoom);
 
   // ---- catches + shinies ----
   // Pools follow the CURRENT tour region, not the starting one, so a saga's
@@ -435,6 +545,16 @@ function resolveChapter(input: ChapterInput): {
     }
     return undefined;
   };
+  // Which of this chapter's catches came out shiny. Tracked per-species rather
+  // than as a bare count, because the count used to be exactly that — a bare
+  // count. `shinies++` fired here while the BoxEntry below was built with
+  // `shiny: false` hardcoded, so a Shiny Hunter could finish a career with a
+  // shiny counter of 8 and not one shiny Pokémon they could look at, swap in,
+  // or put on the Legend Card. The number was decorative.
+  //
+  // Now the flag on the Pokémon is the single source of truth and the counter
+  // is derived from it, which makes the two incapable of disagreeing.
+  const shinyIds = new Set<number>();
   for (let i = 0; i < catchRolls; i++) {
     // Wild sighting either way — a seen entry even when the catch fails.
     const sighted = nextSpecies();
@@ -442,14 +562,22 @@ function resolveChapter(input: ChapterInput): {
     if (chance(rng, 0.35 + mods.catchChance)) {
       catches++;
       if (sighted !== undefined) caughtAdded.push(sighted);
-      if (chance(rng, mods.shinyChance * 0.28)) shinies++;
+      // Roll shiny only when there is a real species to attach it to.
+      if (sighted !== undefined && chance(rng, mods.shinyChance * 0.28)) {
+        shinyIds.add(sighted);
+      }
     }
   }
+  shinies = shinyIds.size;
 
   // Catches beyond the party go to the BOX, so "swap in something I caught"
   // has real inventory behind it.
   const boxAdded: BoxEntry[] = caughtAdded.map(id => ({
-    id, shiny: false, xp: xpForLevel(levelForNewCatch(stats, index)), caughtAt: index,
+    id,
+    shiny: shinyIds.has(id),
+    origin: 'wild' as const,
+    xp: xpForLevel(levelForNewCatch(stats, index)),
+    caughtAt: index,
   }));
 
   // ---- roster recruitment ----
@@ -467,10 +595,14 @@ function resolveChapter(input: ChapterInput): {
     const candidates = sample(rng, tier.length ? tier : pools.common, 8).filter(id => !owned.has(id));
     if (candidates.length > 0) {
       recruitedId = candidates[0];
-      recruitedShiny = shinies > 0 && chance(rng, 0.5);
+      // Its own roll against the archetype's shiny rate — it used to be
+      // `shinies > 0 && chance(rng, 0.5)`, which made a recruit shiny only as a
+      // side effect of some OTHER Pokémon being shiny this chapter.
+      recruitedShiny = shinyIds.has(recruitedId) || chance(rng, mods.shinyChance * 0.22);
       roster = [...roster, {
         id: recruitedId,
         shiny: recruitedShiny,
+        origin: 'wild' as const,
         joinedAt: index,
         types: monTypes(recruitedId),
         evolved: 0,
@@ -478,7 +610,8 @@ function resolveChapter(input: ChapterInput): {
       }];
       seenAdded.push(recruitedId);
       caughtAdded.push(recruitedId);
-      if (recruitedShiny) shinies = Math.max(shinies, 1);
+      if (recruitedShiny) shinyIds.add(recruitedId);
+      shinies = shinyIds.size;
     }
   }
 
@@ -502,7 +635,7 @@ function resolveChapter(input: ChapterInput): {
     age: 1,
     wins, losses, badges, catches, shinies, titles,
     fame: fameGain - Math.round(stats.fame * FAME_DECAY_RATE),
-    fatigue: fatigueGain - fatigueRecovered,
+    fatigue: fatigueGain - fatigueRecovered + chainFatigue,
     bond: mods.bondPerChapter - Math.round(stats.bond * BOND_DECAY_RATE),
     rivalWins, rivalLosses,
   };
@@ -543,9 +676,9 @@ function resolveChapter(input: ChapterInput): {
     placement: placement ?? 0,
     chapter: index + 1,
     choice: input.choiceOptionId ?? '',
-    opponent: input.opponent?.name ?? '',
-    opponentTitle: input.opponent?.title ?? '',
-    specialty: input.opponent?.specialty ?? '',
+    opponent: primary?.name ?? '',
+    opponentTitle: primary?.title ?? '',
+    specialty: primary?.specialty ?? '',
   };
 
   const chapter: ChapterResult = {
@@ -564,6 +697,7 @@ function resolveChapter(input: ChapterInput): {
     recruitedId,
     recruitedShiny: recruitedId !== undefined ? recruitedShiny : undefined,
     placement,
+    battles: fought.length ? fought : undefined,
   };
 
   // ---- party XP ----
@@ -578,20 +712,7 @@ function resolveChapter(input: ChapterInput): {
     }),
   }));
 
-  const battle: OpponentResult | null = input.opponent ? {
-    chapterIndex: index,
-    kind: input.opponent.kind,
-    name: input.opponent.name,
-    title: input.opponent.title,
-    specialty: input.opponent.specialty,
-    level: input.opponent.level,
-    // A named battle is won when the chapter's own win rate cleared the bar —
-    // the same roll that drives everything else, so it can't disagree with it.
-    won: winRate >= 0.5,
-    advantage: matchup?.advantage ?? 0,
-  } : null;
-
-  return { chapter, roster, seenAdded, caughtAdded, badgesWon: badges, boxAdded, battle };
+  return { chapter, roster, seenAdded, caughtAdded, badgesWon: badges, boxAdded, battles: fought };
 }
 
 // ============================================================
@@ -732,6 +853,11 @@ function applyPrepareActions(
       roster = roster.map((m, idx) => idx === outIdx ? {
         id: incoming.id,
         shiny: incoming.shiny,
+        // Provenance survives the swap in both directions. Without this a
+        // round trip through the box launders an event Pokémon into an
+        // ordinary one, and the badge on its card silently disappears.
+        origin: incoming.origin,
+        eventId: incoming.eventId,
         joinedAt: chapterIndex,
         types: typesOf(incoming.id),
         evolved: 0,
@@ -740,7 +866,11 @@ function applyPrepareActions(
       // The benched member keeps its XP — swapping is reversible, not a cull.
       box = [
         ...box.slice(0, inIdx), ...box.slice(inIdx + 1),
-        { id: outgoing.id, shiny: outgoing.shiny, xp: outgoing.xp ?? 0, caughtAt: outgoing.joinedAt },
+        {
+          id: outgoing.id, shiny: outgoing.shiny,
+          origin: outgoing.origin, eventId: outgoing.eventId,
+          xp: outgoing.xp ?? 0, caughtAt: outgoing.joinedAt,
+        },
       ];
       if (!seen.includes(incoming.id)) seen.push(incoming.id);
       if (!caught.includes(incoming.id)) caught.push(incoming.id);
@@ -808,6 +938,7 @@ function initialRoster(setup: JourneySetup): RosterEntry[] {
   return [{
     id: setup.starterId,
     shiny,
+    origin: 'starter',
     joinedAt: -1,
     types: monTypes(setup.starterId),
     evolved: 0,
@@ -855,6 +986,45 @@ function opponentAt(opts: {
     return field[Math.min(wcStep, field.length - 1)] ?? null;
   }
   return null;
+}
+
+/**
+ * The ordered opponents a chapter can work through.
+ *
+ * One entry for most phases. Two ladders get more, because both need more
+ * fights than their phase has chapters (see `ChapterInput.chain`):
+ *
+ *   * gym-circuit — the current leader plus the next one, so a strong day can
+ *     take two badges and eight per region is reachable.
+ *   * elite-four — the remaining members from `e4Step` on, then the region
+ *     champion. Canonically a gauntlet with no healing, which is exactly what
+ *     the chain's compounding tiredness penalty models.
+ */
+function chainAt(opts: {
+  seed: number;
+  regionId: string;
+  phase: ChapterPhase;
+  opponent: Opponent | null;
+  earnedHere: number;
+  e4Step: number;
+}): Opponent[] {
+  const { seed, regionId, phase, opponent, earnedHere, e4Step } = opts;
+  if (!opponent) return [];
+
+  if (phase === 'gym-circuit' && opponent.kind === 'gym') {
+    const next = gymLeaders(seed, regionId)[earnedHere + 1];
+    return next ? [opponent, next] : [opponent];
+  }
+
+  if (phase === 'elite-four') {
+    const four = eliteFour(seed, regionId);
+    // The gauntlet from wherever the player has got to, then the champion.
+    const rest = four.slice(Math.min(e4Step, four.length));
+    const chain = rest.length ? rest : [];
+    return [...chain, regionChampion(seed, regionId)];
+  }
+
+  return [opponent];
 }
 
 /** Regions the player can travel to next, with what each offers. */
@@ -965,7 +1135,11 @@ export function simulate(
       seed: setup.seed, regionId, phase, localIndex: here.localIndex,
       earnedHere, e4Step, tour: visited, ghosts: ghostOpponents, wcStep,
     });
-    if (phase === 'elite-four') e4Step++;
+    // e4Step advances by members actually BEATEN, not by chapters spent. With
+    // the chain resolving a gauntlet in one sitting, a chapter-counter would
+    // skip members the player never faced — and would also let a loss advance
+    // the ladder, which is the opposite of a gauntlet.
+    const e4StepNow = e4Step;
     if (phase === 'world-cup') wcStep++;
 
     let risk = 1;
@@ -1061,23 +1235,34 @@ export function simulate(
       choiceOptionId = option.id;
     }
 
+    // A rematch is any named opponent this run has already faced and lost to.
+    // With badges gated on winning, a lost gym leaves `earnedHere` unmoved, so
+    // the SAME leader is selected again next chapter — this flags that so the
+    // recap can say "rematch" instead of silently repeating a name.
+    const rematch = opponent
+      ? battles.some(b => b.name === opponent.name && !b.won)
+      : false;
+
     const resolved = resolveChapter({
       setup, index, phase, stats, roster, risk, choiceDelta, choiceOptionId,
-      badgeRoom: BADGES_PER_REGION - earnedHere, regionGen, regionId, opponent,
-      usedBeats,
+      badgeRoom: BADGES_PER_REGION - earnedHere, regionGen, regionId,
+      chain: chainAt({
+        seed: setup.seed, regionId, phase, opponent, earnedHere, e4Step: e4StepNow,
+      }),
+      rematch, usedBeats,
     });
     chapters.push(resolved.chapter);
     stats = resolved.chapter.stats;
     roster = resolved.roster;
     mergeDex(resolved.seenAdded, resolved.caughtAdded);
 
-    if (resolved.battle) {
-      battles.push(resolved.battle);
-      if (resolved.battle.won && resolved.battle.kind === 'syndicate') syndicateBeaten++;
+    for (const b of resolved.battles) {
+      battles.push(b);
+      if (b.won && b.kind === 'elite-four') e4Step++;
+      if (b.won && b.kind === 'syndicate') syndicateBeaten++;
       // Beating a region Champion crowns the region.
-      if (resolved.battle.won && resolved.battle.kind === 'champion'
-          && !crowns.some(c => c.regionId === regionId)) {
-        crowns.push({ regionId, chapterIndex: index, championName: resolved.battle.name });
+      if (b.won && b.kind === 'champion' && !crowns.some(c => c.regionId === regionId)) {
+        crowns.push({ regionId, chapterIndex: index, championName: b.name });
       }
     }
 
@@ -1108,10 +1293,30 @@ export function simulate(
         mergeDex([ev.grantedId], [ev.grantedId]);
         const held = new Set([...roster.map(r => r.id), ...box.map(b => b.id)]);
         if (!held.has(ev.grantedId)) {
+          // Marked as an EVENT mon, not as a shiny one. `shiny` used to be
+          // `ev.rarity === 'legendary'`, which conflated two unrelated facts:
+          // it made every legendary encounter shiny, made SHINY FLASH's grant
+          // ordinary, and left the player no way to tell a shiny catch from a
+          // legendary one. Origin and colour are now separate properties.
           box = [...box, {
-            id: ev.grantedId, shiny: ev.rarity === 'legendary',
-            xp: xpForLevel(levelForNewCatch(stats, index)), caughtAt: index,
+            id: ev.grantedId,
+            shiny: ev.grantedShiny === true,
+            origin: 'event' as const,
+            eventId: ev.id,
+            xp: xpForLevel(levelForNewCatch(stats, index)),
+            caughtAt: index,
           }];
+          // An event shiny is still a shiny. Counting it here keeps the stat
+          // consistent with what is actually in the box — the same invariant
+          // the per-chapter catch path now maintains.
+          if (ev.grantedShiny) stats = applyDelta(stats, { shinies: 1 });
+          // Surface it on the chapter that granted it, so the recap can call
+          // the moment out instead of the Pokémon appearing in the box unseen.
+          const last = chapters[chapters.length - 1];
+          if (last) {
+            last.eventMonId = ev.grantedId;
+            last.eventMonShiny = ev.grantedShiny === true ? true : undefined;
+          }
         }
       }
     }
@@ -1123,6 +1328,22 @@ export function simulate(
   roster = padRoster(setup, roster, caught);
 
   const dex: DexState = { seen: [...seen], caught: [...caught] };
+
+  // Reconcile the shiny count against the Pokémon actually held.
+  //
+  // The per-chapter counter can drift above the truth: a shiny catch is dropped
+  // when the species is already owned, and `padRoster` can displace a member.
+  // Measured over 6,000 careers, 101 runs finished claiming a shiny they had
+  // none of — a number on the Legend Card with nothing behind it, which is the
+  // same class of defect as the counter that never set the flag at all.
+  //
+  // A duplicate of something you already own is not a new shiny, so the honest
+  // figure is the count of distinct shiny Pokémon in hand.
+  const shinyHeld = new Set<number>();
+  for (const m of roster) if (m.shiny) shinyHeld.add(m.id);
+  for (const b of box) if (b.shiny) shinyHeld.add(b.id);
+  if (stats.shinies !== shinyHeld.size) stats = { ...stats, shinies: shinyHeld.size };
+
   const breakdown = scoreCareer(stats, setup.archetype, chapterCount);
 
   // ---- the Balatro layer lands on the score ----
@@ -1213,7 +1434,7 @@ function padRoster(setup: JourneySetup, roster: RosterEntry[], caught: number[] 
     if (out.length >= ROSTER_SIZE) break;
     if (owned.has(id)) continue;
     owned.add(id);
-    out.push({ id, shiny: false, joinedAt: -2, types: monTypes(id), evolved: 0 });
+    out.push({ id, shiny: false, origin: 'gift', joinedAt: -2, types: monTypes(id), evolved: 0 });
   }
 
   // Fallback: only if the caught pool couldn't fill the six (a very short or
@@ -1225,7 +1446,7 @@ function padRoster(setup: JourneySetup, roster: RosterEntry[], caught: number[] 
     for (const id of sample(rng, pool, ROSTER_SIZE - out.length)) {
       if (owned.has(id)) continue;
       owned.add(id);
-      out.push({ id, shiny: false, joinedAt: -2, types: monTypes(id), evolved: 0 });
+      out.push({ id, shiny: false, origin: 'gift', joinedAt: -2, types: monTypes(id), evolved: 0 });
     }
   }
   return out.slice(0, ROSTER_SIZE);
