@@ -58,6 +58,15 @@ export interface CareerStats {
   /** Rival encounters resolved in the trainer's favour. */
   rivalWins: number;
   rivalLosses: number;
+  /**
+   * Prize money, the run's only spendable resource.
+   *
+   * Nothing in Journey Mode used to COST anything, so nothing in it was a
+   * trade-off — every prepare action was free and therefore obvious. Money is
+   * earned from battles won and milestones cleared, and spent on rerolling a
+   * decision you do not want. See REROLL_COSTS in engine.ts.
+   */
+  money: number;
 }
 
 export type ChapterPhase =
@@ -171,7 +180,27 @@ export type PrepareAction =
   /** Give a party member a nickname (empty string clears it). */
   | { type: 'nickname'; chapterIndex: number; id: number; name: string }
   /** Choose the next region on the tour ("go international"). */
-  | { type: 'travel'; chapterIndex: number; regionId: string };
+  | { type: 'travel'; chapterIndex: number; regionId: string }
+  /**
+   * Discard this chapter's decision card and draw another. Costs money after
+   * the first one of the run.
+   *
+   * Recorded rather than applied, because the card shown is a pure function of
+   * (seed, chapterIndex, rerollCount) — so a replay reproduces the rerolled
+   * card exactly, and a `?seed=` link still reproduces the whole career.
+   */
+  | { type: 'reroll'; chapterIndex: number }
+  /**
+   * Queue an evolution to fire the moment its gate clears.
+   *
+   * The carry-forward mechanic. Without it, an evolution that needs level 36 on
+   * a level-34 member means opening the prepare step every chapter to check —
+   * which is busywork, not a decision. Queuing turns it into a plan the run
+   * executes for you.
+   */
+  | { type: 'queue-evolve'; chapterIndex: number; fromId: number; toId: number }
+  /** Cancel a queued evolution. */
+  | { type: 'unqueue-evolve'; chapterIndex: number; fromId: number };
 
 // ============================================================
 // POKÉDEX
@@ -448,6 +477,24 @@ export interface PrepareAvailability {
   box: BoxEntry[];
   /** Regions the player may travel to next (empty unless at a crossroads). */
   travelOptions?: TravelOption[];
+  /** Cost of rerolling this chapter's decision. 0 = the free one. */
+  rerollCost: number;
+  /** Whether the trainer can afford it. */
+  canAffordReroll: boolean;
+  /** Rerolls already spent this run. */
+  rerollsUsed: number;
+  /** Evolutions queued and waiting on their gate, keyed by current species. */
+  queued: QueuedEvolve[];
+}
+
+/** An evolution the player has queued for when its gate clears. */
+export interface QueuedEvolve {
+  fromId: number;
+  toId: number;
+  /** Why it has not fired yet, for the UI to explain the wait. */
+  reason: 'level' | 'friendship' | 'item' | 'trade';
+  /** Level required, when `reason` is 'level'. */
+  needLevel?: number;
 }
 
 /** A candidate next region, with what makes it worth choosing. */

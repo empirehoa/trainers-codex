@@ -80,6 +80,26 @@ const tests = [
   // ---- gym battles, shinies, event Pokemon (v11) ----
 
   {
+    name: 'the prepare step shows prize money and a priced reroll',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-prepare-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-reroll"]', { timeout: 8000 });
+      const money = await page.$eval('[data-testid="journey-money"]', el => el.innerText.trim());
+      assert(/\d/.test(money), `money readout should carry a number, got "${money}"`);
+      const cardBefore = await page.$eval('[data-testid="journey-decision-prompt"]', el => el.innerText.trim());
+      await page.evaluate(() => document.querySelector('[data-testid="journey-reroll"]').click());
+      await sleep(250);
+      const cardAfter = await page.$eval('[data-testid="journey-decision-prompt"]', el => el.innerText.trim());
+      assert(cardAfter !== cardBefore, 'rerolling should present a different decision');
+      const body = await text(page);
+      assert(!/journey\.prepare\.reroll/.test(body), 'reroll keys must not leak into the UI');
+    },
+  },
+
+  {
     name: 'the daily archive lists past issues and one is playable',
     async fn(page) {
       // The archive only appears once more than one issue exists, so seed a

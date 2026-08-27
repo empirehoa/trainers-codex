@@ -54,7 +54,7 @@ import {
   type EvolveTarget, type JourneyEvent, type JourneyRun, type JourneySetup,
   type PendingDecision, type PrepareAction, type PrepareAvailability,
   type RecordedChoice, type RosterEntry, type SimSnapshot,
-  type OpponentResult, type Quest, type RegionCrown, type Stake, type StatDelta,
+  type OpponentResult, type QueuedEvolve, type Quest, type RegionCrown, type Stake, type StatDelta,
   type TravelOption,
 } from './types';
 
@@ -150,6 +150,13 @@ function selectCard(
   phase: ChapterPhase,
   archetype: JourneySetup['archetype'],
   usedCardIds: Set<string>,
+  /**
+   * Rerolls spent on THIS chapter. Folded into the rng key rather than drawing
+   * repeatedly from one stream, so the card shown stays a pure function of
+   * (seed, chapterIndex, rerolls) and a replay reproduces a rerolled card
+   * exactly — which is what keeps `?seed=` links honest.
+   */
+  rerolls = 0,
 ): DecisionCardSpec {
   const eligible = cardsForPhase(phase);
   const fresh = eligible.filter(c => !usedCardIds.has(c.id));
@@ -162,7 +169,8 @@ function selectCard(
   // A phase with no cards would otherwise crash the sim. Fall back to the
   // whole deck rather than dying — a wrong-flavoured card beats a dead run.
   const safe = weighted.length ? weighted : DECISION_CARDS;
-  return pick(namedRng(seed, `card-${chapterIndex}`), safe);
+  const key = rerolls > 0 ? `card-${chapterIndex}-r${rerolls}` : `card-${chapterIndex}`;
+  return pick(namedRng(seed, key), safe);
 }
 
 /** The decision standing at `chapterIndex`, or null if that chapter has none. */
@@ -192,9 +200,24 @@ function buildAutoChoices(setup: JourneySetup, stopBefore: number): RecordedChoi
 // STATS
 // ============================================================
 
+/**
+ * Reroll pricing. First one of the run is free; after that it escalates hard.
+ *
+ * Free-then-escalating is Super Auto Pets' shape and it is the right one: the
+ * free reroll makes the mechanic discoverable without a tutorial, and the curve
+ * makes the second and third genuine decisions rather than a habit. Beyond the
+ * table the last price repeats.
+ */
+export const REROLL_COSTS: readonly number[] = [0, 400, 900, 1800];
+
+export function rerollCostFor(used: number): number {
+  return REROLL_COSTS[Math.min(used, REROLL_COSTS.length - 1)];
+}
+
 function initialStats(): CareerStats {
   return {
     age: START_AGE,
+    money: 0,
     badges: 0,
     wins: 0,
     losses: 0,
@@ -631,8 +654,15 @@ function resolveChapter(input: ChapterInput): {
   );
   const fatigueRecovered = Math.round(stats.fatigue * FATIGUE_RECOVERY_RATE * mods.recoveryScale);
 
+  // Prize money. Won battles pay, badges and titles pay a lot — the same shape
+  // the games use, so it reads as expected without being explained. Scaled so a
+  // full career earns a few rerolls' worth, not an unlimited supply.
+  const moneyEarned = wins * 18 + badges * 320 + titles * 1400
+    + fought.filter(b => b.won && b.kind !== 'gym').length * 220;
+
   const delta: StatDelta = {
     age: 1,
+    money: moneyEarned,
     wins, losses, badges, catches, shinies, titles,
     fame: fameGain - Math.round(stats.fame * FAME_DECAY_RATE),
     fatigue: fatigueGain - fatigueRecovered + chainFatigue,
@@ -748,6 +778,8 @@ function computePrepare(
   box: BoxEntry[],
   stats: CareerStats,
   inventory: Inventory,
+  rerollsUsed = 0,
+  queued: QueuedEvolve[] = [],
 ): PrepareAvailability {
   const evolves: EvolveOffer[] = [];
   const hasStone = (inventory['evo-stone'] ?? 0) > 0;
@@ -776,7 +808,115 @@ function computePrepare(
     evolves.push({ fromId: m.id, options: targets, eligible: targets.some(t => t.ready) });
   }
 
-  return { evolves, canSetAce: roster.length > 1, box };
+  const rerollCost = rerollCostFor(rerollsUsed);
+  return {
+    evolves,
+    canSetAce: roster.length > 1,
+    box,
+    rerollCost,
+    canAffordReroll: rerollCost === 0 || stats.money >= rerollCost,
+    rerollsUsed,
+    queued,
+  };
+}
+
+/**
+ * Evolutions the player has queued, as of `chapterIndex`.
+ *
+ * Derived from the action list rather than stored, like everything else here, so
+ * the queue survives replay and `?seed=` links for free. A later `unqueue` for
+ * the same species cancels an earlier `queue`.
+ */
+function queuedEvolves(
+  actions: PrepareAction[],
+  chapterIndex: number,
+  roster: RosterEntry[],
+  stats: CareerStats,
+  inventory: Inventory,
+): QueuedEvolve[] {
+  const pending = new Map<number, number>();
+  for (const a of actions) {
+    if (a.chapterIndex > chapterIndex) continue;
+    if (a.type === 'queue-evolve') pending.set(a.fromId, a.toId);
+    else if (a.type === 'unqueue-evolve') pending.delete(a.fromId);
+  }
+
+  const out: QueuedEvolve[] = [];
+  for (const [fromId, toId] of pending) {
+    // A queue whose member has already evolved or left the party is stale.
+    const member = roster.find(m => m.id === fromId);
+    if (!member) continue;
+    const edge = evolutionsOf(fromId).find(e => e.id === toId);
+    if (!edge) continue;
+    const gate = canEvolveNow({
+      memberXp: member.xp ?? 0, how: edge.how, evoLevel: edge.level,
+      bond: stats.bond,
+      hasStone: (inventory['evo-stone'] ?? 0) > 0,
+      hasLinkCord: (inventory['link-cord'] ?? 0) > 0,
+    });
+    // Only still-blocked queues are reported — a cleared one has already fired.
+    if (gate.ok) continue;
+    out.push({
+      fromId,
+      toId,
+      reason: gate.reason,
+      needLevel: gate.reason === 'level' ? gate.needLevel : undefined,
+    });
+  }
+  return out;
+}
+
+/**
+ * Fire any queued evolution whose gate has now cleared.
+ *
+ * This is the whole point of the carry-forward: an evolution that needs level 36
+ * on a level-34 member used to mean reopening the prepare step every chapter to
+ * check, which is busywork rather than a decision. Queue it once and the run
+ * executes the plan.
+ */
+function applyQueuedEvolves(
+  state: PrepareState,
+  actions: PrepareAction[],
+  chapterIndex: number,
+): PrepareState {
+  const pending = new Map<number, number>();
+  for (const a of actions) {
+    if (a.chapterIndex > chapterIndex) continue;
+    if (a.type === 'queue-evolve') pending.set(a.fromId, a.toId);
+    else if (a.type === 'unqueue-evolve') pending.delete(a.fromId);
+  }
+  if (pending.size === 0) return state;
+
+  let roster = state.roster;
+  const inventory: Inventory = { ...state.inventory };
+  const seen = [...state.seen];
+  const caught = [...state.caught];
+
+  for (const [fromId, toId] of pending) {
+    const i = roster.findIndex(m => m.id === fromId);
+    if (i === -1) continue;
+    if (!isValidEvolution(fromId, toId)) continue;
+    if (roster.some(m => m.id === toId)) continue; // keep the six unique
+    const edge = evolutionsOf(fromId).find(e => e.id === toId);
+    if (!edge) continue;
+    const member = roster[i];
+    const gate = canEvolveNow({
+      memberXp: member.xp ?? 0, how: edge.how, evoLevel: edge.level,
+      bond: state.stats.bond,
+      hasStone: (inventory['evo-stone'] ?? 0) > 0,
+      hasLinkCord: (inventory['link-cord'] ?? 0) > 0,
+    });
+    if (!gate.ok) continue; // still waiting — stays queued
+    if (edge.how === 'item') inventory['evo-stone'] -= 1;
+    else if (edge.how === 'trade') inventory['link-cord'] -= 1;
+    roster = roster.map((m, idx) => idx === i
+      ? { ...m, id: toId, types: typesOf(toId), evolved: (m.evolved ?? 0) + 1 }
+      : m);
+    if (!seen.includes(toId)) seen.push(toId);
+    if (!caught.includes(toId)) caught.push(toId);
+  }
+
+  return { ...state, roster, inventory, seen, caught };
 }
 
 interface PrepareState {
@@ -1091,6 +1231,8 @@ export function simulate(
   const chapters: ChapterResult[] = [];
   const usedCardIds = new Set<string>();
   const usedBeats = new Set<string>();
+  // Rerolls spent across the whole run — drives the escalating price.
+  let rerollsSpent = 0;
   const choiceByChapter = new Map(choices.map(c => [c.chapterIndex, c]));
 
   // Region tour, badges, stakes and events — the long-campaign + Balatro layer.
@@ -1147,8 +1289,23 @@ export function simulate(
     let choiceOptionId: string | null = null;
 
     if (isDecisionChapter(index, chapterCount, decisionEvery)) {
-      const card = selectCard(setup.seed, index, phase, setup.archetype, usedCardIds);
+      // Rerolls recorded for this chapter, and what the run has spent overall.
+      const rerollsHere = actions.filter(
+        a => a.type === 'reroll' && a.chapterIndex === index,
+      ).length;
+      const card = selectCard(setup.seed, index, phase, setup.archetype, usedCardIds, rerollsHere);
       usedCardIds.add(card.id);
+
+      // Charge for them. The first reroll of the RUN is free; the rest escalate.
+      // Charged here rather than in applyPrepareActions because a reroll is not
+      // a mutation of the party — it changes which card the chapter presents,
+      // which is resolved before any prepare action runs.
+      if (rerollsHere > 0) {
+        let spend = 0;
+        for (let r = 0; r < rerollsHere; r++) spend += rerollCostFor(rerollsSpent + r);
+        rerollsSpent += rerollsHere;
+        if (spend > 0) stats = applyDelta(stats, { money: -Math.min(spend, stats.money) });
+      }
 
       // Grant this chapter's item once, the first time we arrive, so it's
       // spendable in the prepare step at the same decision.
@@ -1164,11 +1321,18 @@ export function simulate(
       const prepped = applyPrepareActions(
         { roster, box, inventory, stats, seen, caught }, actions, index,
       );
-      roster = prepped.roster;
-      box = prepped.box;
-      inventory = prepped.inventory;
-      stats = prepped.stats;
-      mergeDex(prepped.seen, prepped.caught);
+      // Queued evolutions fire BEFORE this chapter's explicit actions, so a
+      // plan set three chapters ago resolves ahead of anything decided now.
+      const carried = applyQueuedEvolves(
+        { roster: prepped.roster, box: prepped.box, inventory: prepped.inventory,
+          stats: prepped.stats, seen: prepped.seen, caught: prepped.caught },
+        actions, index,
+      );
+      roster = carried.roster;
+      box = carried.box;
+      inventory = carried.inventory;
+      stats = carried.stats;
+      mergeDex(carried.seen, carried.caught);
 
       // Quest board for THIS decision only — the final board is recomputed at
       // the end of the run, so this local never needs to outlive the return.
@@ -1221,7 +1385,11 @@ export function simulate(
               ).advantage
             : undefined,
           prepare: {
-            ...computePrepare(roster, box, stats, inventory),
+            ...computePrepare(
+              roster, box, stats, inventory,
+              rerollsSpent,
+              queuedEvolves(actions, index, roster, stats, inventory),
+            ),
             travelOptions: atCrossroads
               ? travelOptionsFor(setup.seed, visited, index)
               : undefined,

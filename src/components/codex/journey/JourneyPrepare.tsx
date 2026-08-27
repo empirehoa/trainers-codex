@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Wand2, Star, ChevronDown, ChevronUp, Undo2, Heart, Leaf, Candy, Gem, Link2,
-  Share2, ArrowLeftRight, Lock, Pencil,
+  Share2, ArrowLeftRight, Lock, Pencil, Dices, Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
@@ -13,13 +13,15 @@ import {
   ITEMS, ITEM_IDS, inventoryCount, type ItemId, type Inventory,
 } from '@/journey/items';
 import { cn } from '@/lib/utils';
-import type { PrepareAction, PrepareAvailability, RosterEntry } from '@/journey/types';
+import type { CareerStats, PrepareAction, PrepareAvailability, RosterEntry } from '@/journey/types';
 
 interface Props {
   chapterIndex: number;
   roster: RosterEntry[];
   prepare: PrepareAvailability;
   inventory: Inventory;
+  /** Career stats — the prepare step needs `money` to price the reroll. */
+  stats: CareerStats;
   actionsThisChapter: number;
   onAction: (action: PrepareAction) => void;
   onUndoPrep: () => void;
@@ -40,7 +42,7 @@ const ITEM_ICON: Record<ItemId, typeof Heart> = {
  * ace promotion, and swapping a member out for anything in the box.
  */
 export function JourneyPrepare({
-  chapterIndex, roster, prepare, inventory, actionsThisChapter, onAction, onUndoPrep,
+  chapterIndex, roster, prepare, inventory, stats, actionsThisChapter, onAction, onUndoPrep,
 }: Props) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -74,11 +76,45 @@ export function JourneyPrepare({
               {t('journey.prepare.box')}: {box.length}
             </span>
           )}
+          <span className="font-mono text-[9px] text-amber-600 dark:text-amber-400"
+                data-testid="journey-money">
+            {t('journey.prepare.money', { n: stats.money })}
+          </span>
           {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </span>
       </button>
 
       {open && (
+        <>
+        {/* Reroll. Nothing in a run used to cost anything, so nothing was a
+            trade-off. First reroll of the RUN is free — that makes the mechanic
+            discoverable without a tutorial — then the price escalates so the
+            second and third are real decisions rather than a habit. */}
+        <div className="px-3 pt-2 flex items-center justify-between gap-2">
+          <span className="font-mono text-[9px] text-muted-foreground">
+            {prepare.rerollCost === 0
+              ? t('journey.prepare.rerollFree')
+              : t('journey.prepare.rerollCost', { n: prepare.rerollCost })}
+          </span>
+          <button
+            disabled={!prepare.canAffordReroll}
+            onClick={() => onAction({ type: 'reroll', chapterIndex })}
+            data-testid="journey-reroll"
+            className={cn(
+              'font-mono text-[9px] px-2 py-1 rounded border transition flex items-center gap-1',
+              prepare.canAffordReroll
+                ? 'border-amber-500/60 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
+                : 'opacity-50 cursor-not-allowed border-border text-muted-foreground',
+            )}
+            title={prepare.canAffordReroll
+              ? t('journey.prepare.rerollTitle')
+              : t('journey.prepare.rerollBroke')}
+          >
+            <Dices size={9} />
+            {t('journey.prepare.reroll')}
+          </button>
+        </div>
+
         <div className="px-3 pb-3 space-y-2">
           <p className="font-mono text-[9px] text-muted-foreground">{t('journey.prepare.subtitle')}</p>
 
@@ -169,6 +205,40 @@ export function JourneyPrepare({
                         )}
                       </button>
                     ))}
+                    {/* Carry-forward. A level-gated evolution used to mean
+                        reopening this panel every chapter to check — busywork,
+                        not a decision. Queue it once and the run fires it the
+                        moment the gate clears. */}
+                    {offer.options.some(o => !o.ready) && (() => {
+                      const q = prepare.queued.find(x => x.fromId === m.id);
+                      const target = offer.options.find(o => !o.ready);
+                      if (!target) return null;
+                      return q ? (
+                        <button
+                          onClick={() => onAction({ type: 'unqueue-evolve', chapterIndex, fromId: m.id })}
+                          data-testid={`journey-unqueue-${m.id}`}
+                          className="font-mono text-[9px] px-2 py-1 rounded border transition flex items-center gap-1
+                                     border-amber-500/60 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                          title={t('journey.prepare.queuedTitle')}
+                        >
+                          <Clock size={9} />
+                          {t('journey.prepare.queued', { n: q.needLevel ?? 0 })}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onAction({
+                            type: 'queue-evolve', chapterIndex, fromId: m.id, toId: target.id,
+                          })}
+                          data-testid={`journey-queue-${m.id}`}
+                          className="font-mono text-[9px] px-2 py-1 rounded border transition flex items-center gap-1
+                                     border-border text-muted-foreground hover:border-primary/60 hover:text-primary"
+                          title={t('journey.prepare.queueTitle')}
+                        >
+                          <Clock size={9} />
+                          {t('journey.prepare.queue')}
+                        </button>
+                      );
+                    })()}
                   </div>
                 )}
                 {!offer && fullyEvolved && (
@@ -297,6 +367,7 @@ export function JourneyPrepare({
             </Button>
           )}
         </div>
+        </>
       )}
     </div>
   );

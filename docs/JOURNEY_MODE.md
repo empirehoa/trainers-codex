@@ -15,6 +15,8 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 - [Blocked items](#blocked-items)
 - [Architecture](#architecture)
 - [The engine](#the-engine)
+- [The level economy](#the-level-economy-and-why-it-is-one-number-in-two-places)
+- [Money, rerolls, and carry-forward](#money-rerolls-and-carry-forward)
 - [Named battles, badges, and the ladders](#named-battles-badges-and-the-ladders)
 - [Scoring and calibration](#scoring-and-calibration)
 - [Verdict table](#verdict-table)
@@ -36,7 +38,7 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 
 | Definition-of-Done item | State | Evidence |
 |---|---|---|
-| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 190 tests |
+| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 244 tests |
 | 2. Express run completes under 2:30 on mobile viewport | ✅ | `test-journey.mjs` asserts <150s |
 | 3. Legend Card renders, shares, downloads | ✅ | `canShare`-gated; download always offered |
 | 4. Daily seed identical across sessions; streak survives TZ change | ✅ | browser + unit tests |
@@ -120,7 +122,9 @@ src/journey/
   engine.ts        the simulation — pure, deterministic
   scoring.ts       archetype-weighted scoring + verdict resolution
   deeplink.ts      ?seed= / ?daily= parsing and link building
-  streak.ts        Daily streak, stored as local date strings
+  streak.ts        Daily streak (local date strings) + one free repair
+  archive.ts       Daily archive + ?issue=N deep links
+  ranks.ts         Score percentile + named rank tiers
   analytics.ts     fire-and-forget Supabase REST inserts
   share.ts         Web Share / clipboard / download tiers
   legend-card.ts   canvas renderer (1080×1350 and 300 DPI print)
@@ -229,6 +233,69 @@ fatigue an equilibrium at `gain ÷ rate`, so pace becomes a genuine trade-off an
 "rest the team" buys something real.
 
 ---
+
+### The level economy, and why it is one number in two places
+
+`XP_RATE` in `levels.ts` was 0.5, roughly ten times too slow, and it made the
+player's own Pokémon a dead end. Measured over 300 careers:
+
+| | before | after |
+|---|---|---|
+| starter final level | p50 **25**, max 28 | p50 **55**, max 61 |
+| starters reaching level 32 / 36 | **0% / 0%** | 100% / 100% |
+| starter outclassed by an auto-caught mon | **300/300 runs** (worst gap +45 levels) | **0/300** |
+
+Most three-stage lines gate their second evolution at 32–36, so the central
+progression fantasy of a career sim — raising the team you chose — was
+*arithmetically unreachable*. Nothing the player raised could be their best
+Pokémon, so the only line left was "use whatever the engine caught last
+chapter", and every chapter played the same. That is what repetitiveness was:
+an agency problem, not a difficulty one.
+
+`levelForNewCatch` was the other half. It was
+`5 + chapterIndex * 3 + badges * 2` — a formula that looked at neither the party
+nor the XP economy, handing out level 60 at chapter 15. It now derives from the
+party the player actually raised and sits deliberately below it: 85% of the party
+average, never at or above. A wild Pokémon arrives promising but untrained.
+
+**`XP_RATE` and the opponent ladders in `opponents.ts` are one number in two
+places.** v10's ladders (gyms to 54, Elite Four 58–70, champion 76) were built
+for a party that reaches ~60 — they were never wrong, the rate was. An earlier
+pass scaled the ladders *down* to fit the broken curve, which is treating the
+symptom; both are now derived from the measured party curve per phase:
+
+```
+gym-circuit 19-32 · elite-four 32-38 · regional 36-41 · national 39-44
+worlds 41-47 · world-cup 43-49 · end 48 (starter 55)
+```
+
+`matchupFor` prices level gap as `levelGap / 20` **clamped to ±1**, so a ladder
+more than 20 levels off the party pins at the floor and stops being a variable
+at all. Keep every gap inside that band or preparing for a fight cannot change
+the odds. Four guards in `battles.test.ts` enforce all of the above.
+
+### Money, rerolls, and carry-forward
+
+Nothing in a run used to **cost** anything, so nothing in it was a trade-off —
+and an obvious choice is not a choice.
+
+- **Prize money** (`CareerStats.money`) is earned from battles won, badges and
+  titles. Scaled so a career affords a few rerolls, not an unlimited supply.
+- **Rerolling** a decision costs money after the first one of the *run*. Free
+  first makes the mechanic discoverable without a tutorial; the escalating ladder
+  (`REROLL_COSTS = 0 / 400 / 900 / 1800`, plateauing at the last rung) makes the
+  second and third real decisions.
+- **Queued evolutions** are the carry-forward. A level-gated evolution on a
+  member two levels short used to mean reopening the prepare panel every chapter
+  to check — busywork, not a decision. Queue it once and the run fires it the
+  moment the gate clears.
+
+All three are **derived from the recorded action list**, never accumulated in
+mutable state, which is what keeps `simulate(setup, choices, actions)` pure. The
+reroll count in particular is folded into the rng key
+(`card-${chapterIndex}-r${rerolls}`) rather than drawn from a running stream, so
+a rerolled career replays exactly and a `?seed=` link still reproduces it.
+`economy.test.ts` asserts replay identity at every reroll depth.
 
 ### Named battles, badges, and the ladders
 
@@ -946,9 +1013,10 @@ separate static asset and doesn't count against this.
 ## Testing
 
 ```bash
-pnpm test:unit      # vitest — 190 tests: engine, battles/badges/shinies, content health,
+pnpm test:unit      # vitest — 244 tests: engine, battles/badges/shinies, level economy,
+                    #          money/rerolls/carry-forward, ranks, archive, content health,
                     #          i18n, deeplink, streak, analytics, prepare
-pnpm test:browser   # puppeteer — 19 suites, 187 tests (incl. 37 journey)
+pnpm test:browser   # puppeteer — 20 suites, 198 tests (incl. 41 journey, 7 favorites)
 pnpm test:all       # both
 pnpm ship           # build + inline + test:all
 ```

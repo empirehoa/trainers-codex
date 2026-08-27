@@ -87,7 +87,9 @@ src/
     engine.ts                      ← simulate(setup, choices) — pure + deterministic
     scoring.ts                     ← archetype-weighted 0-999 + verdict resolution
     deeplink.ts                    ← ?seed= / ?daily= parse + build
-    streak.ts                      ← daily streak, stored as local date strings
+    streak.ts                      ← daily streak + one-free repair (local date strings)
+    archive.ts                     ← v11 — daily archive, ?issue=N deep links
+    ranks.ts                       ← v11 — score percentile + named rank tiers
     analytics.ts                   ← fire-and-forget Supabase REST inserts
     share.ts                       ← Web Share / clipboard / download tiers
     legend-card.ts                 ← canvas renderer, 1080×1350 + 300 DPI
@@ -125,7 +127,7 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 19 suites, 187 tests
+  test-*.mjs                       ← 20 suites, 198 tests
 ```
 
 ## Build + bundle workflow
@@ -154,9 +156,10 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 190 tests · engine, battles/badges/shinies/events, content health,
-                   #            i18n, deeplink, streak, analytics, paste-url, share summary, prepare
-pnpm test:browser  # puppeteer · 19 suites / 187 tests (incl. 37 Journey Mode)
+pnpm test:unit     # vitest · 244 tests · engine, battles/badges/shinies/events, level economy,
+                   #            money/rerolls/carry-forward, ranks, archive, content health, i18n,
+                   #            deeplink, streak, analytics, paste-url, share summary, prepare
+pnpm test:browser  # puppeteer · 20 suites / 198 tests (incl. 41 Journey Mode, 7 favorites)
 (cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
 

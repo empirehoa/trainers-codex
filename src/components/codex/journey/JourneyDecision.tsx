@@ -81,6 +81,7 @@ export function JourneyDecision({
         roster={roster}
         prepare={prepare}
         inventory={inventory}
+        stats={stats}
         actionsThisChapter={actionsThisChapter}
         onAction={onAction}
         onUndoPrep={onUndoPrep}
