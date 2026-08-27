@@ -17,7 +17,7 @@ import { ARCHETYPES } from './content';
 import { levelFromXp } from './levels';
 import { evolutionsOf } from './evolution';
 import type {
-  Archetype, JourneySetup, JourneyRun, PrepareAction, RecordedChoice,
+  Archetype, JourneySetup, JourneyRun, PrepareAction, RecordedChoice, RosterEntry,
 } from './types';
 
 function setupFor(over: Partial<JourneySetup> = {}): JourneySetup {
@@ -218,7 +218,7 @@ describe('queued evolutions carry forward', () => {
       { type: 'queue-evolve', chapterIndex: 0, fromId: target!.fromId, toId: target!.toId },
       { type: 'unqueue-evolve', chapterIndex: 1, fromId: target!.fromId },
     ]);
-    const ev = (r: JourneyRun) => r.roster.reduce((n, m) => n + (m.evolved ?? 0), 0);
+    const ev = (r: { roster: RosterEntry[] }) => r.roster.reduce((n, m) => n + (m.evolved ?? 0), 0);
     expect(ev(cancelled)).toBeLessThan(ev(queued));
   });
 

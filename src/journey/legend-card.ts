@@ -66,9 +66,9 @@ export interface LegendCardOptions {
  * decorative input to a silhouette mask, so timing one out costs a fallback
  * shape and nothing else.
  */
-const SPRITE_TIMEOUT_MS = 4000;
+export const SPRITE_TIMEOUT_MS = 4000;
 
-function loadImg(src: string, timeoutMs = SPRITE_TIMEOUT_MS): Promise<HTMLImageElement> {
+export function loadImg(src: string, timeoutMs = SPRITE_TIMEOUT_MS): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
     const img = new Image();
     let settled = false;
@@ -108,7 +108,7 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
  * than `'roundRect' in c` — the latter narrows the else branch to `never` and
  * TypeScript then rejects the fallback path.
  */
-function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+export function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   if (typeof (c as { roundRect?: unknown }).roundRect === 'function') {
     c.beginPath();
     (c as CanvasRenderingContext2D & { roundRect(x: number, y: number, w: number, h: number, r: number): void })
@@ -130,7 +130,7 @@ function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number,
  * Uses `source-in` compositing against the image's own alpha, so only the
  * shape survives — no source colour, no interior detail.
  */
-function silhouetteFrom(
+export function silhouetteFrom(
   img: HTMLImageElement,
   size: number,
   color: string,
@@ -158,7 +158,7 @@ function silhouetteFrom(
 }
 
 /** Placeholder used when a sprite can't be fetched (offline, rate-limited). */
-function fallbackSilhouette(size: number, color: string, accent: string): HTMLCanvasElement {
+export function fallbackSilhouette(size: number, color: string, accent: string): HTMLCanvasElement {
   const off = document.createElement('canvas');
   off.width = size;
   off.height = size;
@@ -176,7 +176,7 @@ function fallbackSilhouette(size: number, color: string, accent: string): HTMLCa
   return off;
 }
 
-function fitText(
+export function fitText(
   c: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,

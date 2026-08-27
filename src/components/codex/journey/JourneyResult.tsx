@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight, Copy, Download, Link2, Loader2, RotateCcw, Share2, ShoppingBag, Sparkles, Wrench,
+  ArrowRight, Copy, Download, Film, Link2, Loader2, RotateCcw, Share2, ShoppingBag, Sparkles, Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -12,6 +12,7 @@ import { renderLegendCard } from '@/journey/legend-card';
 import { buildDailyLink, buildSeedLink } from '@/journey/deeplink';
 import { dailyIssueNumber } from '@/journey/prng';
 import { resolveRank, rosterRarity } from '@/journey/ranks';
+import { canRecordVideo, renderCardVideo } from '@/journey/card-video';
 import {
   buildEmojiSummary, canShareFile, copyImageToClipboard, copyTextToClipboard,
   downloadBlob, fileFromBlob, legendCardFilename, shareLegendCard,
@@ -179,6 +180,38 @@ export function JourneyResult({
     downloadBlob(blob, filename);
   }, [blob, filename, reportShare]);
 
+  // ---- the 9:16 clip ----
+  // Offered only when the pipeline genuinely works. `canRecordVideo` probes
+  // MediaRecorder, a codec AND captureStream, because each fails independently
+  // and a dead button is worse than no button.
+  const [videoState, setVideoState] = useState<'idle' | 'rendering'>('idle');
+  const [videoPct, setVideoPct] = useState(0);
+  const videoSupported = useMemo(() => canRecordVideo(), []);
+
+  const doVideo = useCallback(async () => {
+    if (videoState === 'rendering') return;
+    setVideoState('rendering');
+    setVideoPct(0);
+    try {
+      const result = await renderCardVideo({
+        run,
+        locale,
+        onProgress: setVideoPct,
+      });
+      reportShare('download');
+      // Same slug as the still, so a clip and its card sort together in a folder.
+      const stem = legendCardFilename(run.setup.trainerName, run.setup.seed).replace(/\.png$/, '');
+      downloadBlob(result.blob, `${stem}.${result.extension}`);
+      toast.success(t('journey.share.videoDone'));
+    } catch {
+      // Encoding can fail mid-way on a browser that reported support — fall
+      // back to the still, which always works.
+      toast.error(t('journey.share.videoFailed'));
+    } finally {
+      setVideoState('idle');
+    }
+  }, [run, locale, videoState, reportShare, t]);
+
   // ============================================================
   // RETIRED — the verdict beat, before the card appears
   // ============================================================
@@ -291,6 +324,19 @@ export function JourneyResult({
               <Download size={11} className="mr-1" />
               {t('journey.share.download')}
             </Button>
+            {videoSupported && (
+              <Button variant="outline" onClick={doVideo}
+                      disabled={videoState === 'rendering'}
+                      className="font-mono text-[10px]"
+                      data-testid="journey-share-video">
+                {videoState === 'rendering'
+                  ? <Loader2 size={11} className="mr-1 animate-spin" />
+                  : <Film size={11} className="mr-1" />}
+                {videoState === 'rendering'
+                  ? t('journey.share.videoRendering', { pct: Math.round(videoPct * 100) })
+                  : t('journey.share.video')}
+              </Button>
+            )}
           </div>
         </div>
       )}

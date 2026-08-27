@@ -93,6 +93,7 @@ src/
     analytics.ts                   ← fire-and-forget Supabase REST inserts
     share.ts                       ← Web Share / clipboard / download tiers
     legend-card.ts                 ← canvas renderer, 1080×1350 + 300 DPI
+    card-video.ts                  ← v11 — 9:16 clip, captureStream + MediaRecorder
     *.test.ts                      ← vitest, colocated
   i18n/
     strings.ts                     ← EN + ES complete; PT + JA seeded
@@ -127,7 +128,7 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 20 suites, 198 tests
+  test-*.mjs                       ← 20 suites, 199 tests
 ```
 
 ## Build + bundle workflow
@@ -156,10 +157,10 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 244 tests · engine, battles/badges/shinies/events, level economy,
-                   #            money/rerolls/carry-forward, ranks, archive, content health, i18n,
-                   #            deeplink, streak, analytics, paste-url, share summary, prepare
-pnpm test:browser  # puppeteer · 20 suites / 198 tests (incl. 41 Journey Mode, 7 favorites)
+pnpm test:unit     # vitest · 255 tests · engine, battles/badges/shinies/events, level economy,
+                   #            money/rerolls/carry-forward, ranks, archive, card-video, content
+                   #            health, i18n, deeplink, streak, analytics, paste-url, prepare
+pnpm test:browser  # puppeteer · 20 suites / 199 tests (incl. 42 Journey Mode, 7 favorites)
 (cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
 

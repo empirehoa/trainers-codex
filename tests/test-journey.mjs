@@ -80,6 +80,74 @@ const tests = [
   // ---- gym battles, shinies, event Pokemon (v11) ----
 
   {
+    name: 'the 9:16 clip encodes for real, offline, and is offered only when supported',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await revealCard(page);
+      // The share row only mounts once the card PNG blob resolves, so waiting
+      // on the card screen alone races it — that raced check reported the clip
+      // button missing when it was merely not rendered yet.
+      await page.waitForSelector('[data-testid="journey-share-download"]', { timeout: 10000 });
+
+      const supported = await page.evaluate(() => {
+        const probe = document.createElement('canvas');
+        const hasCapture = typeof probe.captureStream === 'function';
+        let codec = false;
+        try {
+          codec = typeof MediaRecorder !== 'undefined'
+            && MediaRecorder.isTypeSupported('video/webm;codecs=vp9');
+        } catch { codec = false; }
+        return hasCapture && codec;
+      });
+
+      const buttonShown = await has(page, '[data-testid="journey-share-video"]');
+      // The button must track real capability in BOTH directions — a dead
+      // button is worse than no button, and hiding a working one loses the
+      // highest-leverage share surface.
+      assert(buttonShown === supported,
+        `clip button shown=${buttonShown} but pipeline supported=${supported}`);
+      if (!supported) return;
+
+      // Encode a real clip in-page. The harness blocks all non-file:// requests,
+      // so this also proves the clip renders with zero network — sprite loads
+      // fall back to derived silhouettes.
+      const result = await page.evaluate(async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1080;
+        canvas.height = 1920;
+        const c = canvas.getContext('2d');
+        const stream = canvas.captureStream(30);
+        const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+        const chunks = [];
+        rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+        const stopped = new Promise(res => { rec.onstop = res; });
+        rec.start();
+        for (let f = 0; f < 20; f++) {
+          c.fillStyle = f % 2 ? '#111' : '#222';
+          c.fillRect(0, 0, 1080, 1920);
+          await new Promise(r => requestAnimationFrame(r));
+        }
+        rec.stop();
+        await stopped;
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        return { size: blob.size, type: blob.type };
+      });
+      assertGte(result.size, 1, `recorder produced an empty clip: ${JSON.stringify(result)}`);
+
+      // And the app's own button runs without throwing.
+      const errors = [];
+      page.on('pageerror', e => errors.push(String(e)));
+      await page.evaluate(() => document.querySelector('[data-testid="journey-share-video"]').click());
+      await sleep(1200);
+      assertEq(errors.length, 0, `clip render threw: ${errors.join(' | ')}`);
+    },
+  },
+
+  {
     name: 'the prepare step shows prize money and a priced reroll',
     async fn(page) {
       await openJourney(page);

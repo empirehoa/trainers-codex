@@ -15,6 +15,7 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 - [Blocked items](#blocked-items)
 - [Architecture](#architecture)
 - [The engine](#the-engine)
+- [The 9:16 clip](#the-916-clip--the-card-assembling-itself)
 - [The level economy](#the-level-economy-and-why-it-is-one-number-in-two-places)
 - [Money, rerolls, and carry-forward](#money-rerolls-and-carry-forward)
 - [Named battles, badges, and the ladders](#named-battles-badges-and-the-ladders)
@@ -38,7 +39,7 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 
 | Definition-of-Done item | State | Evidence |
 |---|---|---|
-| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 244 tests |
+| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 255 tests |
 | 2. Express run completes under 2:30 on mobile viewport | ✅ | `test-journey.mjs` asserts <150s |
 | 3. Legend Card renders, shares, downloads | ✅ | `canShare`-gated; download always offered |
 | 4. Daily seed identical across sessions; streak survives TZ change | ✅ | browser + unit tests |
@@ -128,6 +129,7 @@ src/journey/
   analytics.ts     fire-and-forget Supabase REST inserts
   share.ts         Web Share / clipboard / download tiers
   legend-card.ts   canvas renderer (1080×1350 and 300 DPI print)
+  card-video.ts    9:16 clip of the card assembling (captureStream + MediaRecorder)
 
 src/components/codex/journey/
   JourneyModeDialog.tsx   shell + state machine
@@ -233,6 +235,40 @@ fatigue an equilibrium at `gain ÷ rate`, so pace becomes a genuine trade-off an
 "rest the team" buys something real.
 
 ---
+
+### The 9:16 clip — the card assembling itself
+
+`card-video.ts` renders a 7-second vertical (1080×1920) clip of the Legend Card
+being *built*: badges snap in one at a time, the six resolve out of the dark, the
+score counts up, the verdict and rank land last, and the playable link holds for
+the tail.
+
+**Why a build and not a still.** Two independent research sweeps reached the same
+conclusion. The summer's biggest Pokémon virality event was driven entirely by
+short vertical video of a transformation *in progress* — one keypress walking a
+ladder — and because it was a ladder, every creator's clip differed. Separately,
+pack-opening simulators (same shape as us: free, browser, no account, one
+reporting 165M packs opened) are built entirely on the moment of not knowing. A
+still PNG of a finished thing has neither property.
+
+The badge stage deliberately preserves the ladder property: each badge lands on
+its own beat, so a clip cut at any moment shows a different count.
+
+**Pipeline.** `canvas.captureStream()` → `MediaRecorder`. No encoder dependency,
+no network, no server. The container is whatever the browser gives us — WebM/VP9
+nearly everywhere, MP4 on some Safari builds — so callers read `mimeType` and
+`extension` off the result rather than assuming, and the download is named with
+the same slug as the still so a clip and its card sort together.
+
+**Detection is honest, and that is the tested part.** Each piece of the pipeline
+fails independently: `MediaRecorder` can exist without `captureStream`, a codec
+can be reported supported and still refuse to start, and `isTypeSupported`
+throws rather than returning false on some builds. `canRecordVideo()` probes all
+of it, and the share row hides the button when it fails — a dead button is worse
+than no button. A browser test asserts the button tracks real capability **in
+both directions**, and encodes a genuine clip with the harness's network block in
+place, which also proves the clip renders offline (sprite loads fall back to
+derived silhouettes exactly as the still card does).
 
 ### The level economy, and why it is one number in two places
 
@@ -1013,10 +1049,10 @@ separate static asset and doesn't count against this.
 ## Testing
 
 ```bash
-pnpm test:unit      # vitest — 244 tests: engine, battles/badges/shinies, level economy,
-                    #          money/rerolls/carry-forward, ranks, archive, content health,
-                    #          i18n, deeplink, streak, analytics, prepare
-pnpm test:browser   # puppeteer — 20 suites, 198 tests (incl. 41 journey, 7 favorites)
+pnpm test:unit      # vitest — 255 tests: engine, battles/badges/shinies, level economy,
+                    #          money/rerolls/carry-forward, ranks, archive, card-video,
+                    #          content health, i18n, deeplink, streak, analytics, prepare
+pnpm test:browser   # puppeteer — 20 suites, 199 tests (incl. 42 journey, 7 favorites)
 pnpm test:all       # both
 pnpm ship           # build + inline + test:all
 ```
