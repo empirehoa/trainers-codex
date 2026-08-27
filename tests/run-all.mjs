@@ -26,6 +26,7 @@ const SUITES = [
   'test-pwa.mjs',
   'test-v6-badges.mjs',
   'test-journey.mjs',
+  'test-favorites.mjs',
   'test-security.mjs',
 ];
 

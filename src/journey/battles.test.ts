@@ -22,6 +22,7 @@ import { simulateWithStrategy } from './engine';
 import { ARCHETYPES } from './content';
 import { eliteFour, gymLeaders, regionChampion, worldCupField } from './opponents';
 import { eventFor } from './campaign';
+import { levelFromXp } from './levels';
 import type { Archetype, JourneySetup, JourneyRun } from './types';
 
 function play(seed: number, archetype: Archetype = 'balance'): JourneyRun {
@@ -145,9 +146,11 @@ describe('opponent levels track the party the game actually produces', () => {
       regionChampion(8843, 'kanto').level,
       ...worldCupField(8843, ['kanto'], []).map(o => o.level),
     ];
-    // 40 is comfortably above the measured max party level (~39) and far below
-    // the 54-76 the ladders used to sit at.
-    for (const lv of ladders) expect(lv).toBeLessThanOrEqual(40);
+    // The bound that matters is not an absolute level, it is the ±20 band where
+    // `matchupFor`'s level term is still a variable rather than a pinned floor.
+    // Measured party average at end of run is ~48 (starter ~55), so a ladder
+    // above ~68 would be outside the band for every archetype.
+    for (const lv of ladders) expect(lv).toBeLessThanOrEqual(68);
   });
 
   it('gym leaders still climb across the circuit', () => {
@@ -220,6 +223,81 @@ describe('event Pokémon are their own kind', () => {
       for (const m of run.roster) {
         if (m.origin === 'event') expect(m.eventId).toBeTruthy();
       }
+    }
+  });
+});
+
+describe('the player out-levels what the engine hands them', () => {
+  // The defect this pins was the single worst thing about playing Journey Mode,
+  // and it was invisible to every other test: `levelForNewCatch` was
+  // `5 + chapterIndex * 3 + badges * 2`, which looked at neither the party nor
+  // the XP economy. It handed out level 60 at chapter 15 while the starter —
+  // raised across the whole career — was stuck at 25.
+  //
+  // Measured over 300 careers: an auto-caught Pokémon outclassed the player's
+  // starter in **300 of them**, by as much as 45 levels. Nothing the player
+  // raised could ever be their best Pokémon, so the only line was "use whatever
+  // was caught last chapter" and every chapter played identically.
+
+  it('a wild catch never arrives at or above the party that raised itself', () => {
+    for (const run of RUNS) {
+      const partyLevels = run.roster.map(m => levelFromXp(m.xp ?? 0));
+      const partyAvg = Math.round(partyLevels.reduce((a, b) => a + b, 0) / Math.max(1, partyLevels.length));
+      for (const b of run.box) {
+        // Arrivals are pinned to 85% of the party average at the time they
+        // arrive, so an end-of-run comparison against the final average is a
+        // generous bound — it must still never exceed it.
+        expect(levelFromXp(b.xp), `a boxed ${b.id} outranks the party average`)
+          .toBeLessThanOrEqual(partyAvg + 1);
+      }
+    }
+  });
+
+  it('the starter is never outclassed by an auto-caught Pokémon', () => {
+    let outclassed = 0;
+    for (const run of RUNS) {
+      const starter = run.roster.find(m => m.joinedAt === -1);
+      if (!starter) continue;
+      const s = levelFromXp(starter.xp ?? 0);
+      const auto = [...run.roster.filter(m => m.joinedAt >= 0), ...run.box]
+        .map(m => levelFromXp(m.xp ?? 0));
+      if (auto.length && Math.max(...auto) > s) outclassed++;
+    }
+    expect(outclassed, `${outclassed}/${RUNS.length} runs let a free catch beat the raised starter`).toBe(0);
+  });
+
+  it('a full career takes the starter through its real evolution gates', () => {
+    // 0% of starters could reach level 32 before this — most three-stage lines
+    // gate their second evolution at 32-36, so the central progression fantasy
+    // of a career sim was arithmetically unreachable.
+    const levels = RUNS
+      .map(r => r.roster.find(m => m.joinedAt === -1))
+      .filter((m): m is NonNullable<typeof m> => !!m)
+      .map(m => levelFromXp(m.xp ?? 0));
+    expect(levels.length).toBeGreaterThan(0);
+    const past36 = levels.filter(l => l >= 36).length / levels.length;
+    expect(past36, `only ${(past36 * 100).toFixed(0)}% of starters reach level 36`).toBeGreaterThan(0.9);
+    // And not so fast that levels stop meaning anything.
+    const maxed = levels.filter(l => l >= 95).length / levels.length;
+    expect(maxed, `${(maxed * 100).toFixed(0)}% of starters pin near level 100`).toBeLessThan(0.05);
+  });
+
+  it('opponent ladders stay inside the band where level actually matters', () => {
+    // `matchupFor` prices level gap as `levelGap / 20` clamped to ±1. A ladder
+    // more than 20 levels off the party pins at the floor and stops being a
+    // variable — which is how the boss ladders became untunable.
+    const partyEnd = RUNS.map(r => {
+      const ls = r.roster.map(m => levelFromXp(m.xp ?? 0));
+      return ls.reduce((a, b) => a + b, 0) / Math.max(1, ls.length);
+    });
+    const avgEnd = partyEnd.reduce((a, b) => a + b, 0) / partyEnd.length;
+    const late = [
+      regionChampion(8843, 'kanto').level,
+      ...worldCupField(8843, ['kanto'], []).map(o => o.level),
+    ];
+    for (const lv of late) {
+      expect(Math.abs(lv - avgEnd), `a late ladder sits ${Math.round(lv - avgEnd)} levels off the party`)
+        .toBeLessThan(20);
     }
   });
 });

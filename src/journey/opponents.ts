@@ -134,20 +134,20 @@ function buildGymLeaders(seed: number, regionId: string): Opponent[] {
   for (let i = 0; i < 8; i++) {
     const r = namedRng(seed, `gym-${regionId}-${i}`);
     const specialty = specialties[i] ?? ALL_TYPES[i % ALL_TYPES.length];
-    // Levels climb across the circuit: ~6 at gym 1 to ~20 at gym 8.
+    // Levels climb across the circuit: ~14 at gym 1 to ~35 at gym 8.
     //
-    // These were 12 -> 54, and every ladder in this file was scaled the same
-    // way — against an XP curve the game does not have. Measured over 6,000
-    // careers the party's END-of-run level is p50 25 / max 37, and the gym
-    // circuit happens in the first quarter of a career when the party is
-    // level 5-12. Against a level-54 eighth gym, `matchupFor`'s level term
-    // (levelGap / 20, clamped to -1) was pinned at its floor for the entire
-    // late game, which is why no amount of win-rate tuning moved the boss
-    // ladders: the level term had stopped being a variable.
+    // EVERY ladder in this file is set against the MEASURED party curve, and
+    // that curve is owned by XP_RATE in levels.ts — the two are one number in
+    // two places. Measured party level by the phase it is played in:
     //
-    // The gaps below are sized so the term stays live — a well-levelled party
-    // is genuinely favoured and an under-levelled one genuinely is not.
-    const level = 6 + i * 2 + randInt(r, -1, 1);
+    //   gym-circuit 19-32 · elite-four 32-38 · regional 36-41
+    //   national 39-44 · worlds 41-47 · world-cup 43-49 · end 48 (starter 55)
+    //
+    // `matchupFor` prices level gap as `levelGap / 20` CLAMPED to ±1, so a
+    // ladder more than 20 levels off the party stops being a variable at all —
+    // it pins at the floor and no win-rate tuning can move it. Keep every gap
+    // inside that band so preparing for a fight actually changes the odds.
+    const level = 14 + i * 3 + randInt(r, -1, 1);
     out.push({
       kind: 'gym',
       name: makeName(r),
@@ -183,8 +183,8 @@ function buildEliteFour(seed: number, regionId: string): Opponent[] {
       title: E4_TITLE,
       specialty,
       index: i + 1,
-      // Party is ~11-14 through the Elite Four phase. See buildGymLeaders.
-      level: 15 + i * 2 + randInt(r, -1, 1),
+      // Party is ~32-38 through the Elite Four phase. See buildGymLeaders.
+      level: 38 + i * 3 + randInt(r, -1, 1),
       teamIds: teamOfType(r, regionId, specialty, 5, true),
       regionId,
     };
@@ -210,8 +210,9 @@ function buildChampion(seed: number, regionId: string): Opponent {
     title: CHAMP_TITLE,
     specialty,
     index: 1,
-    // The region's wall. Clearly above the Elite Four, still on the curve.
-    level: 25 + randInt(r, -2, 3),
+    // The region's wall. Clearly above the Elite Four, still inside the ±20
+    // band where the level term is live.
+    level: 50 + randInt(r, -2, 3),
     teamIds: teamOfType(r, regionId, specialty, 6, true),
     regionId,
   };
@@ -237,7 +238,7 @@ function buildSyndicate(seed: number, regionId: string): Opponent {
     specialty: s.motif,
     index: 1,
     // Syndicate shows up mid gym-circuit, so it sits just above those gyms.
-    level: 14 + randInt(r, -2, 4),
+    level: 26 + randInt(r, -2, 4),
     teamIds: teamOfType(r, regionId, s.motif, 4, false),
     regionId,
   };
@@ -362,8 +363,8 @@ export function worldCupField(
       title: 'International Challenger',
       specialty: pick(r, ALL_TYPES),
       index: field.length + 1,
-      // World Cup is late — party is ~20-24 by then.
-      level: 27 + randInt(r, -2, 4),
+      // World Cup is late — party is ~43-49 by then.
+      level: 53 + randInt(r, -2, 4),
       teamIds: teamOfType(r, regionId, pick(r, ALL_TYPES), 6, true),
       regionId,
     });

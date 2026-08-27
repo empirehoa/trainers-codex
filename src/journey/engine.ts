@@ -35,7 +35,7 @@ import {
   type Inventory, type ItemId,
 } from './items';
 import {
-  canEvolveNow, chapterXp, levelForNewCatch, levelFromXp, xpForLevel,
+  canEvolveNow, chapterXp, levelForNewCatch, levelFromXp, START_LEVEL, xpForLevel,
 } from './levels';
 import {
   buildStakes, campaignChapterCount, eventFor, eventMultiplier, getCampaign,
@@ -576,7 +576,7 @@ function resolveChapter(input: ChapterInput): {
     id,
     shiny: shinyIds.has(id),
     origin: 'wild' as const,
-    xp: xpForLevel(levelForNewCatch(stats, index)),
+    xp: xpForLevel(levelForNewCatch(partyLevel, index)),
     caughtAt: index,
   }));
 
@@ -606,7 +606,7 @@ function resolveChapter(input: ChapterInput): {
         joinedAt: index,
         types: monTypes(recruitedId),
         evolved: 0,
-        xp: xpForLevel(levelForNewCatch(stats, index)),
+        xp: xpForLevel(levelForNewCatch(partyLevel, index)),
       }];
       seenAdded.push(recruitedId);
       caughtAdded.push(recruitedId);
@@ -1285,6 +1285,11 @@ export function simulate(
     }
 
     // Special event for this chapter — the rare/legendary pull.
+    // An event grant arrives on the same footing as a wild catch: relative to
+    // the party the player has raised, never above it.
+    const partyLevel = roster.length
+      ? Math.round(roster.reduce((n, m) => n + levelFromXp(m.xp ?? 0), 0) / roster.length)
+      : START_LEVEL;
     const ev = eventFor({ seed: setup.seed, chapterIndex: index, phase, regionGen, usedLegendary });
     if (ev) {
       if (ev.rarity === 'legendary') usedLegendary.add(ev.id);
@@ -1303,7 +1308,7 @@ export function simulate(
             shiny: ev.grantedShiny === true,
             origin: 'event' as const,
             eventId: ev.id,
-            xp: xpForLevel(levelForNewCatch(stats, index)),
+            xp: xpForLevel(levelForNewCatch(partyLevel, index)),
             caughtAt: index,
           }];
           // An event shiny is still a shiny. Counting it here keeps the stat

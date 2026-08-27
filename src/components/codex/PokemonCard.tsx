@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Plus, Check, Star, Sparkles } from 'lucide-react';
+import { Plus, Check, Star, Sparkles, Heart } from 'lucide-react';
 import type { Pokemon } from '@/lib/types';
 import { TYPE_COLORS } from '@/lib/constants';
 import { pixelSprite, padId } from '@/lib/pokemon';
@@ -13,6 +13,9 @@ interface PokemonCardProps {
   // that identity stability is what lets React.memo below actually skip work.
   onSelect: (p: Pokemon) => void;
   onAdd: (p: Pokemon) => void;
+  /** Toggle this Pokémon's favourite flag. Must be referentially stable. */
+  onToggleFavorite: (p: Pokemon) => void;
+  favorite: boolean;
   inTeam: boolean;
   teamFull: boolean;
   // When set, the mon is banned by the active format. It stays visible (so the
@@ -43,7 +46,7 @@ const FORM_BADGES: Record<string, { label: string; color: string }> = {
 // memo: the grid holds up to 1,307 of these; without it every keystroke in the
 // search box re-renders the entire mounted set. With stable handlers from App,
 // only cards whose props actually changed re-render.
-export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, inTeam, teamFull, illegal, illegalReason }: PokemonCardProps) {
+export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, onToggleFavorite, favorite, inTeam, teamFull, illegal, illegalReason }: PokemonCardProps) {
   const primary = TYPE_COLORS[p.types[0]];
   const disabled = inTeam || teamFull || !!illegal;
   const badge = p.form ? FORM_BADGES[p.form] : null;
@@ -109,6 +112,24 @@ export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, inTea
             {p.types.map(t => <TypePill key={t} type={t} sm />)}
           </div>
         </div>
+      </button>
+      {/* Favourite toggle. Deliberately OUTSIDE the select button — nesting it
+          would make a star click also open the detail dialog. */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleFavorite(p); }}
+        aria-label={favorite ? `Remove ${p.display} from favorites` : `Add ${p.display} to favorites`}
+        aria-pressed={favorite}
+        data-testid={`fav-${p.id}`}
+        data-favorite={favorite ? 'true' : 'false'}
+        title={favorite ? 'Favorited' : 'Add to favorites'}
+        className={cn(
+          'absolute bottom-1.5 left-1.5 w-6 h-6 rounded-md flex items-center justify-center transition',
+          favorite
+            ? 'text-amber-400'
+            : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-amber-400',
+        )}
+      >
+        <Heart size={13} fill={favorite ? 'currentColor' : 'none'} />
       </button>
       <button
         onClick={(e) => { e.stopPropagation(); if (!disabled) onAdd(p); }}

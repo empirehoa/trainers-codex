@@ -96,7 +96,7 @@ const JOURNEY_LINK = parseCurrentJourneyLink();
 
 type CategoryFilter =
   | 'all' | 'normal' | 'legendary' | 'mythical' | 'special'
-  | 'base-only' | 'mega' | 'gigantamax' | 'regional' | 'paradox';
+  | 'base-only' | 'mega' | 'gigantamax' | 'regional' | 'paradox' | 'favorites';
 
 const EMPTY_MEMBERS: (TeamMember | null)[] = [null, null, null, null, null, null];
 
@@ -110,6 +110,18 @@ export default function App() {
   const [teamName, setTeamName] = useState('');
   const [trainer, setTrainer] = useState<TrainerProfile | null>(null);
   const [premium, setPremium] = useState(false);
+  // Favourites. A Set for O(1) membership from PokemonCard, persisted as an
+  // array (see StorageShape.favorites).
+  const [favorites, setFavorites] = useState<Set<number>>(() => new Set());
+  // Referentially stable, so PokemonCard's React.memo still skips work. An
+  // inline arrow here would re-render all 240 mounted cards on every keystroke.
+  const toggleFavorite = useCallback((p: Pokemon) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+      return next;
+    });
+  }, []);
   // v6: light/dark mode. Default to dark (the original v5 brand vibe), persist
   // in localStorage. We toggle the `.light` / `.dark` class on documentElement
   // so the CSS variables in index.css switch palettes.
@@ -337,6 +349,7 @@ export default function App() {
     const stored = loadStorage();
     setSavedTeams(stored.teams);
     if (stored.trainer) setTrainer(stored.trainer);
+    if (stored.favorites?.length) setFavorites(new Set(stored.favorites));
 
     // Premium gating: a signed Stripe license JWT takes precedence over the
     // legacy localStorage `premium` flag (which was the dev-only preview
@@ -398,8 +411,9 @@ export default function App() {
       current: { members, name: teamName },
       trainer,
       premium: premium || undefined,
+      favorites: [...favorites],
     });
-  }, [members, teamName, savedTeams, trainer, premium, hasLoadedStorage]);
+  }, [members, teamName, savedTeams, trainer, premium, favorites, hasLoadedStorage]);
 
   // ---------- Keyboard shortcuts ----------
   useEffect(() => {
@@ -518,6 +532,7 @@ export default function App() {
     else if (filterCategory === 'mega') list = list.filter(p => p.form === 'mega' || p.form === 'primal');
     else if (filterCategory === 'gigantamax') list = list.filter(p => p.form === 'gigantamax');
     else if (filterCategory === 'regional') list = list.filter(p => ['alolan', 'galarian', 'hisuian', 'paldean'].includes(p.form || ''));
+    else if (filterCategory === 'favorites') list = list.filter(p => favorites.has(p.id));
     else if (filterCategory === 'paradox') {
       // Paradox Pokémon don't have a "form" tag — they're regular species in the 984-1024 range
       const PARADOX_IDS = new Set([984, 985, 986, 987, 988, 989, 990, 991, 992, 993, 994, 995, 1005, 1006, 1007, 1008, 1009, 1010, 1020, 1021, 1022, 1023]);
@@ -532,7 +547,7 @@ export default function App() {
       return ((a.stats[sortBy as keyof Stats] ?? 0) - (b.stats[sortBy as keyof Stats] ?? 0)) * dir;
     });
     return list;
-  }, [deferredSearch, filterTypes, filterGens, filterRoles, filterCategory, sortBy, sortDir]);
+  }, [deferredSearch, filterTypes, filterGens, filterRoles, filterCategory, sortBy, sortDir, favorites]);
 
   // ---------- Windowed grid ----------
   // Mounting all 1,307 cards at once was the app's single biggest jank source:
@@ -1118,6 +1133,7 @@ export default function App() {
               />
             </div>
             <Button variant="outline" size="sm" onClick={() => setSF(s => !s)}
+                    data-testid="toggle-filters"
                     className={cn('font-mono text-xs', showFilters && 'border-primary text-primary')}>
               <FilterIcon size={12} className="mr-1" />
               <span className="hidden sm:inline">filters</span>
@@ -1247,10 +1263,15 @@ export default function App() {
                   ['gigantamax', 'gigantamax'],
                   ['regional', 'regional'],
                   ['paradox', 'paradox'],
+                  // Label carries the count so the chip is self-explanatory
+                  // when the list is empty — otherwise clicking it just shows
+                  // "0 results" with no hint why.
+                  ['favorites', favorites.size ? `♥ favorites (${favorites.size})` : '♥ favorites'],
                 ] as [CategoryFilter, string][]).map(([c, label]) => {
                   const active = filterCategory === c;
                   return (
                     <button key={c}
+                            data-testid={`cat-${c}`}
                             onClick={() => setFCategory(c)}
                             className={cn(
                               'font-mono text-[10px] px-2 py-1 rounded border transition uppercase tracking-wider',
@@ -1331,6 +1352,8 @@ export default function App() {
               <PokemonCard key={p.id} p={p}
                 onSelect={setSelected}
                 onAdd={addToTeam}
+                onToggleFavorite={toggleFavorite}
+                favorite={favorites.has(p.id)}
                 inTeam={teamIds.has(p.id)}
                 teamFull={teamFull}
                 illegal={legality ? !legality.legal : false}
