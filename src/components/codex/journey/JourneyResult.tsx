@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useI18n } from '@/i18n/useI18n';
 import { isEnabled } from '@/lib/flags';
-import { pixelSprite } from '@/lib/pokemon';
+import { pixelSprite, POKEMON_BY_ID } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
 import { renderLegendCard } from '@/journey/legend-card';
 import { buildDailyLink, buildSeedLink } from '@/journey/deeplink';
 import { dailyIssueNumber } from '@/journey/prng';
+import { resolveRank, rosterRarity } from '@/journey/ranks';
 import {
   buildEmojiSummary, canShareFile, copyImageToClipboard, copyTextToClipboard,
   downloadBlob, fileFromBlob, legendCardFilename, shareLegendCard,
@@ -52,6 +53,15 @@ export function JourneyResult({
           starterId: run.setup.starterId,
         })
   ), [run, isDaily]);
+
+  const rank = useMemo(() => resolveRank(run.score), [run.score]);
+  const rarity = useMemo(() => rosterRarity({
+    legendaryCount: run.roster.filter(m => POKEMON_BY_ID[m.id]?.legendary || POKEMON_BY_ID[m.id]?.mythical).length,
+    shinyCount: run.roster.filter(m => m.shiny).length,
+    eventCount: run.roster.filter(m => m.origin === 'event').length,
+    evolvedCount: run.roster.reduce((n, m) => n + (m.evolved ?? 0), 0),
+    archetype: run.setup.archetype,
+  }), [run.roster, run.setup.archetype]);
 
   const verdictText = t(run.verdict.titleKey, {
     region: String(run.chapters[0]?.vars.region ?? ''),
@@ -197,6 +207,26 @@ export function JourneyResult({
         </div>
         <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
           {t('journey.result.scoreLabel')}
+        </div>
+
+        {/* Named rank + percentile. People share words, not integers — and the
+            percentile is a REFERENCE distribution, not real players, which the
+            copy says explicitly rather than implying a population we do not
+            have. */}
+        <div className="pt-1 space-y-1" data-testid="journey-rank">
+          <div className="font-mono text-lg font-bold tracking-wide"
+               style={{ color: 'hsl(var(--primary))' }}
+               data-testid="journey-rank-name">
+            {t(rank.nameKey)}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground"
+               data-testid="journey-rank-percentile">
+            {t(rank.lineKey, { pct: 100 - rank.percentile })}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground"
+               data-testid="journey-roster-rarity">
+            {t('journey.rank.rosterRarity', { pct: rarity })}
+          </div>
         </div>
 
         <Button onClick={onRevealCard} className="w-full font-mono text-xs font-bold h-11"

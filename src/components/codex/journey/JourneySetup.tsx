@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { Dices, Play, Sparkles, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { Dices, Play, Sparkles, Wrench, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/i18n/useI18n';
@@ -7,8 +7,11 @@ import {
   ARCHETYPES, JOURNEY_REGIONS, PACES, TRAINER_NAMES, getRegion, rosterCaption,
 } from '@/journey/content';
 import { CAMPAIGNS } from '@/journey/campaign';
+import { listArchive } from '@/journey/archive';
 import { dailyIssueNumber, localDateString, namedRng, pick, randomSeed } from '@/journey/prng';
-import { currentStreak, hasPlayedToday, loadStreak } from '@/journey/streak';
+import {
+  currentStreak, hasPlayedToday, loadStreak, repairableDate, repairsRemaining, repairStreak,
+} from '@/journey/streak';
 import { pixelSprite } from '@/lib/pokemon';
 import { cn } from '@/lib/utils';
 import type { Archetype, JourneySetup as Setup, Pace } from '@/journey/types';
@@ -23,18 +26,29 @@ interface Props {
   invalidLink: boolean;
   onClearShared: () => void;
   onPlayDaily: () => void;
+  /** Play a past archive issue by its date. */
+  onPlayIssue: (date: string) => void;
 }
 
 export function JourneySetup({
   draft, onChange, onStart, sharedSeed, dailyDate, invalidLink,
-  onClearShared, onPlayDaily,
+  onClearShared, onPlayDaily, onPlayIssue,
 }: Props) {
   const { t } = useI18n();
   const region = getRegion(draft.regionId);
-  const streak = loadStreak();
+  // Re-read after a repair so the streak line and the offer both refresh.
+  const [streakNonce, setStreakNonce] = useState(0);
+  const streak = useMemo(() => loadStreak(), [streakNonce]);
   const today = localDateString();
   const playedToday = hasPlayedToday(streak, today);
   const streakDays = currentStreak(streak, today);
+  const repairDate = repairableDate(streak, today);
+  const repairsLeft = repairsRemaining(streak);
+  const [showArchive, setShowArchive] = useState(false);
+  const archive = useMemo(
+    () => listArchive({ today, playedDates: streak.playedDates, limit: 60 }),
+    [today, streak.playedDates],
+  );
 
   const rollName = useCallback(() => {
     onChange({ ...draft, trainerName: pick(namedRng(randomSeed(), 'name'), TRAINER_NAMES) });
@@ -231,8 +245,67 @@ export function JourneySetup({
               {playedToday ? t('journey.daily.replayFree') : t('journey.daily.play')}
             </Button>
           </div>
+          {/* Streak repair. Offered only when there is a real one-day gap that
+              a repair would bridge, and only while a free one is unspent — so it
+              is an offer, never a permanent upsell shaped like a button. */}
+          {repairDate && (
+            <div className="flex items-center justify-between gap-2 pt-1 border-t"
+                 style={{ borderColor: 'hsl(var(--border))' }}
+                 data-testid="journey-repair-offer">
+              <div className="font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                {t('journey.daily.repairOffer', { date: repairDate })}
+                <span className="text-muted-foreground ml-1">
+                  {t('journey.daily.repairsLeft', { n: repairsLeft })}
+                </span>
+              </div>
+              <Button variant="outline" size="sm"
+                      onClick={() => {
+                        repairStreak(repairDate);
+                        setStreakNonce(n => n + 1);
+                      }}
+                      className="font-mono text-[10px] shrink-0"
+                      data-testid="journey-repair">
+                <Wrench size={11} className="mr-1" />
+                {t('journey.daily.repair')}
+              </Button>
+            </div>
+          )}
           {playedToday && (
             <div className="font-mono text-[10px] text-muted-foreground">// {t('journey.daily.done')}</div>
+          )}
+
+          {/* Archive. A player who arrives on day 40 otherwise has one puzzle
+              available and 39 they can never see. Bounded render — the list
+              grows by one every day, forever. */}
+          {archive.length > 1 && (
+            <div className="pt-1 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
+              <button onClick={() => setShowArchive(v => !v)}
+                      className="font-mono text-[10px] text-muted-foreground hover:text-primary transition"
+                      data-testid="journey-archive-toggle">
+                {showArchive ? '▾' : '▸'} {t('journey.archive.heading', { n: archive.length })}
+              </button>
+              {showArchive && (
+                <div className="mt-1.5 max-h-40 overflow-y-auto space-y-1" data-testid="journey-archive">
+                  {archive.filter(e => !e.today).map(e => (
+                    <button key={e.date}
+                            onClick={() => onPlayIssue(e.date)}
+                            className="w-full flex items-center justify-between gap-2 rounded border px-2 py-1
+                                       text-left transition hover:border-primary/60"
+                            style={{ borderColor: 'hsl(var(--border))' }}
+                            data-testid={`journey-archive-${e.issue}`}>
+                      <span className="font-mono text-[10px]">
+                        {t('journey.archive.issue', { n: e.issue })}
+                        <span className="text-muted-foreground ml-1.5">{e.date}</span>
+                      </span>
+                      <span className="font-mono text-[9px] shrink-0"
+                            style={{ color: e.played ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}>
+                        {e.played ? t('journey.archive.played') : t('journey.archive.unplayed')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

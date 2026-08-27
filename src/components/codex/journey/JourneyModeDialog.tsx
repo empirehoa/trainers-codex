@@ -187,6 +187,23 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
 
   const start = useCallback(() => beginRun(draft), [beginRun, draft]);
 
+  /**
+   * Play any daily issue by its date. `playDaily` is this with today's date —
+   * an archive issue is not a different mode, it is the same daily on an
+   * earlier calendar day, which is what makes the seed reproducible.
+   */
+  const playIssue = useCallback((date: string) => {
+    setDailyDate(date);
+    const next: Setup = {
+      ...draft,
+      seed: dailySeed(date),
+      source: 'daily',
+      dailyDate: date,
+    };
+    setDraft(next);
+    beginRun(next);
+  }, [draft, beginRun]);
+
   const playDaily = useCallback(() => {
     const date = localDateString();
     setDailyDate(date);
@@ -359,6 +376,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
             invalidLink={invalidLink}
             onClearShared={clearShared}
             onPlayDaily={playDaily}
+            onPlayIssue={playIssue}
           />
         )}
 

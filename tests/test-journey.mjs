@@ -80,6 +80,103 @@ const tests = [
   // ---- gym battles, shinies, event Pokemon (v11) ----
 
   {
+    name: 'the daily archive lists past issues and one is playable',
+    async fn(page) {
+      // The archive only appears once more than one issue exists, so seed a
+      // history far enough back that there are past issues to list.
+      await page.evaluate(() => {
+        const d = (n) => {
+          const t = new Date();
+          t.setDate(t.getDate() - n);
+          return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+        };
+        localStorage.setItem('trainerscodex.journey.streak', JSON.stringify({
+          playedDates: [d(2), d(1)].sort(), bestStreak: 2,
+        }));
+      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await openJourney(page);
+      const hasArchive = await has(page, '[data-testid="journey-archive-toggle"]');
+      if (!hasArchive) {
+        // Before DAILY_EPOCH + 1 there is genuinely only one issue, so there is
+        // nothing to archive. Assert that rather than silently passing.
+        const body = await text(page);
+        assert(!/journey\.archive\./.test(body), 'archive keys must not leak when the archive is hidden');
+        return;
+      }
+      await page.evaluate(() => document.querySelector('[data-testid="journey-archive-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-archive"]', { timeout: 8000 });
+      const rows = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
+          .filter(el => /journey-archive-\d+$/.test(el.getAttribute('data-testid'))).length);
+      assertGte(rows, 1, 'archive should list at least one past issue');
+      // Playing a past issue starts a real run on that issue's seed.
+      await page.evaluate(() => {
+        const el = [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
+          .find(e => /journey-archive-\d+$/.test(e.getAttribute('data-testid')));
+        el.click();
+      });
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      const body = await text(page);
+      assert(!/journey\.archive\./.test(body), 'archive keys must not leak into the UI');
+    },
+  },
+
+  {
+    name: 'a broken streak offers one repair, and taking it restores the run',
+    async fn(page) {
+      // Seed a history with a real one-day gap, then reload so setup reads it.
+      await page.evaluate(() => {
+        const d = (n) => {
+          const t = new Date();
+          t.setDate(t.getDate() - n);
+          return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+        };
+        // played: 4,3 days ago … gap at 2 … played 1 day ago.
+        localStorage.setItem('trainerscodex.journey.streak', JSON.stringify({
+          playedDates: [d(4), d(3), d(1)].sort(), bestStreak: 2,
+        }));
+      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await openJourney(page);
+      await page.waitForSelector('[data-testid="journey-repair-offer"]', { timeout: 8000 });
+      const before = await page.$eval('[data-testid="journey-streak"]', el => el.innerText);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-repair"]').click());
+      await sleep(200);
+      const after = await page.$eval('[data-testid="journey-streak"]', el => el.innerText);
+      assert(after !== before, `streak line should change after a repair (was "${before}")`);
+      // The offer is spent — one free repair, not a permanent button.
+      const stillOffered = await has(page, '[data-testid="journey-repair-offer"]');
+      assert(!stillOffered, 'the repair offer must disappear once spent');
+      const body = await text(page);
+      assert(!/journey\.daily\.repair/.test(body), 'repair keys must not leak into the UI');
+    },
+  },
+
+  {
+    name: 'a finished run shows a named rank and a percentile, not just an integer',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      const rank = await page.$eval('[data-testid="journey-rank-name"]', el => el.innerText.trim());
+      assertGte(rank.length, 3, 'rank name should render');
+      assert(!/^journey\./.test(rank), `rank must be translated, got: ${rank}`);
+      const pct = await page.$eval('[data-testid="journey-rank-percentile"]', el => el.innerText.trim());
+      // The copy must say these are simulated careers, not real players — we do
+      // not have a player population to rank against.
+      assert(/simulated|simulad/i.test(pct), `percentile line must not imply real players: "${pct}"`);
+      assert(/\d/.test(pct), `percentile line should carry a number: "${pct}"`);
+      const rarity = await page.$eval('[data-testid="journey-roster-rarity"]', el => el.innerText.trim());
+      assert(/\d/.test(rarity), `roster rarity should carry a number: "${rarity}"`);
+      const body = await text(page);
+      assert(!/journey\.rank\./.test(body), 'rank keys must not leak into the UI');
+    },
+  },
+
+  {
     name: 'gym battles are shown as battles, with the badge attached to a win',
     async fn(page) {
       await openJourney(page);

@@ -21,9 +21,10 @@
 // upscaling softens edges rather than revealing sprite pixels.
 
 import { TYPE_COLORS } from '@/lib/constants';
-import { spriteUrl } from '@/lib/pokemon';
+import { spriteUrl, POKEMON_BY_ID } from '@/lib/pokemon';
 import { monEpithet, rosterCaption } from './content';
 import { displayLink } from './deeplink';
+import { resolveRank, rosterRarity } from './ranks';
 import type { JourneyRun } from './types';
 import type { Locale, Vars } from '@/i18n/strings';
 import { translate } from '@/i18n/strings';
@@ -311,6 +312,47 @@ export async function renderLegendCard(opts: LegendCardOptions): Promise<Blob> {
   c.fillStyle = dim;
   c.font = '26px "JetBrains Mono", monospace';
   c.fillText('/ 999', W / 2 + 92, scoreY + 104);
+
+  // ---------- rank + rarity ----------
+  // The score answers "how well did I do" only if you already know the range.
+  // A rank NAME and a percentile answer it standalone, which is what makes the
+  // card legible to someone scrolling past who has never played.
+  //
+  // Drawn as one measured line in the 50px gap between the score box and the
+  // roster. The card has no vertical slack left — the breakdown rows already
+  // finish ~9px above the footer — so this deliberately does not reflow the
+  // layout below it.
+  const rank = resolveRank(run.score);
+  const rarity = rosterRarity({
+    legendaryCount: run.roster.filter(m => POKEMON_BY_ID[m.id]?.legendary || POKEMON_BY_ID[m.id]?.mythical).length,
+    shinyCount: run.roster.filter(m => m.shiny).length,
+    eventCount: run.roster.filter(m => m.origin === 'event').length,
+    evolvedCount: run.roster.reduce((n, m) => n + (m.evolved ?? 0), 0),
+    archetype: run.setup.archetype,
+  });
+
+  const rankName = t(rank.nameKey);
+  const rankSub = `  ·  ${t('journey.rank.percentile', { pct: 100 - rank.percentile })}`
+    + `  ·  ${t('journey.rank.rosterRarity', { pct: rarity })}`;
+  const rankY = scoreY + 150;
+
+  // Two styles on one centred line, so the rank word carries the emphasis.
+  const nameFont = 'bold 24px "Sora", system-ui';
+  const subFont = '16px "JetBrains Mono", monospace';
+  c.textAlign = 'left';
+  c.font = nameFont;
+  const nameW = c.measureText(rankName).width;
+  c.font = subFont;
+  const subW = c.measureText(rankSub).width;
+  const startX = W / 2 - (nameW + subW) / 2;
+
+  c.font = nameFont;
+  c.fillStyle = primary;
+  c.fillText(rankName, startX, rankY);
+  c.font = subFont;
+  c.fillStyle = dim;
+  c.fillText(rankSub, startX + nameW, rankY);
+  c.textAlign = 'center';
 
   // ---------- roster silhouettes ----------
   const rosterY = 648;

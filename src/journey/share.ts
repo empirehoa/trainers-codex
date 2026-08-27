@@ -197,3 +197,18 @@ export function buildEmojiSummary(run: {
 
   return `${strip}\n${parts.join(' · ')}`;
 }
+
+/**
+ * The share line, with the rank word in it.
+ *
+ * `buildEmojiSummary` is all glyphs and numbers, which travels well but says
+ * nothing out loud. A rank is the part a person repeats — "I hit Champion" —
+ * so it gets its own line above the strip.
+ */
+export function buildShareText(run: {
+  stats: { badges: number; titles: number; shinies: number; peakRank: number; wins: number; losses: number };
+  chapterCount: number;
+  score: number;
+}, opts: { rankName: string; percentile: number }): string {
+  return `${opts.rankName} · ${run.score}/999 · top ${100 - opts.percentile}%\n${buildEmojiSummary(run)}`;
+}

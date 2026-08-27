@@ -7,9 +7,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  buildDailyLink, buildSeedLink, displayLink, JOURNEY_PATH, parseJourneyLink,
+  buildDailyLink, buildIssueLink, buildSeedLink, displayLink, JOURNEY_PATH, parseJourneyLink,
 } from './deeplink';
-import { dailySeed } from './prng';
+import { dailySeed, DAILY_EPOCH } from './prng';
+import { archiveSize, dateForIssue } from './archive';
 
 const ORIGIN = 'https://trainerscodex.com';
 
@@ -149,5 +150,52 @@ describe('link building', () => {
     // vitest runs in node here — there is no window, which is exactly the
     // situation the Legend Card renderer is in when called from a worker.
     expect(buildSeedLink({ seed: 5 })).toContain('trainerscodex.com/journey?seed=5');
+  });
+});
+
+
+describe('?issue= archive links', () => {
+  // These are written RELATIVE to the real current date on purpose. The parser
+  // bounds `?issue=` by today — a link to an issue that has not happened yet is
+  // not a puzzle — so absolute issue numbers would pass today and fail next
+  // week, which is exactly the kind of test that rots.
+  const size = archiveSize();
+  const latest = Math.max(1, size);
+
+  it('resolves an issue to the same run its date would', () => {
+    const date = dateForIssue(latest)!;
+    expect(date).not.toBeNull();
+    const viaIssue = parseJourneyLink(`?issue=${latest}`);
+    const viaDaily = parseJourneyLink(`?daily=${date}`);
+    expect(viaIssue.seed).toBe(viaDaily.seed);
+    expect(viaIssue.dailyDate).toBe(date);
+    expect(viaIssue.source).toBe('daily');
+  });
+
+  it('an issue from the future fails soft, never an error screen', () => {
+    for (const n of [size + 1, size + 500, 99999]) {
+      const parsed = parseJourneyLink(`?issue=${n}`);
+      expect(parsed.hadInvalidParams, `?issue=${n} should be rejected`).toBe(true);
+      expect(parsed.source).toBe('fresh');
+    }
+  });
+
+  it('garbage and non-issues also fail soft', () => {
+    for (const raw of ['0', '-4', 'abc', '', '1e9']) {
+      const parsed = parseJourneyLink(`?issue=${raw}`);
+      expect(parsed.source, `?issue=${raw} should not start a daily`).toBe('fresh');
+    }
+  });
+
+  it('issue 1 is always playable — it is launch day', () => {
+    const parsed = parseJourneyLink('?issue=1');
+    expect(parsed.source).toBe('daily');
+    expect(parsed.dailyDate).toBe(DAILY_EPOCH);
+  });
+
+  it('buildIssueLink round-trips through the parser', () => {
+    const link = buildIssueLink(latest, 'https://trainerscodex.com');
+    const parsed = parseJourneyLink(new URL(link).search);
+    expect(parsed.dailyDate).toBe(dateForIssue(latest));
   });
 });

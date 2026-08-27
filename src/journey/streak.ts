@@ -26,9 +26,25 @@ export interface StreakState {
   playedDates: string[];
   /** Longest run of consecutive days ever achieved. */
   bestStreak: number;
+  /**
+   * Repairs used, as the local dates they patched.
+   *
+   * Every daily game loses users permanently at the first broken streak, and
+   * none of the ones surveyed offers a way back. One free repair is the cheapest
+   * retention mechanic available here, and — per the Fallen London model of
+   * selling rate rather than power — it is a clean non-power Premium SKU later:
+   * it buys back a day, never an advantage.
+   *
+   * Stored as the patched dates rather than a counter so the history stays
+   * self-describing and `longestRun` needs no special case.
+   */
+  repairsUsed?: string[];
 }
 
-const EMPTY: StreakState = { playedDates: [], bestStreak: 0 };
+/** Free repairs granted, ever. Not per week — one, so it stays a real choice. */
+export const FREE_REPAIRS = 1;
+
+const EMPTY: StreakState = { playedDates: [], bestStreak: 0, repairsUsed: [] };
 
 export function loadStreak(): StreakState {
   try {
@@ -41,9 +57,16 @@ export function loadStreak(): StreakState {
     const bestStreak = typeof parsed.bestStreak === 'number' && parsed.bestStreak >= 0
       ? Math.floor(parsed.bestStreak)
       : 0;
+    const repairsUsed = Array.isArray(parsed.repairsUsed)
+      ? [...new Set(parsed.repairsUsed.filter(isValidDateString))].sort()
+      : [];
     // Recompute best from history rather than trusting the stored number —
     // cheap, and it self-heals a corrupted or hand-edited value.
-    return { playedDates, bestStreak: Math.max(bestStreak, longestRun(playedDates)) };
+    return {
+      playedDates,
+      bestStreak: Math.max(bestStreak, longestRun(playedDates)),
+      repairsUsed,
+    };
   } catch {
     return EMPTY;
   }
@@ -107,6 +130,77 @@ export function recordDailyPlay(dateStr = localDateString()): StreakState {
   const next: StreakState = {
     playedDates,
     bestStreak: Math.max(state.bestStreak, longestRun(playedDates)),
+    repairsUsed: state.repairsUsed ?? [],
+  };
+  saveStreak(next);
+  return next;
+}
+
+// ============================================================
+// STREAK REPAIR
+// ============================================================
+
+/**
+ * The single missed day that a repair would bridge, or null.
+ *
+ * Only ever ONE day, and only a day that actually rejoins two played stretches
+ * — a repair mends a streak, it does not extend one. Concretely: the gap must
+ * be exactly one day wide, with a played day on both sides.
+ *
+ * `today` is excluded deliberately. Today is not missed until it is over, and
+ * offering to repair it would sell the player something they can still earn.
+ */
+export function repairableDate(
+  state: StreakState,
+  today = localDateString(),
+): string | null {
+  if ((state.repairsUsed?.length ?? 0) >= FREE_REPAIRS) return null;
+  const played = new Set(state.playedDates);
+  if (played.size < 2) return null;
+
+  // Walk back from the most recent played day. The interesting gap is the one
+  // closest to now, because that is the streak the player is actually losing.
+  const sorted = [...state.playedDates].sort();
+  for (let i = sorted.length - 1; i > 0; i--) {
+    const later = sorted[i];
+    const earlier = sorted[i - 1];
+    const missed = addDays(earlier, 1);
+    // Exactly one day wide: earlier + 1 === missed, missed + 1 === later.
+    if (missed !== later && addDays(missed, 1) === later && missed !== today) {
+      return missed;
+    }
+  }
+  return null;
+}
+
+/** Repairs available right now. */
+export function repairsRemaining(state: StreakState): number {
+  return Math.max(0, FREE_REPAIRS - (state.repairsUsed?.length ?? 0));
+}
+
+/**
+ * Spend a repair on `dateStr`, bridging a one-day gap.
+ *
+ * Returns the new state unchanged when the repair is not legal, so a caller can
+ * fire this without pre-validating and never corrupt a history. The repaired day
+ * is recorded in BOTH `playedDates` (so the streak maths needs no special case)
+ * and `repairsUsed` (so the cost is spent and auditable).
+ */
+export function repairStreak(
+  dateStr: string,
+  today = localDateString(),
+): StreakState {
+  const state = loadStreak();
+  if (repairsRemaining(state) <= 0) return state;
+  if (!isValidDateString(dateStr) || dateStr === today) return state;
+  // Must be the gap the caller thinks it is — never trust a passed-in date.
+  if (repairableDate(state, today) !== dateStr) return state;
+
+  const playedDates = [...state.playedDates, dateStr].sort();
+  const next: StreakState = {
+    playedDates,
+    bestStreak: Math.max(state.bestStreak, longestRun(playedDates)),
+    repairsUsed: [...(state.repairsUsed ?? []), dateStr].sort(),
   };
   saveStreak(next);
   return next;
