@@ -149,24 +149,48 @@ const tests = [
 
   {
     name: 'the prepare step shows prize money and a priced reroll',
+    // Pinned seed. An earlier version of this test started a run on the setup
+    // screen's RANDOM default seed and asserted the rerolled card must differ —
+    // which is not a property the feature has: a reroll draws from the phase's
+    // pool and can legitimately redraw the same card. It passed standalone and
+    // failed under full-suite load, purely because the seed changed.
+    //
+    // "a reroll can change the card" is proved deterministically in
+    // src/journey/economy.test.ts across several reroll depths. What belongs
+    // here is the browser-side contract: the cost is shown, the reroll
+    // registers, and the price escalates.
+    pageOpts: { query: 'seed=8843' },
     async fn(page) {
       await openJourney(page);
       await startRun(page);
       await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
       await page.evaluate(() => document.querySelector('[data-testid="journey-prepare-toggle"]').click());
       await page.waitForSelector('[data-testid="journey-reroll"]', { timeout: 8000 });
+
       const money = await page.$eval('[data-testid="journey-money"]', el => el.innerText.trim());
       assert(/\d/.test(money), `money readout should carry a number, got "${money}"`);
-      const cardBefore = await page.$eval('[data-testid="journey-decision-prompt"]', el => el.innerText.trim());
+
+      // The first reroll of a run is free — that is what makes the mechanic
+      // discoverable without a tutorial.
+      const costBefore = await page.$eval('[data-testid="journey-reroll"]',
+        el => el.closest('div').innerText.trim());
+      assert(!/\u20BD\s*\d/.test(costBefore), `first reroll should read as free, got "${costBefore}"`);
+
       await page.evaluate(() => document.querySelector('[data-testid="journey-reroll"]').click());
-      await sleep(250);
-      const cardAfter = await page.$eval('[data-testid="journey-decision-prompt"]', el => el.innerText.trim());
-      assert(cardAfter !== cardBefore, 'rerolling should present a different decision');
+      await page.waitForFunction(() => {
+        const el = document.querySelector('[data-testid="journey-reroll"]');
+        return el && /\u20BD\s*\d/.test(el.closest('div').innerText);
+      }, { timeout: 8000 });
+
+      // Reroll registered and the ladder moved on: the next one has a price.
+      const costAfter = await page.$eval('[data-testid="journey-reroll"]',
+        el => el.closest('div').innerText.trim());
+      assert(/\u20BD\s*\d/.test(costAfter), `second reroll should be priced, got "${costAfter}"`);
+
       const body = await text(page);
       assert(!/journey\.prepare\.reroll/.test(body), 'reroll keys must not leak into the UI');
     },
   },
-
   {
     name: 'the daily archive lists past issues and one is playable',
     async fn(page) {
