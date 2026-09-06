@@ -14,6 +14,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual trigger, so the workflow can be exercised once without waiting for a
+  # push. NOTE: GitHub only registers a workflow from the DEFAULT branch, so
+  # neither this nor the Actions tab will show it until this file reaches main.
+  workflow_dispatch:
 
 # A second push to the same branch makes the first run irrelevant.
 concurrency:
