@@ -67,7 +67,7 @@ export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, onTog
     >
       <button onClick={() => onSelect(p)} className="w-full text-left p-2.5">
         <div className="flex items-start justify-between mb-1 gap-1">
-          <span className="font-mono text-[9px] text-muted-foreground">{padId(p.id)}</span>
+          <span className="font-mono text-[10px] text-muted-foreground">{padId(p.id)}</span>
           <div className="flex items-center gap-1">
             {p.legendary && (
               <Star size={9} className="shrink-0" style={{ color: '#fde047', fill: '#fde04766' }} />
@@ -91,7 +91,7 @@ export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, onTog
           />
           {badge && (
             <span
-              className="absolute top-0 left-0 px-1 py-0.5 text-[8px] font-mono font-bold uppercase tracking-wider rounded-br"
+              className="absolute top-0 left-0 px-1 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-br"
               style={{ background: badge.color, color: '#fff' }}
             >
               {badge.label}
@@ -99,7 +99,7 @@ export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, onTog
           )}
           {illegal && (
             <span
-              className="absolute top-0 right-0 px-1 py-0.5 text-[8px] font-mono font-bold uppercase tracking-wider rounded-bl"
+              className="absolute top-0 right-0 px-1 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-bl"
               style={{ background: 'hsl(var(--destructive))', color: '#fff' }}
             >
               BANNED

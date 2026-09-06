@@ -4,7 +4,7 @@ import {
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
   User, Wand2, ShoppingBag, LogIn, Cloud, Compass,
-  Sun, Moon, Sparkles, ClipboardList, Globe, MoreHorizontal
+  Sun, Moon, Sparkles, ClipboardList, Globe, MoreHorizontal, ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -207,6 +207,8 @@ export default function App() {
   // — the whole point of generating them (see scripts/gen-seo-pages.ts). Read
   // once at mount; the param is left in the URL so a refresh is idempotent.
   const [search, setSearch] = useState(initialSearchQuery);
+  // Empty-state preset chips: collapsed on phones (see the empty state below).
+  const [presetsOpen, setPresetsOpen] = useState(false);
   const [filterTypes, setFType] = useState<PokemonType[]>([]);
   const [filterGens, setFGens] = useState<number[]>([]);
   const [filterRoles, setFRoles] = useState<Role[]>([]);
@@ -857,25 +859,36 @@ export default function App() {
                   <span className="text-muted-foreground">// </span>{teamName.toLowerCase()}
                 </p>
               ) : trainer?.name ? (
-                <p className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden sm:block">
-                  <User size={8} className="inline mr-0.5" /> {trainer.name}
+                <p className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden lg:block">
+                  <User size={10} className="inline mr-0.5" /> {trainer.name}
                 </p>
               ) : (
-                <p className="font-mono text-[9px] text-muted-foreground mt-0.5 hidden sm:block">v5.0 · team analyzer</p>
+                /* Decorative only, and the first thing to give when space is
+                   tight: at 820px with 36px touch buttons it wrapped to three
+                   lines and squeezed the wordmark down to "tr…". Held back
+                   until 1024px, where the row has room to spare. */
+                <p className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden lg:block">v5.0 · team analyzer</p>
               )}
             </div>
           </div>
           <TooltipProvider delayDuration={150}>
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Desktop toolbar: full icon row (≥640px). The test harness runs
-                  at 1280px, so every icon button stays inline + queryable here.
-                  Mobile gets the MoreHorizontal overflow menu instead, so this
-                  row never pushes the document into horizontal scroll. */}
-              <div className="hidden sm:flex items-center gap-1.5">
+              {/* Desktop toolbar: the full icon row, ≥1024px only.
+                  This used to break at 640px, which put all 15 controls on
+                  tablets too. They fit there only because they were 32px and the
+                  wordmark was allowed to collapse — at 768px the cluster measures
+                  705px against a 768px viewport, so the brand truncated to "tr…"
+                  and its subtitle wrapped to three lines. Every overflow test
+                  still passed, because the header absorbed the pressure by
+                  shrinking rather than scrolling.
+                  Tablets now get the same overflow menu phones get: it was
+                  already built, already tested, and reads better than 15 cramped
+                  targets. The full row returns at 1024px where it genuinely fits. */}
+              <div className="hidden lg:flex items-center gap-1.5">
               {undoStack.length > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden sm:flex">
+                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden lg:flex">
                       <RotateCcw size={13} />
                     </Button>
                   </TooltipTrigger>
@@ -916,7 +929,7 @@ export default function App() {
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline" size="icon" onClick={() => setPublishOpen(true)}
-                    className="w-8 h-8 hidden sm:flex"
+                    className="w-8 h-8 hidden lg:flex"
                     aria-label="Publish public profile"
                   >
                     <Globe size={13} />
@@ -1033,11 +1046,14 @@ export default function App() {
 
               {/* Mobile overflow menu (<640px): every secondary action as a
                   labeled item so the header never overflows a phone viewport. */}
-              <div className="flex sm:hidden">
+              <div className="flex lg:hidden">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" className="w-8 h-8" aria-label="More actions">
-                      <MoreHorizontal size={16} />
+                    {/* The collapsed header carries two controls, so this one can
+                        take the full 44px touch target the crowded desktop row
+                        cannot afford. */}
+                    <Button variant="outline" size="icon" className="w-11 h-11" data-testid="more-actions" aria-label="More actions">
+                      <MoreHorizontal size={18} />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 font-mono text-xs">
@@ -1073,7 +1089,7 @@ export default function App() {
                 className="font-mono text-xs font-bold ml-1"
               >
                 <BarChart3 size={12} className="mr-1.5" />
-                <span className="hidden sm:inline">Analyze</span>
+                <span className="hidden lg:inline">Analyze</span>
               </Button>
             </div>
           </TooltipProvider>
@@ -1088,9 +1104,39 @@ export default function App() {
                  style={{ borderColor: 'hsl(var(--border))', background: 'linear-gradient(180deg, hsl(var(--primary)/0.06), transparent 70%)' }}>
               <div className="font-mono text-[10px] uppercase tracking-wider mb-2 text-primary">// status: awaiting team selection</div>
               <h2 className="font-display text-2xl sm:text-3xl mb-2 leading-tight">build your six</h2>
-              <p className="text-sm text-muted-foreground mb-5 max-w-xl leading-relaxed">
-                Search all {POKEMON_TOTAL} Pokémon — including legendaries, mythicals, Ultra Beasts, and Paradox forms. Pick shinies, customize movesets, check game compatibility, link to TCG cards, and generate shareable posters in 12 art styles. Order it as a T-shirt, hoodie, mug, or poster.
+              {/* Was a 60-word feature dump that ran six lines on a 390px phone and
+                  pushed the first Pokémon card past 1,022px — 1.2 screens of scrolling
+                  before the app showed what it does. The full list still lives in
+                  "How it works", one tap away, which is where someone who wants it looks. */}
+              <p className="text-sm text-muted-foreground mb-4 max-w-xl leading-relaxed">
+                All {POKEMON_TOTAL} Pokémon — every form, shiny and Tera type. Build a six,
+                watch its coverage score live, then turn it into a poster or a shirt.
               </p>
+
+              {/* Journey Mode is the most engaging thing in the app and, on a phone,
+                  it was the hardest to reach: the header collapses to two buttons
+                  under 640px, so starting a run meant tapping "More actions", then
+                  finding it in a 12-item menu. The empty state is the first thing
+                  anyone sees, so the run starts here instead. */}
+              {isEnabled('JOURNEY_MODE') && (
+                <button
+                  type="button"
+                  onClick={() => setJourneyOpen(true)}
+                  data-testid="journey-open-hero"
+                  className="w-full mb-2 flex items-center gap-3 rounded-md border border-primary/60 bg-primary/10 px-3 py-2.5 text-left hover:border-primary hover:bg-primary/15 transition-colors"
+                >
+                  <Compass size={18} className="text-primary shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block font-mono text-xs uppercase tracking-wider text-primary">
+                      {t('journey.title')}
+                    </span>
+                    <span className="block font-mono text-[10px] text-muted-foreground truncate">
+                      // a whole career in 3 minutes
+                    </span>
+                  </span>
+                  <ChevronDown size={16} className="ml-auto shrink-0 -rotate-90 text-primary/70" />
+                </button>
+              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                 <QuickStart onClick={loadRandom} icon={<Dices size={14} />} label="Random" sub="diverse roll" primary />
@@ -1099,26 +1145,44 @@ export default function App() {
                 <QuickStart onClick={() => setHelp(true)} icon={<HelpCircle size={14} />} label="How it works" sub="quick tour" />
               </div>
 
-              <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// themed presets</div>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {THEMED_TEAMS.map(s => (
-                  <Button key={s.id} variant="outline" size="sm"
-                          onClick={() => loadStarter(s)}
-                          className="font-mono text-xs hover:border-primary">
-                    {s.label}
-                  </Button>
-                ))}
-              </div>
+              {/* 20 preset chips are a great desktop shortcut and a wall on a phone:
+                  they wrapped to ten rows and buried the search box below the fold.
+                  Collapsed under a single tap at <640px, always open from `sm:` up.
+                  CSS-driven rather than a width check so there is no resize listener
+                  and no flash of the wrong state on first paint. */}
+              <button
+                type="button"
+                onClick={() => setPresetsOpen(v => !v)}
+                aria-expanded={presetsOpen}
+                data-testid="toggle-presets"
+                className="sm:hidden w-full min-h-11 flex items-center justify-between gap-2 rounded-md border px-3 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:border-primary hover:text-primary"
+              >
+                <span>// {THEMED_TEAMS.length + STARTER_TEAMS.length} preset teams</span>
+                <ChevronDown size={14} className={presetsOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+              </button>
 
-              <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// by region</div>
-              <div className="flex flex-wrap gap-1.5">
-                {STARTER_TEAMS.map(s => (
-                  <Button key={s.id} variant="outline" size="sm"
-                          onClick={() => loadStarter(s)}
-                          className="font-mono text-xs hover:border-primary">
-                    {s.label}
-                  </Button>
-                ))}
+              <div className={presetsOpen ? 'block pt-3 sm:pt-0' : 'hidden sm:block'}>
+                <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// themed presets</div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {THEMED_TEAMS.map(s => (
+                    <Button key={s.id} variant="outline" size="sm"
+                            onClick={() => loadStarter(s)}
+                            className="font-mono text-xs hover:border-primary">
+                      {s.label}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// by region</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {STARTER_TEAMS.map(s => (
+                    <Button key={s.id} variant="outline" size="sm"
+                            onClick={() => loadStarter(s)}
+                            className="font-mono text-xs hover:border-primary">
+                      {s.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
           </section>
@@ -1126,14 +1190,19 @@ export default function App() {
 
         {/* ============== SEARCH + FILTERS ============== */}
         <div className="space-y-3">
-          <div className="flex gap-2 items-center">
-            <div className="relative flex-1">
+          {/* Wraps at <640px so the search field gets its own full-width row.
+              Sharing one row with the filter and sort controls squeezed it to
+              ~150px on a 390px phone, which clipped the placeholder mid-word.
+              The `/` hint is dropped on touch, where there is no keyboard to
+              press it on. */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative w-full sm:w-auto sm:flex-1 order-first sm:order-none">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={searchRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="search by name or # · press / to focus"
+                placeholder="search by name or #"
                 className="pl-9 font-mono"
               />
             </div>
@@ -1143,7 +1212,7 @@ export default function App() {
               <FilterIcon size={12} className="mr-1" />
               <span className="hidden sm:inline">filters</span>
               {(filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)) > 0 && (
-                <span className="ml-1 bg-primary text-primary-foreground rounded-full px-1.5 py-0 text-[9px]">
+                <span className="ml-1 bg-primary text-primary-foreground rounded-full px-1.5 py-0 text-[10px]">
                   {filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)}
                 </span>
               )}

@@ -203,12 +203,12 @@ export function TeamMemberConfigDialog({
                       {m ? (
                         <>
                           <div className="text-[10px] font-mono truncate" style={{ color: TYPE_COLORS[m.type] }}>{m.display}</div>
-                          <div className="text-[8px] font-mono opacity-70 mt-0.5">
+                          <div className="text-[10px] font-mono opacity-70 mt-0.5">
                             {m.power > 0 ? `${m.power}pwr` : 'status'} · {m.accuracy ? `${m.accuracy}%` : '—'}
                           </div>
                           <button
                             onClick={() => toggleMove(m.id)}
-                            className="text-[8px] font-mono opacity-50 hover:opacity-100 mt-0.5"
+                            className="text-[10px] font-mono opacity-50 hover:opacity-100 mt-0.5"
                           >
                             remove
                           </button>
@@ -269,7 +269,7 @@ export function TeamMemberConfigDialog({
                               {m.display}
                               {isStab && <Zap size={8} className="text-primary shrink-0" />}
                             </div>
-                            <div className="text-[9px] font-mono opacity-60">
+                            <div className="text-[10px] font-mono opacity-60">
                               {m.category} · {m.power > 0 ? `${m.power}pwr` : 'status'}
                               {m.accuracy ? ` · ${m.accuracy}%` : ''}
                             </div>
@@ -340,7 +340,7 @@ export function TeamMemberConfigDialog({
                           onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '0.2'; }}
                         />
                       </div>
-                      <div className="text-[9px] font-mono truncate flex items-center gap-1">
+                      <div className="text-[10px] font-mono truncate flex items-center gap-1">
                         {SPRITE_VARIANT_LABELS[v]}
                         {isPremium && <span className="text-primary">·premium</span>}
                       </div>
@@ -390,7 +390,7 @@ export function TeamMemberConfigDialog({
                     <SelectItem key={item.id} value={item.id} className="font-mono text-xs">
                       <div className="flex flex-col">
                         <span>{item.label}</span>
-                        <span className="text-[9px] text-muted-foreground">{item.effect}</span>
+                        <span className="text-[10px] text-muted-foreground">{item.effect}</span>
                       </div>
                     </SelectItem>
                   ))}

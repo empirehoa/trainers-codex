@@ -168,7 +168,7 @@ export function StatStrip({ stats }: { stats: CareerStats }) {
     <div className="grid grid-cols-3 gap-1.5" data-testid="journey-stats">
       {cells.map(([label, value]) => (
         <div key={label} className="rounded border px-2 py-1.5" style={{ borderColor: 'hsl(var(--border))' }}>
-          <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground truncate">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground truncate">
             {label}
           </div>
           <div className="font-mono text-sm font-semibold">{value}</div>

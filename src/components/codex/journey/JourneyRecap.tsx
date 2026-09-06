@@ -46,7 +46,7 @@ function BattleRow({ battle: b }: { battle: OpponentResult }) {
             </span>
           )}
         </div>
-        <div className="font-mono text-[9px] text-muted-foreground mt-0.5">
+        <div className="font-mono text-[10px] text-muted-foreground mt-0.5">
           {t('journey.battle.level', { level: b.level })} · {b.specialty}
           {b.strongPicks?.length ? ` · ${t('journey.battle.strong', { n: b.strongPicks.length })}` : ''}
           {b.weakPicks?.length ? ` · ${t('journey.battle.weak', { n: b.weakPicks.length })}` : ''}
@@ -95,7 +95,7 @@ export function JourneyRecap({
               <span className="font-mono text-[10px] uppercase tracking-wider text-primary">
                 {t(ch.titleKey)}
               </span>
-              <span className="font-mono text-[9px] text-muted-foreground">
+              <span className="font-mono text-[10px] text-muted-foreground">
                 {t('journey.sim.age', { age: ch.age })}
               </span>
             </div>
@@ -113,7 +113,7 @@ export function JourneyRecap({
               {!!ch.delta.catches && <Delta label={t('journey.stat.catches')} value={ch.delta.catches} positive />}
               {!!ch.delta.shinies && <Delta label={t('journey.stat.shinies')} value={ch.delta.shinies} positive />}
               {!!ch.delta.titles && (
-                <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-primary/15 text-primary flex items-center gap-1">
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary flex items-center gap-1">
                   <Trophy size={9} /> +{ch.delta.titles}
                 </span>
               )}
@@ -175,7 +175,7 @@ export function JourneyRecap({
 function Delta({ label, value, positive }: { label: string; value?: number; positive?: boolean }) {
   if (!value) return null;
   return (
-    <span className="font-mono text-[9px] px-1.5 py-0.5 rounded"
+    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded"
           style={{
             background: positive ? 'hsl(var(--primary)/0.12)' : 'hsl(var(--muted))',
             color: positive ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',

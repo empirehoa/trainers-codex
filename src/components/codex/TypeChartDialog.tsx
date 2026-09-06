@@ -21,7 +21,7 @@ export function TypeChartDialog({ open, onClose }: TypeChartDialogProps) {
 
         <div className="p-4">
           <div className="overflow-x-auto scroll-x">
-            <table className="font-mono text-[9px] border-separate" style={{ borderSpacing: '1px' }}>
+            <table className="font-mono text-[10px] border-separate" style={{ borderSpacing: '1px' }}>
               <thead>
                 <tr>
                   <th className="text-muted-foreground p-0.5 text-left">ATK ↓ / DEF →</th>

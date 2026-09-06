@@ -149,7 +149,7 @@ export function LibraryDialog({
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="min-w-0 flex-1">
                     <div className="font-mono text-sm truncate">{t.name}</div>
-                    <div className="font-mono text-[9px] text-muted-foreground">
+                    <div className="font-mono text-[10px] text-muted-foreground">
                       saved {new Date(t.createdAt).toLocaleDateString()}
                     </div>
                   </div>
@@ -181,7 +181,7 @@ export function LibraryDialog({
                          }}>
                       {p ? <img src={pixelSprite(p.id, shiny)} alt="" className="pixel-img w-full h-full object-contain" loading="lazy"
                                 onError={(e) => { if (shiny) (e.currentTarget as HTMLImageElement).src = pixelSprite(p.id); }} /> : null}
-                      {shiny && <span className="absolute -top-1 -right-0.5 text-[8px]" title="shiny">⭐</span>}
+                      {shiny && <span className="absolute -top-1 -right-0.5 text-[10px]" title="shiny">⭐</span>}
                     </div>
                   );
                 })}

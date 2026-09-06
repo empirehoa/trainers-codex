@@ -172,7 +172,7 @@ function TeamCard({ team }: { team: PublicTeam }) {
               <img src={pixelSprite(m.id, m.shiny)} alt="" className="pixel-img w-full h-full object-contain" loading="lazy"
                    onError={(e) => { if (m.shiny) (e.currentTarget as HTMLImageElement).src = pixelSprite(m.id); }} />
             </div>
-            <div className="text-[9px] font-mono truncate w-full text-center">{m.nickname || p?.display || `#${m.id}`}</div>
+            <div className="text-[10px] font-mono truncate w-full text-center">{m.nickname || p?.display || `#${m.id}`}</div>
             {p && <div className="flex gap-0.5">{p.types.map(t => <TypePill key={t} type={t} sm />)}</div>}
           </div>
         ))}

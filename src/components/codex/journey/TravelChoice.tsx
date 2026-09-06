@@ -26,7 +26,7 @@ export function TravelChoice({ options, onTravel }: Props) {
       <div className="font-mono text-[10px] uppercase tracking-wider text-primary mb-1.5 flex items-center gap-1">
         <Plane size={11} /> {t('journey.travel.heading')}
       </div>
-      <p className="font-mono text-[9px] text-muted-foreground mb-2">{t('journey.travel.sub')}</p>
+      <p className="font-mono text-[10px] text-muted-foreground mb-2">{t('journey.travel.sub')}</p>
       <div className="space-y-1.5">
         {options.map(o => (
           <button
@@ -38,12 +38,12 @@ export function TravelChoice({ options, onTravel }: Props) {
           >
             <div className="flex items-center justify-between gap-2">
               <span className="font-mono text-[11px] font-semibold">{o.label}</span>
-              <span className="font-mono text-[9px] text-muted-foreground shrink-0">
+              <span className="font-mono text-[10px] text-muted-foreground shrink-0">
                 {t('journey.travel.legendaries', { n: o.legendaryCount })}
               </span>
             </div>
             {o.formLabel && (
-              <div className="font-mono text-[9px] text-emerald-500 mt-0.5">{o.formLabel}</div>
+              <div className="font-mono text-[10px] text-emerald-500 mt-0.5">{o.formLabel}</div>
             )}
             <div className="flex gap-0.5 mt-1">
               {o.previewIds.map(id => (

@@ -36,7 +36,7 @@ function RosterMon({ m, shiny }: { m: Pokemon; shiny?: boolean }) {
         </div>
         <div className="flex items-center gap-1 mt-0.5">
           {m.types.map(t => <TypePill key={t} type={t} sm />)}
-          <span className="text-[9px] font-mono text-muted-foreground ml-1">{padId(m.id)} · BST {m.bst}</span>
+          <span className="text-[10px] font-mono text-muted-foreground ml-1">{padId(m.id)} · BST {m.bst}</span>
         </div>
       </div>
     </div>
@@ -184,7 +184,7 @@ export function SharedTeamLanding({
                   <span className="flex items-center gap-1"><Swords size={10} className="text-red-400" /> threatened by</span>
                   <span className="flex items-center gap-1"><Gauge size={10} /> speed {matchup.mySpeedScore}–{matchup.theirSpeedScore}</span>
                 </div>
-                <p className="text-[9px] font-mono text-muted-foreground/70 mt-2 text-center">
+                <p className="text-[10px] font-mono text-muted-foreground/70 mt-2 text-center">
                   type-coverage + base-speed preview · open the analysis panel after loading for full damage calc
                 </p>
               </div>

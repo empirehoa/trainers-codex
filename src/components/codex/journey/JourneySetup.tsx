@@ -79,7 +79,7 @@ export function JourneySetup({
             {t('journey.setup.seedShared', { seed: sharedSeed })}
           </div>
           <Button variant="ghost" size="sm" onClick={onClearShared}
-                  className="font-mono text-[9px] shrink-0 text-muted-foreground hover:text-primary">
+                  className="font-mono text-[10px] shrink-0 text-muted-foreground hover:text-primary">
             {t('journey.setup.seedClear')}
           </Button>
         </div>
@@ -297,7 +297,7 @@ export function JourneySetup({
                         {t('journey.archive.issue', { n: e.issue })}
                         <span className="text-muted-foreground ml-1.5">{e.date}</span>
                       </span>
-                      <span className="font-mono text-[9px] shrink-0"
+                      <span className="font-mono text-[10px] shrink-0"
                             style={{ color: e.played ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}>
                         {e.played ? t('journey.archive.played') : t('journey.archive.unplayed')}
                       </span>

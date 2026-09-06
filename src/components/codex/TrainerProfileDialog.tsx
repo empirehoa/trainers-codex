@@ -342,7 +342,7 @@ export function TrainerProfileDialog({ open, onClose, trainer, onSave }: Trainer
               maxLength={80} rows={2}
               className="font-mono text-xs resize-none"
             />
-            <div className="text-[9px] font-mono text-muted-foreground text-right mt-1">{motto.length}/80</div>
+            <div className="text-[10px] font-mono text-muted-foreground text-right mt-1">{motto.length}/80</div>
           </section>
         </div>
 

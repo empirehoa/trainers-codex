@@ -134,7 +134,7 @@ export function AreaMap({ seed, region, defaultOpen = false }: {
           {t('journey.map.title', { region: atlas.label })}
         </span>
         <span className="flex items-center gap-2">
-          <span className="font-mono text-[9px] text-muted-foreground truncate max-w-[9rem]"
+          <span className="font-mono text-[10px] text-muted-foreground truncate max-w-[9rem]"
                 data-testid="journey-map-here">
             {here?.name ?? ''}
           </span>
@@ -202,10 +202,10 @@ export function AreaMap({ seed, region, defaultOpen = false }: {
           </svg>
 
           <div className="flex items-center justify-between gap-2 mt-1">
-            <span className="font-mono text-[9px] text-muted-foreground">
+            <span className="font-mono text-[10px] text-muted-foreground">
               {t('journey.map.legend')}
             </span>
-            <span className="font-mono text-[9px] text-primary" data-testid="journey-map-badges">
+            <span className="font-mono text-[10px] text-primary" data-testid="journey-map-badges">
               {t('journey.map.badges', { n: region.regionBadges, total: 8 })}
             </span>
           </div>

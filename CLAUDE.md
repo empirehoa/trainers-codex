@@ -55,7 +55,7 @@ src/
   App.tsx                          ← main shell, header, team bar, modals wired
   main.tsx                         ← React root
   components/
-    ui/                            ← shadcn primitives (don't modify unless adding)
+    ui/                            ← shadcn primitives, 14 of them (see gotcha #24)
     codex/                         ← all custom components
       AnalysisSheet.tsx            ← side panel with defensive/offensive/threats/game-compat
       GameCompatibilitySection.tsx
@@ -139,7 +139,7 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 21 suites, 212 tests
+  test-*.mjs                       ← 21 suites, 222 tests
 ```
 
 ## Build + bundle workflow
@@ -219,7 +219,7 @@ pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
 pnpm test:unit     # vitest · 331 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
                    #            content health, i18n, deeplink, streak, analytics, prepare
-pnpm test:browser  # puppeteer · 21 suites / 212 tests (incl. 44 Journey Mode, 7 favorites,
+pnpm test:browser  # puppeteer · 21 suites / 222 tests (incl. 44 Journey Mode, 16 responsive,
                    #            10 SEO pages — the last needs `pnpm build` for dist/)
 (cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
@@ -371,7 +371,42 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     (`import raw from '@/data/pokemon-data.json'`) instead — `resolveJsonModule`
     is on and that is what the rest of the suite does.
 
-23. **A build-time script that shares code with `src/` must import with an
+24. **Only add a shadcn component when something imports it.** 26 of the 40
+    vendored `ui/` primitives were never imported by app code — ~2,250 dead
+    lines carrying 26 npm dependencies, plus a complete second toast stack
+    (`ui/toast` + `ui/toaster` + `hooks/use-toast`) that duplicated Sonner,
+    which is what the app actually uses. Vite tree-shook them out of the
+    bundle, so the cost was invisible there and real everywhere else: install
+    size, audit surface, and lint warnings on files nobody ran. The directory
+    is now 14 components, all reachable. `shadcn add` pulls a dependency —
+    only run it when you are about to import the result.
+
+25. **The header is the tightest layout in the app; screenshot it after any
+    change to it.** It carries 15 controls and every one competes with the
+    wordmark. Growing the icon buttons 32px → 36px for touch silently
+    truncated the brand to "tr…" at 768px with its subtitle wrapped to three
+    lines — and *every overflow assertion still passed*, because the header
+    relieves pressure by collapsing its own children rather than scrolling the
+    document. Overflow tests cannot see this class of bug. The full icon row is
+    now `lg:` (≥1024px) and everything below gets the overflow menu;
+    `test-responsive.mjs` asserts the wordmark renders un-clipped and
+    un-wrapped at 768/820/1024.
+
+26. **Mobile's enemy is the empty state, not the bundle.** Boot is 584ms and
+    the heap 20MB, but on a 390px phone the first Pokémon card sat at 1,022px —
+    1.2 screens of scrolling past a 60-word intro and 20 always-open preset
+    chips before the app showed what it does. Trimming the copy and collapsing
+    the presets behind one tap moved it to 545px, better than desktop. Judge
+    mobile by distance-to-first-content, not load time. `test-responsive.mjs`
+    pins it under one screen.
+
+27. **A feature that only exists in the overflow menu does not exist on a
+    phone.** Journey Mode is the app's most engaging surface and, below the
+    header breakpoint, reaching it meant tapping "More actions" and hunting a
+    12-item list. It now has a first-screen CTA in the empty state. Anything
+    you would put in the marketing copy needs a reachable entry point at 390px.
+
+28. **A build-time script that shares code with `src/` must import with an
     explicit `.ts` extension.** `scripts/gen-seo-pages.ts` runs under Node's
     native type stripping, which is real ESM: extensionless specifiers do not
     resolve. `allowImportingTsExtensions` is already on, so
@@ -390,7 +425,10 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
   scientific-instrument. Headings use `font-display` (Major Mono Display).
   Body copy in mons / dialogs uses `font-sans` only sparingly.
 - **`text-[10px]` for labels, `text-xs` (12px) for body, `text-sm` (14px) for important UI.**
-  No arbitrary text sizes outside this scale.
+  No arbitrary text sizes outside this scale. This had drifted to 98 uses of
+  `text-[8px]`/`text-[9px]` before being pulled back to the floor; 8px is not
+  readable on a phone. `test-responsive.mjs` now fails on anything under 10px,
+  so the scale is enforced rather than merely documented.
 - **Tailwind not BEM/CSS modules.** Inline styles are fine for one-offs
   involving type colors (we already use TypeScript type-color lookups).
 - **Components are functional, no classes.** Hooks only.

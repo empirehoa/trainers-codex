@@ -193,7 +193,7 @@ export function PosterStudioDialog({
                       <span className="font-mono text-xs font-semibold">{s.label}</span>
                       {locked && <Lock size={10} className="text-primary shrink-0" />}
                       {!locked && s.premium && (
-                        <span className="text-[8px] font-mono uppercase tracking-wider text-primary">PRO</span>
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-primary">PRO</span>
                       )}
                       {isPicked && !locked && <Check size={11} className="text-primary shrink-0" />}
                     </div>

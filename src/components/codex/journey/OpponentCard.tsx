@@ -41,13 +41,13 @@ export function OpponentCard({ opponent, advantage }: { opponent: Opponent; adva
                data-testid="journey-opponent-name">
             {t('journey.opponent.vs', { name: opponent.name })}
           </div>
-          <div className="font-mono text-[9px] text-muted-foreground truncate">
+          <div className="font-mono text-[10px] text-muted-foreground truncate">
             {opponent.title} · {t('journey.opponent.specialist', {
               type: opponent.specialty, level: opponent.level,
             })}
           </div>
           {opponent.ghost && (
-            <div className="font-mono text-[9px] text-primary truncate" data-testid="journey-opponent-ghost">
+            <div className="font-mono text-[10px] text-primary truncate" data-testid="journey-opponent-ghost">
               {t('journey.opponent.ghost', { score: opponent.ghost.score })}
             </div>
           )}
@@ -61,7 +61,7 @@ export function OpponentCard({ opponent, advantage }: { opponent: Opponent; adva
         </div>
       </div>
       <div className={cn(
-        'font-mono text-[9px] mt-1',
+        'font-mono text-[10px] mt-1',
         edge === 'advantage' ? 'text-emerald-500'
           : edge === 'disadvantage' ? 'text-destructive' : 'text-muted-foreground',
       )} data-testid="journey-opponent-edge">
@@ -82,7 +82,7 @@ export function QuestStrip({ quests }: { quests: Quest[] }) {
     <div className="rounded-md border px-2.5 py-2"
          style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--card))' }}
          data-testid="journey-quests">
-      <div className="font-mono text-[9px] uppercase tracking-wider text-primary mb-1.5">
+      <div className="font-mono text-[10px] uppercase tracking-wider text-primary mb-1.5">
         {t('journey.quest.heading')}
       </div>
       <div className="space-y-1">
@@ -95,7 +95,7 @@ export function QuestStrip({ quests }: { quests: Quest[] }) {
             )} title={t(q.descKey)}>
               {t(q.titleKey)}
             </span>
-            <span className="font-mono text-[9px] text-muted-foreground shrink-0">
+            <span className="font-mono text-[10px] text-muted-foreground shrink-0">
               {t('journey.quest.progress', { n: q.progress, total: q.target })}
             </span>
             <div className="w-10 h-1 rounded-full overflow-hidden shrink-0"
@@ -122,7 +122,7 @@ export function CrownStrip({ crowns }: { crowns: RegionCrown[] }) {
       <Crown size={11} className="text-yellow-400 shrink-0" />
       {crowns.map(c => (
         <span key={c.regionId}
-              className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-yellow-400/50 text-yellow-400">
+              className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-yellow-400/50 text-yellow-400">
           {t('journey.crown.earned', { region: getRegion(c.regionId).label })}
         </span>
       ))}
@@ -146,7 +146,7 @@ export function TravelPicker({
       <div className="font-mono text-[11px] font-semibold text-primary mb-0.5">
         {t('journey.travel.title')}
       </div>
-      <p className="font-mono text-[9px] text-muted-foreground mb-2">
+      <p className="font-mono text-[10px] text-muted-foreground mb-2">
         {t('journey.travel.subtitle')}
       </p>
       <div className="space-y-1.5">
@@ -167,7 +167,7 @@ export function TravelPicker({
                 ))}
               </div>
             </div>
-            <div className="font-mono text-[9px] text-muted-foreground mt-0.5">
+            <div className="font-mono text-[10px] text-muted-foreground mt-0.5">
               {o.formLabel ? `${o.formLabel} · ` : ''}
               {t('journey.travel.legendaries', { n: o.legendaryCount })}
             </div>

@@ -77,7 +77,7 @@ export function GameCompatibilitySection({ team }: GameCompatibilitySectionProps
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="font-mono text-xs">{r.game.shortLabel}</div>
                   <div className="flex items-center gap-1.5">
-                    <Badge variant="outline" className="font-mono text-[9px]">{r.game.console}</Badge>
+                    <Badge variant="outline" className="font-mono text-[10px]">{r.game.console}</Badge>
                     {r.playable
                       ? <CheckCircle2 size={11} className="text-emerald-400" />
                       : r.available.length > 0
@@ -88,13 +88,13 @@ export function GameCompatibilitySection({ team }: GameCompatibilitySectionProps
                 <div className="h-1 rounded overflow-hidden mb-1" style={{ background: 'hsl(var(--muted))' }}>
                   <div className="h-full transition-all" style={{ width: `${pct}%`, background: color }} />
                 </div>
-                <div className="text-[9px] font-mono text-muted-foreground flex items-center justify-between">
+                <div className="text-[10px] font-mono text-muted-foreground flex items-center justify-between">
                   <span>{r.available.length}/{pokes.length} transferable</span>
                   <span className="opacity-70">{r.game.releaseYear}</span>
                 </div>
                 {r.missing.length > 0 && (
                   <div className="mt-1.5 flex items-center gap-1 overflow-x-auto scroll-x">
-                    <span className="text-[9px] font-mono text-muted-foreground shrink-0">missing:</span>
+                    <span className="text-[10px] font-mono text-muted-foreground shrink-0">missing:</span>
                     {r.missing.map(p => (
                       <img
                         key={p.id}

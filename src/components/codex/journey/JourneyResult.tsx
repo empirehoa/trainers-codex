@@ -400,7 +400,7 @@ export function JourneyResult({
           <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             // {t('journey.result.roster')}
           </div>
-          <div className="text-[9px] font-mono text-muted-foreground" data-testid="journey-result-dex">
+          <div className="text-[10px] font-mono text-muted-foreground" data-testid="journey-result-dex">
             {t('journey.party.dexCount', { caught: run.dex.caught.length, seen: run.dex.seen.length })}
           </div>
         </div>
@@ -410,7 +410,7 @@ export function JourneyResult({
                  style={{ borderColor: i === 0 ? 'hsl(var(--primary))' : 'hsl(var(--border))' }}>
               <img src={pixelSprite(entry.id, entry.shiny)} alt="" width={40} height={40}
                    className="pixelated mx-auto" loading="lazy" />
-              <div className="font-mono text-[8px] truncate text-muted-foreground">
+              <div className="font-mono text-[10px] truncate text-muted-foreground">
                 {rosterCaption(entry.id)}{entry.shiny ? ' ★' : ''}
               </div>
             </div>

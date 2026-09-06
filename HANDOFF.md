@@ -5,6 +5,82 @@ Claude Code. Read CLAUDE.md first for conventions and gotchas.
 
 ---
 
+## v13 — Audit, simplification, and the mobile experience (Sep 2026)
+
+A full audit: measure first, then cut. Boot was already healthy — **584ms to
+header, 20MB heap, 0 cumulative layout shift, 46ms to filter 1,307 entries** —
+so the wins were not in the bundle. They were in dead weight, in the phone
+experience, and in reachability.
+
+### Simplification
+
+**26 of the 40 vendored `ui/` components were never imported.** ~2,250 dead
+lines carrying **26 npm dependencies**, plus a complete second toast system
+(`ui/toast` + `ui/toaster` + `hooks/use-toast`) duplicating Sonner, which is
+what the app actually uses. Vite tree-shook them out of the bundle, so the cost
+was invisible in the artifact and real everywhere else: install size, audit
+surface, and lint warnings on files nobody ran. Dependencies are down from 44 to
+18, and eslint warnings from 23 to 19 with zero errors throughout.
+
+### Mobile was the real problem, and it was not performance
+
+On a 390px phone the first Pokémon card sat at **1,022px — 1.2 screens of
+scrolling** past a 60-word intro and 20 always-expanded preset chips before the
+app showed what it does. Desktop was 0.72 screens. Mobile was 68% worse on
+distance-to-first-content while being identical on every load metric.
+
+| | before | after |
+|---|---:|---:|
+| first card, 390px phone | 1,022px (1.21 screens) | **545px (0.65)** |
+| first card, 820px tablet | 738px (0.63) | **692px (0.59)** |
+| search field width, 390px | ~150px (placeholder clipped) | **full row** |
+| text below the 10px floor | 98 occurrences | **0** |
+| taps to start Journey Mode on a phone | 3 (menu → scroll → item) | **1** |
+
+The intro was trimmed to two lines, the presets collapsed behind a single tap
+under 640px, and the search field given its own full-width row.
+
+### Journey Mode was unreachable on the device most people hold
+
+The header collapses to two buttons under the breakpoint, so starting a run
+meant tapping "More actions" and hunting a 12-item menu — for the feature most
+likely to make someone share the app. It now has a first-screen CTA in the
+empty state, above the fold at 239px.
+
+### A bug that every existing test passed
+
+Growing the header's icon buttons from 32px to 36px for touch **truncated the
+wordmark to "tr…" at 768px** with its subtitle wrapped to three lines. Every
+overflow assertion still passed: the header relieves pressure by collapsing its
+own children rather than scrolling the document, so overflow tests are blind to
+it. Caught by screenshot, not by the suite.
+
+The fix was better than the workaround: the full 15-icon row now starts at
+1024px, and everything below gets the overflow menu that phones already had —
+already built, already tested, and far better than 15 cramped targets on an
+iPad. With only two controls left in the collapsed header, those two got a
+genuine 44px touch target.
+
+### Guards added
+
+`test-responsive.mjs` went from 6 tests to 16 — tablet widths were previously
+untested entirely, falling into the "desktop" branch unchecked. It now pins
+distance-to-first-content, the 10px type floor, the preset disclosure, the
+Journey CTA, and an un-clipped wordmark at 768/820/1024.
+
+**Suite: 331 unit + 222 browser (21 suites) + 19 worker = 572 passing, 0 eslint
+errors.**
+
+### Not done
+
+- The 19 remaining eslint warnings are `react-hooks` rules on pre-existing
+  components (10 in `App.tsx`); their fix is a restructure, not an edit.
+- `App.tsx` is 1,600 lines with 15 `useEffect`s. It is the next thing to split.
+- 15 controls in the header is the root cause of the sizing ceiling. Reducing
+  that count would let the desktop row take proper touch targets too.
+
+---
+
 ## v12 — Static reference pages (Sep 2026)
 
 ### The finding

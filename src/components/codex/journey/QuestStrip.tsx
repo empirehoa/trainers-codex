@@ -16,7 +16,7 @@ export function QuestStrip({ quests }: { quests: Quest[] }) {
     <div className="rounded-md border px-2.5 py-2"
          style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--card))' }}
          data-testid="journey-quests">
-      <div className="font-mono text-[9px] uppercase tracking-wider text-primary mb-1.5 flex items-center gap-1">
+      <div className="font-mono text-[10px] uppercase tracking-wider text-primary mb-1.5 flex items-center gap-1">
         <Target size={10} /> {t('journey.quest.heading')}
       </div>
       <div className="space-y-1.5">
@@ -30,7 +30,7 @@ export function QuestStrip({ quests }: { quests: Quest[] }) {
                 {q.complete && <Check size={9} />}
                 {t(q.titleKey, { n: q.target })}
               </span>
-              <span className="font-mono text-[9px] text-muted-foreground shrink-0">
+              <span className="font-mono text-[10px] text-muted-foreground shrink-0">
                 {q.progress}/{q.target}
               </span>
             </div>
