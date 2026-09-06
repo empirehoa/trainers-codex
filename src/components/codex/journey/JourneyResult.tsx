@@ -12,6 +12,7 @@ import { renderLegendCard } from '@/journey/legend-card';
 import { buildDailyLink, buildSeedLink } from '@/journey/deeplink';
 import { dailyIssueNumber } from '@/journey/prng';
 import { resolveRank, rosterRarity } from '@/journey/ranks';
+import { AreaMap } from './AreaMap';
 import { canRecordVideo, renderCardVideo } from '@/journey/card-video';
 import {
   buildEmojiSummary, canShareFile, copyImageToClipboard, copyTextToClipboard,
@@ -260,6 +261,13 @@ export function JourneyResult({
                data-testid="journey-roster-rarity">
             {t('journey.rank.rosterRarity', { pct: rarity })}
           </div>
+        </div>
+
+        {/* The road walked. Open by default here — mid-run the map is a
+            reference you consult, but on the retired beat it is part of the
+            artifact, and hiding it behind a tap loses the moment. */}
+        <div className="text-left">
+          <AreaMap seed={run.setup.seed} region={run.region} defaultOpen />
         </div>
 
         <Button onClick={onRevealCard} className="w-full font-mono text-xs font-bold h-11"

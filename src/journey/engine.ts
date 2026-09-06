@@ -1152,8 +1152,21 @@ function chainAt(opts: {
   if (!opponent) return [];
 
   if (phase === 'gym-circuit' && opponent.kind === 'gym') {
-    const next = gymLeaders(seed, regionId)[earnedHere + 1];
-    return next ? [opponent, next] : [opponent];
+    // Up to THREE leaders on a winning day, not two.
+    //
+    // The gym phase is ~26% of a 12-20 chapter career, which is about four
+    // chapters. At a two-long chain and a 66% gym win rate that yields ~1.1
+    // badges per chapter — a median of 4 out of 8, with the full circuit landing
+    // in 0.5% of runs. So the badge track and the region map both showed a
+    // road whose second half was permanently dark, and `full-circuit` (a quest
+    // requiring 8) was dead content in all but a rounding error of careers.
+    //
+    // Each extra fight still has to be EARNED (the chain stops at the first
+    // loss) and still costs compounding tiredness, so a third gym is a genuine
+    // push rather than a handout.
+    const leaders = gymLeaders(seed, regionId);
+    return [opponent, leaders[earnedHere + 1], leaders[earnedHere + 2]]
+      .filter((o): o is Opponent => !!o);
   }
 
   if (phase === 'elite-four') {
@@ -1358,6 +1371,7 @@ export function simulate(
           badges: [...badges],
           region: {
             regionId, tour, tourIndex: here.tourIndex, regionBadges: earnedHere,
+            localIndex: here.localIndex, localCount: here.localCount,
           },
           stakes: stakes.map(st => ({ ...st })),
           events: [...events],
@@ -1577,6 +1591,11 @@ export function simulate(
       tour,
       tourIndex: lastRegion.tourIndex,
       regionBadges: regionBadgeCount.get(lastRegion.regionId) ?? 0,
+      // A finished run is at the END of its last region, so the map on the
+      // result screen shows the whole road walked rather than freezing wherever
+      // the final chapter happened to land.
+      localIndex: Math.max(0, lastRegion.localCount - 1),
+      localCount: lastRegion.localCount,
     },
     stakes: bankedStakes,
     events,

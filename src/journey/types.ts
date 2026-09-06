@@ -238,6 +238,16 @@ export interface RegionProgress {
   tourIndex: number;
   /** Badges earned in the CURRENT region. */
   regionBadges: number;
+  /**
+   * Chapters completed within the current region, and how many it spans.
+   *
+   * The engine has always known these (`regionAt` returns them) but never
+   * surfaced them. The area map needs them: position on the road comes from
+   * progress through the REGION, not from the badge count, so that losing a gym
+   * still moves the trainer along instead of freezing the map.
+   */
+  localIndex: number;
+  localCount: number;
 }
 
 // ============================================================

@@ -80,6 +80,89 @@ const tests = [
   // ---- gym battles, shinies, event Pokemon (v11) ----
 
   {
+    name: 'the area map renders, and the road fills in as the career walks it',
+    pageOpts: { query: 'seed=8843' },
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-map-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-map-svg"]', { timeout: 8000 });
+
+      const shape = await page.evaluate(() => ({
+        nodes: document.querySelectorAll('[data-testid^="journey-map-node-"]').length,
+        gyms: document.querySelectorAll('[data-cleared]').length,
+        current: document.querySelectorAll('[data-state="current"]').length,
+      }));
+      // 8 gyms per region — the map and the badge track must agree, which is
+      // asserted structurally in src/journey/atlas.test.ts and visually here.
+      assertEq(shape.gyms, 8, `expected 8 gym nodes on the map, got ${shape.gyms}`);
+      assertGte(shape.nodes, 12, `map should have a real route, got ${shape.nodes} nodes`);
+      assertEq(shape.current, 1, `exactly one node should be current, got ${shape.current}`);
+
+      const startIdx = await page.evaluate(() => {
+        const el = document.querySelector('[data-state="current"]');
+        return Number(el.getAttribute('data-testid').replace('journey-map-node-', ''));
+      });
+
+      // Walk a good way into the run, then confirm the marker advanced.
+      for (let i = 0; i < 18; i++) {
+        await page.evaluate(() => {
+          const c = document.querySelector('[data-testid="journey-continue"]');
+          if (c) { c.click(); return; }
+          const o = [...document.querySelectorAll('[data-journey-option="1"]')];
+          if (o.length) o[0].click();
+        });
+        await sleep(60);
+        if (await has(page, '[data-testid="journey-retired"]')) break;
+      }
+
+      const openNow = await has(page, '[data-testid="journey-map-svg"]');
+      if (!openNow) {
+        await page.evaluate(() => document.querySelector('[data-testid="journey-map-toggle"]')?.click());
+        await page.waitForSelector('[data-testid="journey-map-svg"]', { timeout: 8000 });
+      }
+      const laterIdx = await page.evaluate(() => {
+        const el = document.querySelector('[data-state="current"]');
+        return el ? Number(el.getAttribute('data-testid').replace('journey-map-node-', '')) : -1;
+      });
+      assertGte(laterIdx, startIdx + 1,
+        `the map marker did not advance (${startIdx} -> ${laterIdx})`);
+
+      const body = await text(page);
+      assert(!/journey\.map\./.test(body), 'map keys must not leak into the UI');
+    },
+  },
+
+  {
+    name: 'the finished run shows the whole road, open, with cleared gyms lit',
+    pageOpts: { query: 'seed=8843' },
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      // Open by default on the retired beat — it is part of the artifact there.
+      await page.waitForSelector('[data-testid="journey-map-svg"]', { timeout: 8000 });
+      const state = await page.evaluate(() => {
+        const gyms = [...document.querySelectorAll('[data-cleared]')];
+        const badgeText = document.querySelector('[data-testid="journey-map-badges"]')?.innerText ?? '';
+        return {
+          lit: gyms.filter(g => g.getAttribute('data-cleared') === 'true').length,
+          badgeText,
+        };
+      });
+      // Whatever the badge readout claims, exactly that many gyms are lit —
+      // the map reads the badge list rather than keeping a parallel rule.
+      const claimed = Number((state.badgeText.match(/(\d+)\s*\//) || [])[1]);
+      assert(Number.isInteger(claimed), `could not read the badge count: "${state.badgeText}"`);
+      assertEq(state.lit, claimed,
+        `${claimed} badges claimed but ${state.lit} gyms lit on the map`);
+    },
+  },
+
+  {
     name: 'the 9:16 clip encodes for real, offline, and is offered only when supported',
     async fn(page) {
       await openJourney(page);

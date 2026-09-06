@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n/useI18n';
 import { ProgressHeader, StatStrip } from './JourneyDecision';
 import { PartyRail } from './PartyRail';
 import { BadgeTrack } from './BadgeTrack';
+import { AreaMap } from './AreaMap';
 import { pixelSprite } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
 import { TYPE_COLORS } from '@/lib/constants';
@@ -63,13 +64,15 @@ interface Props {
   roster: RosterEntry[];
   dex: DexState;
   badges: BadgeEarned[];
+  /** Run seed — the area map is generated from it. */
+  seed: number;
   region: RegionProgress;
   onContinue: () => void;
   onSkipToEnd: (() => void) | null;
 }
 
 export function JourneyRecap({
-  chapters, chapterCount, roster, dex, badges, region, onContinue, onSkipToEnd,
+  chapters, chapterCount, roster, dex, badges, region, onContinue, onSkipToEnd, seed,
 }: Props) {
   const { t } = useI18n();
   const last = chapters[chapters.length - 1];
@@ -80,6 +83,7 @@ export function JourneyRecap({
       <ProgressHeader chapter={last.index + 1} total={chapterCount} age={last.age} />
 
       <BadgeTrack badges={badges} region={region} />
+      <AreaMap seed={seed} region={region} />
 
       <PartyRail roster={roster} dex={dex} />
 

@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n/useI18n';
 import { cn } from '@/lib/utils';
 import { PartyRail } from './PartyRail';
 import { BadgeTrack } from './BadgeTrack';
+import { AreaMap } from './AreaMap';
 import { OpponentCard, QuestStrip, CrownStrip, TravelPicker } from './OpponentCard';
 import { JourneyPrepare } from './JourneyPrepare';
 import type {
@@ -22,6 +23,8 @@ interface Props {
   dex: DexState;
   badges: BadgeEarned[];
   region: RegionProgress;
+  /** Run seed — the area map is generated from it. */
+  seed: number;
   stakes: Stake[];
   quests: Quest[];
   crowns: RegionCrown[];
@@ -37,7 +40,7 @@ interface Props {
 }
 
 export function JourneyDecision({
-  decision, stats, chapterCount, roster, dex, badges, region, stakes, quests,
+  decision, stats, chapterCount, roster, dex, badges, region, stakes, quests, seed,
   crowns, opponent, opponentAdvantage, inventory, prepare, actionsThisChapter,
   onPick, onAction, onUndoPrep, onUndo,
 }: Props) {
@@ -53,6 +56,7 @@ export function JourneyDecision({
       />
 
       <BadgeTrack badges={badges} region={region} stakes={stakes} />
+      <AreaMap seed={seed} region={region} />
 
       <CrownStrip crowns={crowns} />
 

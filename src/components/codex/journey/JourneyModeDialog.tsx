@@ -382,6 +382,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
 
         {uiState === 'chapter-recap' && snapshot && (
           <JourneyRecap
+            seed={draft.seed}
             chapters={unrevealed}
             chapterCount={snapshot.chapterCount}
             roster={snapshot.roster}
@@ -395,6 +396,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
 
         {uiState === 'decision' && snapshot?.decision && snapshot.prepare && (
           <JourneyDecision
+            seed={draft.seed}
             decision={snapshot.decision}
             stats={snapshot.stats}
             chapterCount={snapshot.chapterCount}

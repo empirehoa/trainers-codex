@@ -43,6 +43,8 @@ function contentKeys(): string[] {
     keys.push(`journey.battle.${k}`);
   }
   keys.push('journey.recap.event', 'journey.recap.eventShiny');
+  // The area map's chrome.
+  for (const k of ['title', 'here', 'legend', 'badges', 'alt']) keys.push(`journey.map.${k}`);
 
   return keys;
 }

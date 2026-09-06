@@ -15,6 +15,8 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 - [Blocked items](#blocked-items)
 - [Architecture](#architecture)
 - [The engine](#the-engine)
+- [The area map](#the-area-map)
+- [The gym chain](#the-gym-chain-is-three-long-because-the-circuit-has-to-be-completable)
 - [The 9:16 clip](#the-916-clip--the-card-assembling-itself)
 - [The level economy](#the-level-economy-and-why-it-is-one-number-in-two-places)
 - [Money, rerolls, and carry-forward](#money-rerolls-and-carry-forward)
@@ -39,7 +41,7 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 
 | Definition-of-Done item | State | Evidence |
 |---|---|---|
-| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 255 tests |
+| 1. Engine unit tests (determinism, termination, bounds, verdict coverage) | ✅ | `pnpm test:unit` — 273 tests |
 | 2. Express run completes under 2:30 on mobile viewport | ✅ | `test-journey.mjs` asserts <150s |
 | 3. Legend Card renders, shares, downloads | ✅ | `canShare`-gated; download always offered |
 | 4. Daily seed identical across sessions; streak survives TZ change | ✅ | browser + unit tests |
@@ -130,6 +132,7 @@ src/journey/
   share.ts         Web Share / clipboard / download tiers
   legend-card.ts   canvas renderer (1080×1350 and 300 DPI print)
   card-video.ts    9:16 clip of the card assembling (captureStream + MediaRecorder)
+  atlas.ts         seeded region route maps (pure geometry, no DOM)
 
 src/components/codex/journey/
   JourneyModeDialog.tsx   shell + state machine
@@ -235,6 +238,70 @@ fatigue an equilibrium at `gain ÷ rate`, so pace becomes a genuine trade-off an
 "rest the team" buys something real.
 
 ---
+
+### The area map
+
+`atlas.ts` generates a route map per region and the UI fills it in as the career
+walks it: the road behind you solid, the road ahead dashed, gyms lighting up as
+their badges land.
+
+**Generated, not drawn**, for two reasons and the second is binding:
+
+1. A map that is the same every run is scenery. A map derived from the seed is
+   part of the run — it is the shape of *this* career, and a `?seed=` link
+   reproduces the roads along with everything else.
+2. IP. Every canon region map is copyrighted and so is every canon town name.
+   Nothing here is traced or transliterated from one: the layout is a seeded
+   walk and the names are built from generic English geography words.
+
+**Gym count comes from `BADGES_PER_REGION`**, so the map and the badge track can
+never disagree about how many gyms a region has — and a gym lights up by reading
+the badge list rather than keeping a parallel rule of its own.
+
+**Position comes from progress through the region, not from badges.** A player
+who loses a gym still moves down the road; a map that froze on a loss would
+contradict the recap, which at that moment is promising a rematch next chapter.
+
+#### Two layout attempts that looked fine in code and wrong on screen
+
+Both were caught by screenshotting the component, not by a test — which is why
+the geometry invariants are now asserted in `atlas.test.ts`.
+
+| Attempt | What it produced |
+|---|---|
+| Diagonal base + per-node random offset | Adjacent nodes swung opposite ways: a **sawtooth**, a bar chart rather than a route |
+| Diagonal base + one coherent sine | Smooth, but **bunched** — `t` was uniform along the diagonal, not along the curve, so wherever the road bent the spacing collapsed and six nodes crowded one corner |
+
+The fix is to separate the road's *shape* from the node *spacing*: sample the
+spine densely, measure its arc length, and place nodes at equal arc-length
+intervals. `x` is monotonic in the spine parameter so the route can never double
+back. Tests now pin even spacing (no gap below half or above double the mean),
+horizontal monotonicity, minimum separation, and in-bounds label placement.
+
+Labels are gym numbers only. The current node's name is in the header already,
+and the league's name is nine characters sitting at the end of the road with the
+eighth gym beside it — it could not fit at any anchor. The legend row carries
+`◆ gym · ■ league` instead.
+
+### The gym chain is three long, because the circuit has to be completable
+
+A gym-circuit chapter offers up to **three** leaders on a winning day. At two,
+the numbers did not work: the gym phase is ~26% of a 12–20 chapter career —
+about four chapters — and at a 66% win rate that yields ~1.1 badges per chapter.
+
+| | 2-long chain | 3-long chain |
+|---|---|---|
+| badges median | 4 | 5 |
+| badges p90 | 6 | 8 |
+| runs completing all 8 | **0.5%** | **10.1%** |
+| runs reaching 6+ | 16% | 35% |
+| gym win rate | 65.9% | 64.9% |
+
+So the badge track and the region map both showed a road whose second half was
+permanently dark, and `full-circuit` — a quest requiring 8 in a region — was
+dead content in all but a rounding error of careers. Each extra fight is still
+earned (the chain stops at the first loss) and still costs compounding
+tiredness, so a third gym is a push rather than a handout.
 
 ### The 9:16 clip — the card assembling itself
 
@@ -1049,10 +1116,10 @@ separate static asset and doesn't count against this.
 ## Testing
 
 ```bash
-pnpm test:unit      # vitest — 255 tests: engine, battles/badges/shinies, level economy,
-                    #          money/rerolls/carry-forward, ranks, archive, card-video,
+pnpm test:unit      # vitest — 273 tests: engine, battles/badges/shinies, level economy,
+                    #          money/rerolls/carry-forward, ranks, archive, card-video, atlas,
                     #          content health, i18n, deeplink, streak, analytics, prepare
-pnpm test:browser   # puppeteer — 20 suites, 199 tests (incl. 42 journey, 7 favorites)
+pnpm test:browser   # puppeteer — 20 suites, 201 tests (incl. 44 journey, 7 favorites)
 pnpm test:all       # both
 pnpm ship           # build + inline + test:all
 ```
