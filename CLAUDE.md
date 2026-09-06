@@ -102,6 +102,10 @@ src/
     useI18n.ts                     ← context + useI18n hook
     I18nProvider.tsx               ← provider component (kept separate from the
                                      hook: a file exporting both breaks Fast Refresh)
+  seo/                           ← v12 — build-time static page generation.
+    data.ts                        ← pure derivation: matchups, counters, copy, FAQ
+    render.ts                      ← HTML templates (no DOM, no framework, no app bundle)
+    *.test.ts                      ← vitest; sweeps all 1,307 rendered pages
   lib/
     flags.ts                       ← v6 — feature flags (defaults → config → ?ff=)
     analysis.ts                    ← defensive matrix, offensive coverage, threats, counter team, sharecode
@@ -111,6 +115,7 @@ src/
     merch.ts                       ← v5 — 12-product POD catalog + Printful/Printify URL builders
     merch-renderers.ts             ← v5 — print-ready PNGs at 300 DPI (4 designs)
     pokemon.ts                     ← POKEMON_BY_ID lookup, sprites, learnsets, generation logic
+    search-param.ts                ← v12 — `?q=` bridge from the reference pages into the builder
     posters.ts                     ← 12 canvas-based poster renderers (1080×1350)
     storage.ts                     ← localStorage v2 schema + migration from v1
     types.ts                       ← Pokemon, TeamMember, TrainerProfile, FormCategory, Move, etc.
@@ -123,14 +128,18 @@ src/
 inline.mjs                         ← bundle.html generator (regex-based Vite dist inliner)
 scripts/
   make-og-image.mjs                ← renders public/og-journey.jpg via puppeteer (`pnpm og`)
+  gen-seo-pages.ts                 ← v12 — emits ~1,330 static pages + sitemap.xml (`pnpm seo`)
+  inject-config.mjs                ← stages /tmp/tc-deploy for the Cloudflare deploy
 public/
   _headers                         ← Cloudflare CSP + security headers
   _redirects                       ← 200 rewrite for /journey (preserves ?seed=)
   og-journey.jpg                   ← static OG card, 1200×630 (not inlined into the bundle)
+  sw.js                            ← PWA service worker (see gotcha #21)
+  (no sitemap.xml — it is generated; see "Static reference pages" below)
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 20 suites, 201 tests
+  test-*.mjs                       ← 21 suites, 212 tests
 ```
 
 ## Build + bundle workflow
@@ -148,6 +157,43 @@ node inline.mjs                    # → bundle.html (inlines CSS + JS from dist
 reads `dist/index.html`, swaps the `<link>` and `<script>` tags for inline
 `<style>` and `<script>` blocks pulling from `dist/assets/`, and writes
 `bundle.html`. The result drops onto any static host.
+
+## Static reference pages (v12)
+
+`pnpm build` also runs `scripts/gen-seo-pages.ts`, which emits ~1,330 plain
+static HTML files into `dist/` — one per species, one per form, one per type,
+plus two hubs and a regenerated `sitemap.xml`:
+
+```
+dist/pokemon/index.html            hub, links all 1,307
+dist/pokemon/<slug>/index.html     matchup chart, base stats, moves, evolution, counters
+dist/type/index.html               the 18x18 chart
+dist/type/<type>/index.html        per-type page + every member by BST
+dist/sitemap.xml                   every URL above
+```
+
+**Why:** the whole product was one indexable URL. The dataset that makes the app
+good — 1,307 species, 919 moves, every learnset — was invisible to search
+because none of it was addressable. The comparable fan sites earn effectively
+all of their organic traffic from one page per species; the data is the same,
+the difference was purely that theirs had URLs.
+
+Rules for this layer:
+
+- It is **additive**. `bundle.html` is unaffected — nothing under `src/seo/` is
+  imported by `App.tsx`, so Vite never bundles it.
+- The pages load **no script and no external resource at all**: no sprite art,
+  no fonts, no analytics, no app bundle. Asserted in `src/seo/render.test.ts`
+  and again in the browser suite. Hotlinking third-party artwork onto 1,300
+  indexed pages is a different IP posture than referencing it inside the tool —
+  don't add images here without deciding that deliberately.
+- Every page ends with a link to `/?q=<Display Name>`, read by
+  `lib/search-param.ts`. That is the only conversion path from a search result
+  into the product; `tests/test-seo-pages.mjs` guards it.
+- `sitemap.xml` is generated, not committed. The old three-URL file in
+  `public/` was deleted — a stale sitemap is worse than none.
+- `scripts/inject-config.mjs` regenerates the pages straight into the staging
+  directory at deploy time, so a deploy can't ship the app without them.
 
 ## Test commands
 
@@ -170,10 +216,11 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 273 tests · engine, battles/badges/shinies/events, level economy,
+pnpm test:unit     # vitest · 331 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
                    #            content health, i18n, deeplink, streak, analytics, prepare
-pnpm test:browser  # puppeteer · 20 suites / 201 tests (incl. 44 Journey Mode, 7 favorites)
+pnpm test:browser  # puppeteer · 21 suites / 212 tests (incl. 44 Journey Mode, 7 favorites,
+                   #            10 SEO pages — the last needs `pnpm build` for dist/)
 (cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
 
@@ -307,6 +354,31 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
 20. **vitest must not glob `worker/`.** `worker/test/*.test.ts` are node:test
     suites; vitest reports "No test suite found" on them. `vitest.config.ts`
     scopes vitest to `src/**/*.test.ts` — keep it that way.
+
+21. **The service worker's navigate handler must not cache every navigation as
+    the shell.** It used to `cache.put('/', response)` on *any* navigation.
+    That was harmless while the deploy had one HTML file; the moment ~1,300
+    reference pages shipped alongside it, opening `/pokemon/charizard` stored
+    that page as the offline app shell, so going offline and opening `/` served
+    Charizard instead of the builder. Only `/` and `/index.html` may refresh the
+    shell entry. Bump `CACHE_VERSION` whenever you touch `sw.js`, or clients
+    keep the old one.
+
+22. **`src/` is typechecked with `types: ["vite/client"]` — no Node types.**
+    A colocated `*.test.ts` therefore cannot `import { readFileSync } from
+    'node:fs'` or touch `import.meta.dirname`; `tsc -b` fails even though
+    vitest runs the file fine. Load fixture data with a JSON import
+    (`import raw from '@/data/pokemon-data.json'`) instead — `resolveJsonModule`
+    is on and that is what the rest of the suite does.
+
+23. **A build-time script that shares code with `src/` must import with an
+    explicit `.ts` extension.** `scripts/gen-seo-pages.ts` runs under Node's
+    native type stripping, which is real ESM: extensionless specifiers do not
+    resolve. `allowImportingTsExtensions` is already on, so
+    `from '../src/seo/render.ts'` satisfies Node, Vite, vitest and `tsc` at
+    once. The chain only works because every module it reaches is pure or
+    type-only — routing it through something that imports `./constants`
+    extensionless breaks it at runtime with no compile-time warning.
 
 ## Code style conventions
 

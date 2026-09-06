@@ -13,7 +13,7 @@
 //
 // Bump CACHE_VERSION on any shipped change to the shell so clients refresh.
 
-const CACHE_VERSION = 'tc-v9';
+const CACHE_VERSION = 'tc-v10';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 
 // The shell + install-metadata. '/' is the inlined app; the rest let the
@@ -60,15 +60,29 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   // App navigations: serve fresh when online, fall back to the cached shell.
+  //
+  // Only a navigation to the APP ITSELF may refresh the '/' shell entry. The
+  // deploy also contains ~1,300 static reference pages under /pokemon/ and
+  // /type/ (see scripts/gen-seo-pages.ts), and those are navigations too — an
+  // unconditional `cache.put('/')` here stored whichever one the user happened
+  // to open last as the offline shell, so going offline and opening '/' served
+  // a Charizard reference page instead of the builder.
   if (request.mode === 'navigate') {
+    const isShell = url.pathname === '/' || url.pathname === '/index.html';
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((c) => c.put('/', copy)).catch(() => {});
+          if (isShell && res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((c) => c.put('/', copy)).catch(() => {});
+          }
           return res;
         })
-        .catch(() => caches.match('/').then((c) => c || caches.match('/index.html'))),
+        // Offline: a reference page we've seen before can be served from cache;
+        // anything else falls back to the app shell, which works offline in full.
+        .catch(() => caches.match(request)
+          .then((c) => c || caches.match('/'))
+          .then((c) => c || caches.match('/index.html'))),
     );
     return;
   }

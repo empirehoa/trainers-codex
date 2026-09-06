@@ -39,6 +39,7 @@ import {
 } from '@/lib/analysis';
 import { BADGE_REGIONS, badgesForRegion } from '@/lib/merch-renderers';
 import { loadStorage, saveStorage, genId } from '@/lib/storage';
+import { initialSearchQuery } from '@/lib/search-param';
 import {
   type Ruleset, UNRESTRICTED, FORMAT_PRESETS, presetById,
   checkLegality, teamLegality, isUnrestricted, isLegal,
@@ -201,7 +202,11 @@ export default function App() {
   const [sharedIncoming, setSharedIncoming] = useState<
     { members: (TeamMember | null)[]; teamName?: string; by?: string } | null
   >(null);
-  const [search, setSearch] = useState('');
+  // Seeded from `?q=` so the static reference pages under /pokemon/<slug> can
+  // hand a visitor straight into the builder with that Pokémon already filtered
+  // — the whole point of generating them (see scripts/gen-seo-pages.ts). Read
+  // once at mount; the param is left in the URL so a refresh is idempotent.
+  const [search, setSearch] = useState(initialSearchQuery);
   const [filterTypes, setFType] = useState<PokemonType[]>([]);
   const [filterGens, setFGens] = useState<number[]>([]);
   const [filterRoles, setFRoles] = useState<Role[]>([]);

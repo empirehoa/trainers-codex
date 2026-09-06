@@ -5,6 +5,115 @@ Claude Code. Read CLAUDE.md first for conventions and gotchas.
 
 ---
 
+## v12 — Static reference pages (Sep 2026)
+
+### The finding
+
+An audit of the product's discovery surface, using Semrush against the live
+competitive set, produced one number that explains everything else:
+
+**`public/sitemap.xml` contained three URLs** — `/`, `/legal`, `/dmca`.
+
+Measured, same tool, same day:
+
+| Domain | Organic keywords | Organic traffic/mo |
+|---|---:|---:|
+| pokemondb.net | 550,033 | 6,557,224 |
+| pikalytics.com | 46,461 | 48,755 |
+| pokesynergy.app | 1,382 | 5,061 |
+| championsbuilder.com | 287 | 70 |
+| **trainerscodex.com** | **no data returned** | **no data returned** |
+
+Pikalytics' traffic is not built on a better team builder. Its top non-branded
+keywords are one page per species — `incineroar`, `mawile`, `ogerpon`,
+`ursaluna`, each ranking positions 5–8 on 14K–40K monthly volume. Its own
+ranking for `pokemon team builder` (74,000/mo, KD 34) sits at **position 15**,
+worth 370 visits. The traffic is the reference pages, not the tool.
+
+Trainer's Codex ships 1,307 species, 919 moves and every learnset inlined into
+one HTML file, and exposed **none** of it as an addressable URL. The data was
+already better than the competition's; it simply had nowhere to be found.
+
+### What shipped
+
+`scripts/gen-seo-pages.ts` — a build-time generator that emits ~1,330 static
+pages from the same JSON the bundle inlines. One per species, one per form, one
+per type, two hubs, and a regenerated `sitemap.xml`. Wired into `pnpm build`
+and into `scripts/inject-config.mjs` so a deploy cannot ship the app without
+them. Full description and rules in CLAUDE.md → "Static reference pages".
+
+Each species page carries computed, non-boilerplate content: the full 18-type
+incoming and outgoing matchup grids, base stats with a dex-wide percentile,
+highest-power learnable STAB moves, the evolution line with its trigger, other
+forms, and a ranked list of Pokémon that beat it on the type chart. Plus
+BreadcrumbList and FAQPage structured data, a canonical tag, and the trademark
+disclaimer.
+
+The pages load **no script and no external resource of any kind**. No sprite
+art in particular — hotlinking third-party artwork onto 1,300 indexed pages is
+a materially different IP posture than referencing it inside the tool, and that
+call belongs to counsel, not to a generator.
+
+One deploy-side assumption to verify on the first live push: `/pokemon/gengar`
+must resolve to `/pokemon/gengar/index.html`. Cloudflare's static-asset handling
+does this by default (`auto-trailing-slash`), and the sitemap lists the
+extensionless form, but it is worth a single curl after deploy rather than an
+assumption.
+
+### Two bugs found on the way in
+
+**The service worker cached every navigation as the app shell.** `sw.js` ran
+`cache.put('/', response)` on any navigation, which was harmless while the
+deploy was one HTML file. With reference pages alongside it, visiting
+`/pokemon/charizard` stored that page as the offline shell — so going offline
+and opening `/` served a Charizard reference page instead of the builder. Fixed
+and `CACHE_VERSION` bumped to `tc-v10`.
+
+**The deploy never staged the PWA assets.** `scripts/inject-config.mjs` copied
+five files out of `public/`; `sw.js`, `manifest.webmanifest` and every icon were
+not among them. Every deploy shipped an `index.html` that registered a service
+worker and advertised a manifest that 404'd. Fixed.
+
+### Decisions left to Jose
+
+**1. Pokémon names now appear in 1,307 page titles.** CLAUDE.md's bright line is
+that the name must not be in the app title, domain, or store listings, and that
+is untouched. Page titles on reference content are a different surface —
+nominative use to identify the subject, which is what every comparable fan site
+does and the basis on which they operate. It still increases IP surface area,
+and it is a business call, not a technical one. Say the word and the titles
+become descriptive rather than named; the pages still work, they just rank for
+less.
+
+**2. `robots.txt` blocks GPTBot, ClaudeBot and CCBot.** That was a deliberate
+AI-training opt-out. It also means the pages cannot be cited in AI answers,
+which is a growing share of how people find reference data at all. The two goals
+are in genuine tension and the file should be a decision, not an inheritance.
+
+**3. `trainerscodex.net` is registered by someone else.** `.org`, `.app`, `.io`,
+`.gg` and `.co` were available when checked. Worth deciding whether to defend
+the name.
+
+### Also noticed, not touched
+
+`CLAUDE.md` lists `public/_redirects` as the 200 rewrite that makes
+`/journey?seed=` work. **That file does not exist in the repository.** Either it
+was never committed or it was removed; either way the documented behaviour is
+unverified, and a shared `?seed=` link landing on `/journey` may 404 in
+production. Left alone deliberately — changing routing is not part of this
+change — but it should be checked before the next share-driven push.
+
+### Not done
+
+- No content pages beyond species and types. The obvious next tier is the
+  comparison and "best X" long-tail (`best water type pokemon`,
+  `pokemon type coverage calculator` — 1,300/mo at **KD 8**), which wants
+  editorial judgement rather than generation.
+- Nothing was submitted to Search Console; the sitemap has to be registered by
+  hand once the pages are live.
+
+---
+
 ## Sprint 5 addendum — Journey Mode (Aug 2026)
 
 **Journey Mode is built, tested, and behind a flag.** A 3–5 minute
