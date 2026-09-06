@@ -410,7 +410,7 @@ async function renderRoster(c: CanvasRenderingContext2D, region: { x: number; y:
   const lineY = region.y + region.h * 0.50;
   const spriteSize = Math.min(region.w / 7, region.h * 0.55);
   const totalWidth = spriteSize * imgs.length + spriteSize * 0.2 * (imgs.length - 1);
-  let startX = region.x + (region.w - totalWidth) / 2;
+  const startX = region.x + (region.w - totalWidth) / 2;
 
   imgs.forEach((entry, i) => {
     const sx = startX + i * (spriteSize * 1.2) + spriteSize / 2;
@@ -747,7 +747,7 @@ async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: numbe
       const sigImg = await loadImg(spriteUrl(sigMon.id, 'artwork-default'));
       const imgSize = sigH * 0.92;
       c.drawImage(sigImg, rx + rw * 0.06, sigY + (sigH - imgSize) / 2, imgSize, imgSize);
-    } catch {}
+    } catch { /* a signature sprite is decorative — a failed load must not lose the print */ }
 
     // Signature info (right side)
     const infoX = rx + rw * 0.06 + sigH * 1.0;
@@ -889,7 +889,7 @@ function drawBadge(c: CanvasRenderingContext2D, x: number, y: number, w: number,
         const a = (Math.PI * 2 * i) / 8 + Math.PI / 8;
         const px = cx + Math.cos(a) * r;
         const py = cy + Math.sin(a) * r;
-        i === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+        if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
       }
       c.closePath();
       break;
@@ -953,7 +953,7 @@ function drawBadge(c: CanvasRenderingContext2D, x: number, y: number, w: number,
         const radius = i % 2 === 0 ? r : r * 0.6;
         const px = cx + Math.cos(a) * radius;
         const py = cy + Math.sin(a) * radius;
-        i === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+        if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
       }
       c.closePath();
       break;

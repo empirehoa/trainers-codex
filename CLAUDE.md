@@ -153,9 +153,14 @@ reads `dist/index.html`, swaps the `<link>` and `<script>` tags for inline
 
 **CI runs all three layers on every push and pull request**
 (`.github/workflows/ci.yml`). Before that workflow existed the suite only ran
-when someone remembered to; the lint job is deliberately advisory because the
-tree carries 46 pre-existing eslint errors and a red-from-day-one gate teaches
-people to ignore it.
+when someone remembered to.
+
+`pnpm lint` is a real gate — the tree is at **0 errors**, so any new one fails
+CI. It carries 23 warnings from four react-hooks/react-refresh rules that are
+set to `warn` in `eslint.config.js`: every violation predates the workflow and
+sits in components whose fix is a restructure rather than an edit. The rationale
+and the count to drive down are in that config; when it reaches zero, promote
+them back to `error`.
 
 Tests are committed under `tests/` (Puppeteer, drives the built `bundle.html`),
 colocated `*.test.ts` files under `src/` (vitest, pure logic — scoped by

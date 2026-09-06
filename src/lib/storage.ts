@@ -67,7 +67,7 @@ export function loadStorage(): StorageShape {
           : [],
       };
     }
-  } catch {}
+  } catch { /* unreadable v2 payload — fall through to the legacy read below */ }
 
   try {
     const legacy = localStorage.getItem(LEGACY_KEY);
@@ -84,7 +84,7 @@ export function loadStorage(): StorageShape {
       }
       return { teams, current, trainer: null, favorites: [] };
     }
-  } catch {}
+  } catch { /* unreadable legacy payload — fall through to an empty store */ }
 
   return { teams: [], current: null, trainer: null, favorites: [] };
 }
@@ -105,7 +105,7 @@ export function saveStorage(data: StorageShape): void {
       return;
     }
     localStorage.setItem(STORAGE_KEY, json);
-  } catch {}
+  } catch { /* quota or private mode — losing a save must not break the app */ }
 }
 
 export function genId(): string {

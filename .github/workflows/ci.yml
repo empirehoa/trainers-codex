@@ -87,15 +87,22 @@ jobs:
           if-no-files-found: error
 
   lint:
-    name: lint (advisory)
+    name: lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Advisory on purpose. The tree carries 46 pre-existing eslint errors that
-    # predate this workflow — mostly `no-empty` on deliberately-empty catch
-    # blocks and react-hooks rules on older components. Failing the build on
-    # them would mean CI is red from its first run, which trains everyone to
-    # ignore it. This surfaces the number so it can be driven down instead.
-    continue-on-error: true
+    # A real gate: `pnpm lint` exits 0 on a clean tree, so any newly introduced
+    # eslint ERROR fails this job.
+    #
+    # It was briefly `continue-on-error: true` with 46 pre-existing errors, on
+    # the theory that an advisory job surfaces the number without blocking. That
+    # was wrong in a way only visible once it ran: continue-on-error stops the
+    # WORKFLOW failing, but the check run still reports failure, so the PR shows
+    # a permanently red check — precisely the "CI is always red, ignore it"
+    # outcome it was meant to avoid.
+    #
+    # 26 of those errors were mechanical and are now fixed. The remaining 22 are
+    # react-hooks/react-refresh rules on pre-existing components, set to 'warn'
+    # in eslint.config.js with the rationale and the count to drive down.
 
     steps:
       - uses: actions/checkout@v4

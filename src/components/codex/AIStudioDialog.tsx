@@ -267,7 +267,7 @@ export function AIStudioDialog({
       if (!resp.ok) {
         const errText = await resp.text();
         let errCode = 'generation_failed';
-        try { errCode = JSON.parse(errText).error || errCode; } catch {}
+        try { errCode = JSON.parse(errText).error || errCode; } catch { /* non-JSON error body — keep the generic code */ }
         const MESSAGES: Record<string, string> = {
           ai_not_configured: 'AI image generation is not yet configured on this deploy. Try again in a few minutes.',
           quota_exhausted: 'Monthly quota exhausted — resets on the 1st.',

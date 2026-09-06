@@ -551,7 +551,6 @@ function resolveChapter(input: ChapterInput): {
   const caughtAdded: number[] = [];
   const catchRolls = randInt(rng, 1, 4);
   let catches = 0;
-  let shinies = 0;
   // Actual species drawn for the dex. Every catch registers a real id so the
   // Pokédex fills with what the trainer met, and the caught set becomes the
   // pool the "true six" is completed from (never arbitrary region filler).
@@ -591,7 +590,7 @@ function resolveChapter(input: ChapterInput): {
       }
     }
   }
-  shinies = shinyIds.size;
+  let shinies = shinyIds.size;
 
   // Catches beyond the party go to the BOX, so "swap in something I caught"
   // has real inventory behind it.

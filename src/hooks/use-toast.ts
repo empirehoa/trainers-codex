@@ -15,6 +15,10 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement
 }
 
+// Vendored from shadcn/ui. The object is referenced only as `typeof
+// actionTypes` below; it is kept as a runtime value rather than collapsed into
+// a type so this file stays diffable against upstream.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",

@@ -94,7 +94,7 @@ export async function printfulOrder(req: Request, env: Env): Promise<Response> {
   }
 
   let metadata: { teamName?: string; gymName?: string; region?: string; trainer?: string } = {};
-  try { metadata = JSON.parse(metadataRaw); } catch {}
+  try { metadata = JSON.parse(metadataRaw); } catch { /* malformed client field — treat as absent metadata */ }
 
   // 1) Stash the PNG in R2 and surface it via a public-readable URL.
   const fileKey = `prints/${crypto.randomUUID()}.png`;

@@ -134,7 +134,7 @@ export default function App() {
     const root = document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
-    try { localStorage.setItem('trainerscodex.theme', theme); } catch {}
+    try { localStorage.setItem('trainerscodex.theme', theme); } catch { /* private mode or quota — the theme is already applied to the DOM */ }
   }, [theme]);
   const toggleTheme = useCallback(() => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
@@ -191,7 +191,7 @@ export default function App() {
       const clean = window.location.pathname.replace(/\/u\/[^/?#]+/i, '/') || '/';
       const hash = /(?:^#|[#&])\/?u[/=]/i.test(window.location.hash) ? '' : window.location.hash;
       history.replaceState(null, '', clean + window.location.search + hash);
-    } catch {}
+    } catch { /* replaceState throws on some sandboxed/file:// origins — the URL is cosmetic here */ }
   }, []);
 
   const [pendingTeam, setPendingTeam] = useState<(TeamMember | null)[] | null>(null);
@@ -213,11 +213,11 @@ export default function App() {
     try {
       const raw = localStorage.getItem('trainerscodex.format');
       if (raw) return { ...UNRESTRICTED, ...JSON.parse(raw) } as Ruleset;
-    } catch {}
+    } catch { /* unreadable or corrupt — fall through to UNRESTRICTED below */ }
     return UNRESTRICTED;
   });
   useEffect(() => {
-    try { localStorage.setItem('trainerscodex.format', JSON.stringify(ruleset)); } catch {}
+    try { localStorage.setItem('trainerscodex.format', JSON.stringify(ruleset)); } catch { /* private mode or quota — the ruleset still applies this session */ }
   }, [ruleset]);
   const formatActive = useMemo(() => !isUnrestricted(ruleset), [ruleset]);
   const applyPreset = useCallback((id: string) => setRuleset(presetById(id)), []);
@@ -289,7 +289,7 @@ export default function App() {
     try {
       const hash = window.location.hash || '';
       // `#team=` is an INCOMING SHARE: show the landing, don't auto-load.
-      const shared = hash.match(/(?:^#|&)team=([0-9a-z,\-]+)/);
+      const shared = hash.match(/(?:^#|&)team=([0-9a-z,-]+)/);
       if (shared) {
         const parsed = parseShareCode(shared[1]);
         if (parsed && parsed.some(Boolean)) {
@@ -304,12 +304,12 @@ export default function App() {
         }
       }
       // `#t=` is the app's own resume/bookmark hash — load it into the builder.
-      const m = hash.match(/(?:^#|&)t=([0-9a-z,\-]+)/);
+      const m = hash.match(/(?:^#|&)t=([0-9a-z,-]+)/);
       if (m) {
         const parsed = parseShareCode(m[1]);
         if (parsed) setPendingTeam(parsed);
       }
-    } catch {}
+    } catch { /* a malformed share link must open the app, not an error screen */ }
   }, []);
 
   // ---------- Resolve pending team ----------
@@ -341,7 +341,7 @@ export default function App() {
       if (cur !== newHash) {
         history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
       }
-    } catch {}
+    } catch { /* see above — the share hash is cosmetic, never load-bearing */ }
   }, [members]);
 
   // ---------- Load saved teams + restore current from localStorage on mount ----------
