@@ -18,9 +18,12 @@ import type { Archetype } from './types';
 /**
  * Score at each percentile of the reference distribution, p1..p99.
  *
- * Measured from 9,000 careers: 600 seeds × 5 archetypes × 3 paces, played by a
- * mechanical strategy that cycles option indices. That is deliberately NOT an
- * optimising player, so a real one should sit above their percentile here.
+ * Measured from 6000 careers: 400 seeds × 5 archetypes × 3 paces, played by
+ * a mechanical strategy that cycles option indices. That is deliberately NOT
+ * an optimising player, so a real one should sit above their percentile here.
+ * Regenerate with `GEN_RANKS=1 npx vitest run src/journey/ranks.gen.test.ts`
+ * whenever engine numbers move — last regenerated after the risk-payoff
+ * rebalance (range 315–959).
  *
  * This is a REFERENCE distribution, not a population of real players, and the
  * UI must say so — see `journey.rank.percentile`. When live analytics exist
@@ -31,13 +34,13 @@ import type { Archetype } from './types';
  * every run. `ranks.test.ts` asserts it stays monotonic and covers the range.
  */
 export const SCORE_PERCENTILES: readonly number[] = [
-  433, 455, 470, 483, 491, 499, 506, 511, 516, 522, 526, 530, 534, 538, 542,
-  546, 550, 554, 558, 562, 566, 569, 572, 575, 577, 580, 583, 586, 589, 592,
-  594, 598, 600, 603, 606, 609, 612, 614, 617, 620, 622, 625, 627, 630, 632,
-  635, 637, 640, 643, 646, 648, 651, 654, 656, 659, 662, 664, 667, 669, 672,
-  674, 677, 679, 682, 685, 688, 691, 693, 696, 698, 701, 705, 708, 711, 714,
-  718, 721, 725, 728, 731, 735, 739, 743, 747, 750, 754, 759, 763, 768, 773,
-  777, 782, 789, 794, 803, 812, 823, 834, 856,
+  454, 482, 497, 508, 517, 528, 535, 542, 547, 553, 558, 563, 569, 574, 578,
+  581, 586, 589, 592, 596, 600, 604, 608, 610, 614, 617, 620, 624, 627, 630,
+  633, 636, 639, 642, 645, 648, 651, 653, 656, 660, 662, 665, 668, 671, 673,
+  676, 678, 682, 685, 687, 689, 692, 694, 697, 699, 702, 705, 707, 710, 713,
+  716, 719, 721, 724, 727, 730, 733, 735, 738, 741, 744, 748, 751, 754, 757,
+  761, 764, 768, 772, 776, 780, 783, 788, 793, 797, 802, 806, 812, 817, 823,
+  827, 833, 839, 844, 851, 859, 868, 879, 897,
 ];
 
 /**

@@ -42,7 +42,18 @@ function contentKeys(): string[] {
   for (const k of ['beat', 'lostTo', 'rematch', 'badge', 'level', 'strong', 'weak']) {
     keys.push(`journey.battle.${k}`);
   }
-  keys.push('journey.recap.event', 'journey.recap.eventShiny');
+  keys.push('journey.recap.event', 'journey.recap.eventShiny', 'journey.recap.landed');
+  // The option consequence line: risk tags and every payoff kind an option can
+  // carry. A payoff key that resolves to its own name would print
+  // `journey.payoff.recruit.rare` under a decision button.
+  for (const r of ['steady', 'risky', 'gamble']) keys.push(`journey.option.risk.${r}`);
+  keys.push('journey.option.ifLands', 'journey.payoff.money',
+    'journey.payoff.recruit.rare', 'journey.payoff.recruit.legendary', 'journey.payoff.fatigueRefund');
+  for (const card of DECISION_CARDS) {
+    for (const opt of card.options) {
+      if (opt.payoff?.item) keys.push(`journey.item.${opt.payoff.item}.name`);
+    }
+  }
   // The area map's chrome.
   for (const k of ['title', 'here', 'legend', 'badges', 'alt']) keys.push(`journey.map.${k}`);
 

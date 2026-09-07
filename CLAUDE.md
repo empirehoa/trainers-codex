@@ -216,7 +216,7 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 349 tests · engine, battles/badges/shinies/events, level economy,
+pnpm test:unit     # vitest · 358 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
                    #            content health, i18n, deeplink, streak, analytics, prepare
 pnpm test:browser  # puppeteer · 21 suites / 222 tests (incl. 44 Journey Mode, 16 responsive,
@@ -438,7 +438,49 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     filter what has been shown, which keeps the draw a pure function of
     (seed, chapterIndex, rerolls) and the replay contract intact.
 
-33. **A build-time script that shares code with `src/` must import with an
+33. **Risk needs a durable payoff or it is a tax, and the sweep is the only
+    way to know which.** Every risky option now carries `payoff` (see `Payoff`
+    in `journey/types.ts`): money, an item, a rare partner, or the fatigue
+    refunded, granted when the chapter's own roll comes up positive — a
+    deterministic coin flip. `landedSoFar` adds bounded **momentum** to win
+    rate so an early gamble is run-defining. Before this, always-min-risk beat
+    always-max-risk by 26–74 points for *every* archetype; after, |gap| ≤ 20
+    with risk ahead for three of five, and a risky career banks ≥15% more
+    money. `journey/risk.test.ts` sweeps 3,000 careers and pins all of it. Any
+    balance change: run it, then regenerate the rank table (next item).
+
+34. **The rank table is a snapshot of the engine; regenerate it after any
+    balance change.** `SCORE_PERCENTILES` in `ranks.ts` is measured, not
+    derived, so when engine numbers move every run is silently mis-ranked.
+    `ranks.test.ts` catches the drift; fix it with
+    `GEN_RANKS=1 npx vitest run src/journey/ranks.gen.test.ts` and paste.
+
+35. **Two things that compute "the same" number will disagree, and a fallback
+    that clamps hides its own failure.** Both bit the multi-region campaigns
+    (see HANDOFF v13). Check for the pattern whenever a quantity has a second
+    implementation or a `Math.min(i, arr.length - 1)` index.
+
+36. **Test-id prefixes are selectors.** `tests/test-journey.mjs` counts options
+    with `[data-testid^="journey-option-"]`. Adding `journey-option-risk` to a
+    span *inside* an option would have inflated that count. Inner elements get
+    their own prefix (`journey-risk-tag`, `journey-consequences`).
+
+37. **A one-shot Python edit that asserts every anchor and writes at the end is
+    atomic — and silently a no-op when one anchor is wrong.** Two engine edits
+    here "succeeded" in five of six replacements and applied none of them,
+    because the import anchor guessed a format the file did not use. Read the
+    exact lines before anchoring on them; for imports, find `from '<module>'`
+    and walk back to the brace rather than matching the whole statement.
+
+38. **The decision must lead the decision screen.** Journey's prompt sat 8th in
+    document order — below the badge track, map, opponent, party rail and the
+    whole prepare panel — putting the question at y≈780 of a 844px phone. It is
+    now at y≈245, with the option's consequences (delta chips, risk tag, "if it
+    lands: …") visible *before* the tap. Same for setup: Start is sticky on
+    phones. Anything that asks the player something goes above the things
+    that merely inform them.
+
+39. **A build-time script that shares code with `src/` must import with an
     explicit `.ts` extension.** `scripts/gen-seo-pages.ts` runs under Node's
     native type stripping, which is real ESM: extensionless specifiers do not
     resolve. `allowImportingTsExtensions` is already on, so

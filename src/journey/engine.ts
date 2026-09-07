@@ -47,7 +47,7 @@ import {
 } from './opponents';
 import { questBoard, questFame, questMultiplier } from './quests';
 import { MAX_SCORE, resolveVerdict, scoreCareer } from './scoring';
-import {
+import { type Payoff, 
   BADGES_PER_REGION,
   type BadgeEarned, type BoxEntry, type CareerStats, type ChapterPhase,
   type ChapterResult, type DecisionCardSpec, type DexState, type EvolveOffer,
@@ -389,6 +389,12 @@ const BOND_DECAY_RATE = 0.10;
 /** Bond value treated as "maxed" for gameplay effects. Mirrors TARGETS.bond. */
 const BOND_EFFECTIVE_MAX = 70;
 
+/** Win-rate edge per landed gamble, and the number that count. See ChapterInput.landedSoFar. */
+export const MOMENTUM_PER_LANDED = 0.008;
+export const MOMENTUM_CAP = 5;
+/** Chance a payoff that promises a shiny actually delivers one. */
+export const PAYOFF_SHINY_ODDS = 0.35;
+
 interface ChapterInput {
   setup: JourneySetup;
   index: number;
@@ -401,6 +407,14 @@ interface ChapterInput {
   choiceDelta: StatDelta | null;
   /** Option id taken, so the recap can echo it. */
   choiceOptionId: string | null;
+  /** Durable reward if this chapter's risky pick lands. See Payoff in types.ts. */
+  choicePayoff: Payoff | null;
+  /**
+   * Gambles that have landed earlier in this run. Fatigue compounds AGAINST a
+   * risky career on every later chapter through `fatiguePenalty`; this is the
+   * thing that compounds FOR it — a reputation for pulling it off.
+   */
+  landedSoFar: number;
   /** Badges still available in the region being played. */
   badgeRoom: number;
   /** Region generation, for the recruit/catch pools on a multi-region tour. */
@@ -447,6 +461,8 @@ function resolveChapter(input: ChapterInput): {
   badgesWon: number;
   boxAdded: BoxEntry[];
   battles: OpponentResult[];
+  /** Item won by a landed gamble, for the outer loop to bank. */
+  payoffItem: ItemId | null;
 } {
   const { setup, index, phase, risk } = input;
   const rng = chapterRng(setup.seed, index);
@@ -468,6 +484,13 @@ function resolveChapter(input: ChapterInput): {
   // Risk raises the mean a little and the spread a lot.
   const meanShift = (risk - 1) * 0.05;
   const spread = (rng() - 0.5) * 0.28 * risk;
+  // A gamble "lands" when this chapter's own roll comes up positive. Tied to
+  // the roll rather than to the final win rate so a strong party can't make
+  // every risk a sure thing and a weak one can't make it hopeless: it is the
+  // dice you chose to roll, resolved. Deterministic in the seed, and only ever
+  // true for an option that carries a payoff, so safe picks are untouched.
+  const landed = !!input.choicePayoff && risk > 1 && spread > 0;
+  const payoff = landed ? input.choicePayoff : null;
   // Type matchup + level gap vs a named opponent. This is the payoff for
   // team-building: a party built to answer the specialty genuinely wins more.
   const partyLevel = input.roster.length
@@ -478,9 +501,14 @@ function resolveChapter(input: ChapterInput): {
   const primary = input.chain[0] ?? null;
   const matchup = primary ? matchupFor(input.roster, primary, partyLevel) : null;
   const matchupDelta = matchup ? matchupWinRateDelta(matchup) : 0;
+  // Momentum: +1.2pp win rate per gamble that has landed this run, capped at
+  // five. Makes an early risky call run-defining the way an early build choice
+  // is in a roguelite — and gives a risky career a compounding edge to set
+  // against fatigue's compounding drag. Safe careers never accrue it.
+  const momentum = Math.min(MOMENTUM_CAP, input.landedSoFar) * MOMENTUM_PER_LANDED;
 
   const winRate = Math.min(0.95, Math.max(0.05,
-    profile.baseWinRate + mods.winRate + bondBonus - fatiguePenalty + meanShift + spread + matchupDelta,
+    profile.baseWinRate + mods.winRate + bondBonus - fatiguePenalty + meanShift + spread + matchupDelta + momentum,
   ));
   const wins = Math.round(battles * winRate);
   const losses = battles - wins;
@@ -653,13 +681,19 @@ function resolveChapter(input: ChapterInput): {
   let roster = input.roster;
   let recruitedId: number | undefined;
   let recruitedShiny = false;
-  if (roster.length < ROSTER_SIZE && chance(rng, phase === 'gym-circuit' ? 0.85 : 0.55)) {
+  // A landed gamble that promises a partner guarantees the recruitment roll
+  // and picks the pool. Everything else about the recruit (shiny odds, level,
+  // XP) is unchanged, so a payoff partner is a real member, not a trophy.
+  const forcedTier = payoff?.recruit === 'legendary' ? pools.legendary
+    : payoff?.recruit === 'rare' ? pools.rare : null;
+  const recruitRoll = chance(rng, phase === 'gym-circuit' ? 0.85 : 0.55);
+  if (roster.length < ROSTER_SIZE && (recruitRoll || forcedTier)) {
     // Legendaries only become plausible once the career is on a real stage.
-    const tier = phase === 'gym-circuit'
+    const tier = forcedTier ?? (phase === 'gym-circuit'
       ? pools.common
       : phase === 'veteran' || phase === 'worlds'
         ? (chance(rng, 0.18) ? pools.legendary : pools.rare)
-        : (chance(rng, 0.5) ? pools.rare : pools.common);
+        : (chance(rng, 0.5) ? pools.rare : pools.common));
     const owned = new Set(roster.map(r => r.id));
     const candidates = sample(rng, tier.length ? tier : pools.common, 8).filter(id => !owned.has(id));
     if (candidates.length > 0) {
@@ -667,7 +701,15 @@ function resolveChapter(input: ChapterInput): {
       // Its own roll against the archetype's shiny rate — it used to be
       // `shinies > 0 && chance(rng, 0.5)`, which made a recruit shiny only as a
       // side effect of some OTHER Pokémon being shiny this chapter.
-      recruitedShiny = shinyIds.has(recruitedId) || chance(rng, mods.shinyChance * 0.22);
+      // A payoff that promises a shiny gives this recruit a real shot at one —
+      // PAYOFF_SHINY_ODDS, not certainty. A guaranteed shiny was worth ~68
+      // points to a Shiny Hunter per landed rumour (a third of its score is
+      // shinies), which pushed its risky careers 18 points clear of its safe
+      // ones; a chase should feel like a chase. Otherwise the recruit rolls
+      // against the archetype's own shiny rate, as before.
+      recruitedShiny = shinyIds.has(recruitedId)
+        || ((payoff?.shinies ?? 0) > 0 && chance(rng, PAYOFF_SHINY_ODDS))
+        || chance(rng, mods.shinyChance * 0.22);
       roster = [...roster, {
         id: recruitedId,
         shiny: recruitedShiny,
@@ -680,6 +722,22 @@ function resolveChapter(input: ChapterInput): {
       seenAdded.push(recruitedId);
       caughtAdded.push(recruitedId);
       if (recruitedShiny) shinyIds.add(recruitedId);
+      shinies = shinyIds.size;
+    }
+  } else if (forcedTier && roster.length >= ROSTER_SIZE) {
+    // The roster is full but the gamble promised a partner. A promise that
+    // quietly grants nothing is worse than no promise: late-career gambles —
+    // exactly when the party is full — read "if it lands: a rare partner" and
+    // delivered zero. The catch goes to the box instead, as a real caught
+    // Pokémon the player can swap in at the next prepare step, and it counts
+    // as the catch (and, for a shiny payoff, the shiny) the option advertised.
+    const owned = new Set([...roster.map(r => r.id), ...caughtAdded]);
+    const candidates = sample(rng, forcedTier.length ? forcedTier : pools.rare, 8).filter(id => !owned.has(id));
+    if (candidates.length > 0) {
+      const boxedId = candidates[0];
+      seenAdded.push(boxedId);
+      caughtAdded.push(boxedId);
+      if ((payoff?.shinies ?? 0) > 0 && chance(rng, PAYOFF_SHINY_ODDS)) shinyIds.add(boxedId);
       shinies = shinyIds.size;
     }
   }
@@ -718,6 +776,23 @@ function resolveChapter(input: ChapterInput): {
   stats = applyDelta(stats, delta);
   // peakRank is a minimum, not an accumulation — set it directly.
   stats.peakRank = peakRank;
+  // The landed gamble's durable part: money for the prepare step, a fatigue
+  // refund, fame. Applied after the chapter's own deltas so a refund reads
+  // against what this chapter actually cost. Item and recruit are handled
+  // where inventory and roster live.
+  if (payoff) {
+    // `shinies` on a payoff is realised through the recruit's shiny flag above
+    // (it lands in shinyIds → the chapter delta), so it is not applied twice.
+    // `catches` IS applied here: the engine's catch counter is separate from
+    // recruitment and never counted a recruit as a catch, so a payoff that read
+    // "a rare partner" put a Pokémon on the roster and nothing on the stat the
+    // Collector archetype scores at 30%. The partner is the Pokémon behind the
+    // number; the number has to land too.
+    const statPart = Object.fromEntries(
+      Object.entries(payoff).filter(([k]) => k !== 'item' && k !== 'recruit' && k !== 'shinies'),
+    ) as StatDelta;
+    if (Object.keys(statPart).length) stats = applyDelta(stats, statPart);
+  }
 
   // ---- flavor ----
   // Beats are drawn from the lines this career has NOT used yet. Sampling the
@@ -774,6 +849,7 @@ function resolveChapter(input: ChapterInput): {
     recruitedShiny: recruitedId !== undefined ? recruitedShiny : undefined,
     placement,
     battles: fought.length ? fought : undefined,
+    landed: landed || undefined,
   };
 
   // ---- party XP ----
@@ -788,7 +864,10 @@ function resolveChapter(input: ChapterInput): {
     }),
   }));
 
-  return { chapter, roster, seenAdded, caughtAdded, badgesWon: badges, boxAdded, battles: fought };
+  return {
+    chapter, roster, seenAdded, caughtAdded, badgesWon: badges, boxAdded, battles: fought,
+    payoffItem: payoff?.item ?? null,
+  };
 }
 
 // ============================================================
@@ -1364,6 +1443,8 @@ export function simulate(
     let risk = 1;
     let choiceDelta: StatDelta | null = null;
     let choiceOptionId: string | null = null;
+    let choicePayoff: Payoff | null = null;
+    const landedSoFar = chapters.reduce((n, ch) => n + (ch.landed ? 1 : 0), 0);
 
     if (isDecisionChapter(index, chapterCount, decisionEvery)) {
       // Rerolls recorded for this chapter, and what the run has spent overall.
@@ -1479,6 +1560,7 @@ export function simulate(
       risk = option.riskMultiplier ?? 1;
       choiceDelta = option.delta;
       choiceOptionId = option.id;
+      choicePayoff = option.payoff ?? null;
     }
 
     // A rematch is any named opponent this run has already faced and lost to.
@@ -1490,7 +1572,7 @@ export function simulate(
       : false;
 
     const resolved = resolveChapter({
-      setup, index, phase, stats, roster, risk, choiceDelta, choiceOptionId,
+      setup, index, phase, stats, roster, risk, choiceDelta, choiceOptionId, choicePayoff, landedSoFar,
       badgeRoom: BADGES_PER_REGION - earnedHere, regionGen, regionId,
       chain: chainAt({
         seed: setup.seed, regionId, phase, opponent, earnedHere, e4Step: e4StepNow,
@@ -1500,6 +1582,10 @@ export function simulate(
     chapters.push(resolved.chapter);
     stats = resolved.chapter.stats;
     roster = resolved.roster;
+    // An item won by a landed gamble is spendable at the next prepare step.
+    if (resolved.payoffItem) {
+      inventory = { ...inventory, [resolved.payoffItem]: (inventory[resolved.payoffItem] ?? 0) + 1 };
+    }
     mergeDex(resolved.seenAdded, resolved.caughtAdded);
 
     for (const b of resolved.battles) {

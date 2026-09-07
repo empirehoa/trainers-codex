@@ -95,6 +95,8 @@ export interface ChapterResult {
   delta: StatDelta;
   /** Snapshot of the career AFTER this chapter resolved. */
   stats: CareerStats;
+  /** True when this chapter's risky pick landed and its payoff was granted. */
+  landed?: boolean;
   /** Set when this chapter added a Pokémon to the roster. */
   recruitedId?: number;
   recruitedShiny?: boolean;
@@ -131,6 +133,36 @@ export interface DecisionOptionSpec {
    * Values above 1 raise both the upside and the variance.
    */
   riskMultiplier?: number;
+  /**
+   * Durable reward granted when a risky pick LANDS — when the chapter's own
+   * dice roll comes up positive. Absent on safe options.
+   *
+   * Why this exists: before payoffs, a risky option bought a one-chapter mean
+   * shift of `(risk - 1) * 0.05` while its `+fatigue` compounded through
+   * `fatiguePenalty` for the rest of the run, and safe options' `-fatigue` /
+   * `+bond` compounded the other way. Measured over 150 seeds × 5 archetypes,
+   * always-min-risk beat always-max-risk by 26–74 points for EVERY archetype
+   * and earned more prize money too. The dice outweighed every decision in a
+   * run combined (decision spread 35–88 vs seed SD 83–107). Risk was not a
+   * choice; it was a tax.
+   *
+   * A payoff makes the gamble real: lose the roll and you still ate the
+   * fatigue; win it and you keep something that outlasts the chapter — money
+   * for the prepare step, an item, a rare partner, or the fatigue refunded
+   * because it worked. Same seed, different choice, genuinely different run.
+   */
+  payoff?: Payoff;
+}
+
+/**
+ * What a landed gamble leaves behind. The StatDelta part is applied to the
+ * career on the spot (money, fatigue refund, fame); `item` lands in the
+ * inventory for the next prepare step; `recruit` forces this chapter's
+ * recruitment to fire from the named pool instead of rolling for it.
+ */
+export interface Payoff extends StatDelta {
+  item?: ItemId;
+  recruit?: 'rare' | 'legendary';
 }
 
 export interface DecisionCardSpec {

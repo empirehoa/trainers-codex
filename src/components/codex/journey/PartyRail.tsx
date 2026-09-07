@@ -36,7 +36,7 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
         <button
           onClick={() => setDexOpen(o => !o)}
           data-testid="journey-dex-toggle"
-          className="font-mono text-[10px] text-muted-foreground hover:text-primary flex items-center gap-1"
+          className="font-mono text-[10px] text-muted-foreground hover:text-primary flex items-center gap-1 min-h-9 px-1 -mr-1"
         >
           <BookMarked size={10} />
           {t('journey.party.dexCount', { caught: dex.caught.length, seen: dex.seen.length })}

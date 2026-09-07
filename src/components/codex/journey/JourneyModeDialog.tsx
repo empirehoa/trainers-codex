@@ -350,12 +350,15 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
                 <Compass size={16} className="inline mr-1.5" />
                 {t('journey.title')}
               </DialogTitle>
-              <DialogDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+              {/* The sticky header repeats on every screen of the run; the
+                  tagline cost ~40px of a 390px phone each time. Kept for
+                  assistive tech, shown from sm: up. */}
+              <DialogDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground sr-only sm:not-sr-only">
                 // {t('journey.tagline')}
               </DialogDescription>
             </div>
             <Select value={locale} onValueChange={v => setLocale(v as Locale)}>
-              <SelectTrigger className="w-[104px] h-8 font-mono text-[10px] shrink-0"
+              <SelectTrigger className="w-11 sm:w-[104px] h-11 sm:h-8 font-mono text-[10px] shrink-0 justify-center sm:justify-between [&>span]:hidden sm:[&>span]:inline"
                              aria-label={t('journey.locale.label')}
                              data-testid="journey-locale">
                 <Globe size={11} className="mr-1 shrink-0" />

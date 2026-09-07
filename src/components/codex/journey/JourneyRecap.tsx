@@ -112,6 +112,12 @@ export function JourneyRecap({
               {!!ch.delta.badges && <Delta label={t('journey.stat.badges')} value={ch.delta.badges} positive />}
               {!!ch.delta.catches && <Delta label={t('journey.stat.catches')} value={ch.delta.catches} positive />}
               {!!ch.delta.shinies && <Delta label={t('journey.stat.shinies')} value={ch.delta.shinies} positive />}
+              {ch.landed && (
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-semibold"
+                      data-testid="journey-landed">
+                  {t('journey.recap.landed')}
+                </span>
+              )}
               {!!ch.delta.titles && (
                 <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary flex items-center gap-1">
                   <Trophy size={9} /> +{ch.delta.titles}

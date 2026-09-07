@@ -139,7 +139,7 @@ export function JourneySetup({
                 )}
               >
                 <img src={pixelSprite(id)} alt="" width={48} height={48}
-                     className="pixelated" loading="lazy" />
+                     className="pixelated w-10 h-10 sm:w-12 sm:h-12" loading="lazy" />
                 {/*
                   Through rosterCaption, not POKEMON_BY_ID[id].display — the
                   starter picker is a user-visible reference to a species and so
@@ -155,8 +155,12 @@ export function JourneySetup({
       </Field>
 
       {/* ---- archetype ---- */}
+      {/* The setup screen ran 1.8 screens on a 390px phone with the Start button
+          1.5 screens down, on a mode whose promise is "a career in three
+          minutes". Archetype rows go two-up; pace and campaign become segmented
+          controls. Every testid is unchanged. */}
       <Field label={t('journey.setup.archetype')}>
-        <div className="space-y-1">
+        <div className="grid grid-cols-2 gap-1">
           {ARCHETYPES.map(a => (
             <OptionRow
               key={a}
@@ -172,42 +176,55 @@ export function JourneySetup({
 
       {/* ---- pace ---- */}
       <Field label={t('journey.setup.pace')}>
-        <div className="space-y-1">
+        <div className="grid grid-cols-3 gap-1">
           {PACES.map(p => (
-            <OptionRow
+            <Segment
               key={p.id}
               active={draft.pace === p.id}
               onClick={() => onChange({ ...draft, pace: p.id as Pace })}
               title={t(`journey.pace.${p.id}`)}
-              sub={t(`journey.pace.${p.id}.desc`, { minutes: p.approxMinutes })}
+              sub={`${p.approxMinutes} min`}
               testId={`journey-pace-${p.id}`}
             />
           ))}
         </div>
+        <p className="font-mono text-[10px] text-muted-foreground mt-1.5" data-testid="journey-hint-pace">
+          {t(`journey.pace.${draft.pace}.desc`, { minutes: PACES.find(p => p.id === draft.pace)?.approxMinutes ?? 0 })}
+        </p>
       </Field>
 
       {/* ---- campaign length ---- */}
       <Field label={t('journey.campaign.label')}>
-        <div className="space-y-1">
+        <div className="grid grid-cols-3 gap-1">
           {CAMPAIGNS.map(c => (
-            <OptionRow
+            <Segment
               key={c.id}
               active={(draft.campaign ?? 'short') === c.id}
               onClick={() => onChange({ ...draft, campaign: c.id })}
-              title={`${t(c.nameKey)} · ${c.approx}`}
-              sub={t(c.descKey)}
+              title={t(c.nameKey)}
+              sub={c.approx}
               testId={`journey-campaign-${c.id}`}
             />
           ))}
         </div>
+        <p className="font-mono text-[10px] text-muted-foreground mt-1.5" data-testid="journey-hint-campaign">
+          {t(CAMPAIGNS.find(c => c.id === (draft.campaign ?? 'short'))?.descKey ?? CAMPAIGNS[0].descKey)}
+        </p>
       </Field>
 
       {/* ---- start ---- */}
+      {/* Sticky on phones: the form ran 1.5 screens and this button sat at
+          ~1,020px, so the mode that promises a three-minute career opened with
+          a scroll to find Start. Pinned to the dialog's bottom edge under 640px
+          with the safe-area inset honoured; ordinary flow from sm: up. */}
+      <div className="sticky bottom-0 -mx-4 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-card/95 backdrop-blur-sm border-t sm:static sm:mx-0 sm:px-0 sm:pt-0 sm:pb-0 sm:border-0 sm:bg-transparent sm:backdrop-blur-none"
+           style={{ borderColor: 'hsl(var(--border))' }}>
       <Button onClick={onStart} className="w-full font-mono text-xs font-bold h-11"
               data-testid="journey-start">
         <Play size={13} className="mr-1.5" />
         {t('journey.setup.start')}
       </Button>
+      </div>
 
       <div className="font-mono text-[10px] text-muted-foreground text-center">
         {t('journey.setup.seedLabel')} {draft.seed}
@@ -280,7 +297,7 @@ export function JourneySetup({
           {archive.length > 1 && (
             <div className="pt-1 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
               <button onClick={() => setShowArchive(v => !v)}
-                      className="font-mono text-[10px] text-muted-foreground hover:text-primary transition"
+                      className="font-mono text-[10px] text-muted-foreground hover:text-primary transition min-h-9"
                       data-testid="journey-archive-toggle">
                 {showArchive ? '▾' : '▸'} {t('journey.archive.heading', { n: archive.length })}
               </button>
@@ -329,11 +346,31 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     <button
       onClick={onClick}
       className={cn(
-        'font-mono text-[10px] px-2 py-1 rounded border transition uppercase tracking-wider',
+        'font-mono text-[10px] px-2.5 min-h-9 rounded border transition uppercase tracking-wider',
         active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary',
       )}
     >
       {children}
+    </button>
+  );
+}
+
+/** One cell of a segmented control: title on top, a short sub underneath. */
+function Segment({ active, onClick, title, sub, testId }: {
+  active: boolean; onClick: () => void; title: string; sub: string; testId?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testId}
+      aria-pressed={active}
+      className={cn(
+        'rounded border px-2 py-2 min-h-11 text-center transition',
+        active ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50',
+      )}
+    >
+      <div className="font-mono text-xs font-semibold truncate">{title}</div>
+      <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">{sub}</div>
     </button>
   );
 }
@@ -351,7 +388,7 @@ function OptionRow({ active, onClick, title, sub, testId }: {
       )}
     >
       <div className="font-mono text-xs font-semibold">{title}</div>
-      <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{sub}</div>
+      <div className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden sm:block">{sub}</div>
     </button>
   );
 }

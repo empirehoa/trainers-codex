@@ -5,6 +5,79 @@ Claude Code. Read CLAUDE.md first for conventions and gotchas.
 
 ---
 
+## v14 — Risk is a choice now, and the choice comes first (Sep 2026)
+
+Scoped by a deep-research pass on what makes short share-driven roguelites
+retain (report in `docs/RESEARCH_2026-09-07.md` once the workflow lands) and a
+phone-first design critique of every Journey screen. Two findings drove the
+work.
+
+### The dice outweighed the player
+
+Measured over 150 seeds × 5 archetypes with four fixed strategies:
+always-min-risk beat always-max-risk by **26–74 points for every archetype**,
+earned more prize money, and per-seed decision spread (35–88) sat below the
+seed SD (83–107). A risky option bought a one-chapter `(risk−1)×0.05` mean
+shift while its `+fatigue` compounded against the run on every later chapter.
+Risk was not a choice; it was a tax.
+
+**Fix — durable payoffs + momentum.** Every risky option carries a `payoff`
+granted when the chapter's own roll lands (a deterministic coin flip, 51%
+measured): money for the prepare step, an item, a rare partner, the fatigue
+refunded at ~1.7× cost, fame. Each landed gamble also adds bounded momentum to
+win rate (+0.8pp, cap 5), the compounding-for to set against fatigue's
+compounding-against. The consequence line under each option shows the delta
+chips, a steady/risky/gamble tag and "if it lands: …" — a choice you can read.
+
+| | before | after |
+|---|---:|---:|
+| max-risk − min-risk, worst archetype | −74 | −18 |
+| archetypes where risk comes out ahead | 0 of 5 | 3 of 5 |
+| money, risky vs safe career | −7% | **+25–33%** |
+| decision spread ÷ career SD | 0.29–0.65, one-directional | 0.33–0.63, two-directional |
+
+Two content bugs surfaced by the new consequence line: `shiny-rumor` and
+`rare-encounter` had their risk arms *inverted* against their own fiction —
+"Go hunt it" was the steady pick and "Let it go" the gamble. Fixed; that alone
+closed most of Collector's gap.
+
+Also found: the engine's catch counter never counted recruits, so a payoff
+promising "a rare partner" put a Pokémon on the roster and nothing on the stat
+Collector scores at 30%; and a payoff recruit did nothing at all once the roster
+was full — exactly when late-run gambles happen. Overflow goes to the box now.
+
+`journey/risk.test.ts` pins all of it over 3,000 careers. The rank table was
+regenerated (`ranks.gen.test.ts`, provenance in `ranks.ts`).
+
+### The question was the eighth thing on the screen
+
+On a 390px phone the decision prompt sat at y≈780 of 844 — below the badge
+track, area map, opponent card, party rail and the entire prepare panel. Setup
+ran 1.8 screens with Start at ~1,140px. The dialog header repeated a 40px
+tagline on every screen; Close was 16×16.
+
+| | before | after |
+|---|---:|---:|
+| decision prompt, y at 390px | ~780px | **245px** |
+| setup Start button | 1,142px (1.5 screens) | **sticky, visible on first paint** |
+| setup height | 1.8 screens | 1.39 |
+| dialog Close target | 16×16 | 44×44 (touch) |
+| region chips / dex toggle / archive toggle | 25px / 15px / 15px tall | ≥36px |
+
+Archetype rows went two-up, pace and campaign became segmented controls (same
+testids), the tagline is `sr-only` under 640px, the locale picker is icon-only.
+
+### Not done
+
+- Deep-research findings are still landing; anything they justify beyond this
+  is a follow-up.
+- Shiny Hunter's decision/dice ratio is 0.33 — held to a lower floor
+  deliberately, because a third of its score *is* dice. If that ever feels flat
+  in play, the lever is more payoffs in its currency, not a higher floor.
+- World Cup is still one fight against your own region champion.
+
+---
+
 ## v13 — Audit, simplification, and the mobile experience (Sep 2026)
 
 A full audit: measure first, then cut. Boot was already healthy — **584ms to

@@ -239,13 +239,24 @@ export const ARCHETYPES: Archetype[] = ['aggro', 'stall', 'balance', 'collector'
 // tilt a career, not decide it. `riskMultiplier` above 1 widens the outcome
 // spread for that chapter in both directions.
 
+// Every option with riskMultiplier > 1 carries a `payoff` — what a landed
+// gamble leaves behind. Tiered by how much variance the pick buys, so bigger
+// dice mean bigger durable upside rather than just a wider spread:
+//
+//   1.05–1.2   money the prepare step can spend (rerolls, later: shop)
+//   1.25–1.35  money + a thematic item, or the chapter's fatigue refunded
+//   1.45–1.6   a rare partner (legendary on the late-career stage) + refund
+//
+// See Payoff in types.ts for why: without these, min-risk beat max-risk for
+// every archetype and the dice outweighed every decision in a run combined.
+// journey/risk.test.ts sweeps the deck and fails if that ever comes back.
 export const DECISION_CARDS: DecisionCardSpec[] = [
   {
     id: 'underdog-gym',
     phases: ['gym-circuit'],
     promptKey: 'journey.card.underdog-gym.prompt',
     options: [
-      { id: 'challenge', labelKey: 'journey.card.underdog-gym.challenge.label', flavorKey: 'journey.card.underdog-gym.challenge.flavor', delta: { fame: 6, fatigue: 8 }, riskMultiplier: 1.35 },
+      { id: 'challenge', labelKey: 'journey.card.underdog-gym.challenge.label', flavorKey: 'journey.card.underdog-gym.challenge.flavor', delta: { fame: 6, fatigue: 8 }, riskMultiplier: 1.35, payoff: { money: 500, fatigue: -14, fame: 2 } },
       { id: 'train',     labelKey: 'journey.card.underdog-gym.train.label',     flavorKey: 'journey.card.underdog-gym.train.flavor',     delta: { bond: 8, fatigue: -6, fame: -2 }, riskMultiplier: 0.8 },
     ],
     affinity: ['aggro'],
@@ -255,8 +266,13 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['gym-circuit', 'regional', 'national'],
     promptKey: 'journey.card.rare-encounter.prompt',
     options: [
-      { id: 'catch',   labelKey: 'journey.card.rare-encounter.catch.label',   flavorKey: 'journey.card.rare-encounter.catch.flavor',   delta: { catches: 2, bond: 4, fatigue: 10 }, riskMultiplier: 0.85 },
-      { id: 'prepare', labelKey: 'journey.card.rare-encounter.prepare.label', flavorKey: 'journey.card.rare-encounter.prepare.flavor', delta: { fatigue: -4 }, riskMultiplier: 1.15 },
+      // The risk arms were inverted against the card's own fiction: catching the
+      // rare Pokémon was the SAFE pick (0.85) and walking past it the risky one
+      // (1.15). Under a max-risk strategy a Collector therefore skipped every
+      // catch card, which is most of why that archetype's risky careers scored
+      // 29 points below its safe ones. Hunting is the gamble; it pays in catches.
+      { id: 'catch',   labelKey: 'journey.card.rare-encounter.catch.label',   flavorKey: 'journey.card.rare-encounter.catch.flavor',   delta: { catches: 1, bond: 4, fatigue: 10 }, riskMultiplier: 1.3, payoff: { recruit: 'rare', catches: 3, fatigue: -17 } },
+      { id: 'prepare', labelKey: 'journey.card.rare-encounter.prepare.label', flavorKey: 'journey.card.rare-encounter.prepare.flavor', delta: { fatigue: -4, bond: 3 }, riskMultiplier: 0.9 },
       { id: 'both',    labelKey: 'journey.card.rare-encounter.both.label',    flavorKey: 'journey.card.rare-encounter.both.flavor',    delta: { catches: 1, fatigue: 16, fame: 3 }, riskMultiplier: 1.0 },
     ],
     affinity: ['collector', 'shiny-hunter'],
@@ -266,7 +282,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['gym-circuit', 'regional', 'national', 'worlds'],
     promptKey: 'journey.card.rival-wager.prompt',
     options: [
-      { id: 'accept',  labelKey: 'journey.card.rival-wager.accept.label',  flavorKey: 'journey.card.rival-wager.accept.flavor',  delta: { fame: 10, fatigue: 6 }, riskMultiplier: 1.5 },
+      { id: 'accept',  labelKey: 'journey.card.rival-wager.accept.label',  flavorKey: 'journey.card.rival-wager.accept.flavor',  delta: { fame: 10, fatigue: 6 }, riskMultiplier: 1.5, payoff: { money: 900, recruit: 'rare', fatigue: -12, fame: 4, catches: 1} },
       { id: 'decline', labelKey: 'journey.card.rival-wager.decline.label', flavorKey: 'journey.card.rival-wager.decline.flavor', delta: { fame: -4, bond: 3 }, riskMultiplier: 0.75 },
     ],
     affinity: ['aggro', 'balance'],
@@ -276,7 +292,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['gym-circuit', 'regional'],
     promptKey: 'journey.card.evolve-timing.prompt',
     options: [
-      { id: 'now',   labelKey: 'journey.card.evolve-timing.now.label',   flavorKey: 'journey.card.evolve-timing.now.flavor',   delta: { wins: 3, bond: -3 }, riskMultiplier: 1.1 },
+      { id: 'now',   labelKey: 'journey.card.evolve-timing.now.label',   flavorKey: 'journey.card.evolve-timing.now.flavor',   delta: { wins: 3, bond: -3 }, riskMultiplier: 1.1, payoff: { money: 300, item: 'rare-candy', bond: 6 } },
       { id: 'delay', labelKey: 'journey.card.evolve-timing.delay.label', flavorKey: 'journey.card.evolve-timing.delay.flavor', delta: { bond: 10 }, riskMultiplier: 0.9 },
     ],
   },
@@ -285,7 +301,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['regional', 'national'],
     promptKey: 'journey.card.go-pro.prompt',
     options: [
-      { id: 'overseas', labelKey: 'journey.card.go-pro.overseas.label', flavorKey: 'journey.card.go-pro.overseas.flavor', delta: { fame: 14, fatigue: 12 }, riskMultiplier: 1.6 },
+      { id: 'overseas', labelKey: 'journey.card.go-pro.overseas.label', flavorKey: 'journey.card.go-pro.overseas.flavor', delta: { fame: 14, fatigue: 12 }, riskMultiplier: 1.6, payoff: { recruit: 'rare', fatigue: -21, fame: 6, catches: 1} },
       // NOT `badges: 1`. A badge now means "you beat a gym leader" and is
       // recorded on the region badge track, so handing one out as a card reward
       // desynced the badge STAT from the track: a run could report 5 badges
@@ -300,7 +316,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['veteran'],
     promptKey: 'journey.card.comeback-tour.prompt',
     options: [
-      { id: 'comeback', labelKey: 'journey.card.comeback-tour.comeback.label', flavorKey: 'journey.card.comeback-tour.comeback.flavor', delta: { fame: 12, fatigue: 18 }, riskMultiplier: 1.55 },
+      { id: 'comeback', labelKey: 'journey.card.comeback-tour.comeback.label', flavorKey: 'journey.card.comeback-tour.comeback.flavor', delta: { fame: 12, fatigue: 18 }, riskMultiplier: 1.55, payoff: { recruit: 'legendary', fatigue: -31, fame: 6, catches: 1} },
       { id: 'retire',   labelKey: 'journey.card.comeback-tour.retire.label',   flavorKey: 'journey.card.comeback-tour.retire.flavor',   delta: { bond: 14, fame: 4, fatigue: -20 }, riskMultiplier: 0.7 },
     ],
   },
@@ -309,7 +325,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['regional', 'national', 'worlds'],
     promptKey: 'journey.card.sponsor-offer.prompt',
     options: [
-      { id: 'sign',    labelKey: 'journey.card.sponsor-offer.sign.label',    flavorKey: 'journey.card.sponsor-offer.sign.flavor',    delta: { fame: 12, bond: -6, fatigue: 4 }, riskMultiplier: 1.1 },
+      { id: 'sign',    labelKey: 'journey.card.sponsor-offer.sign.label',    flavorKey: 'journey.card.sponsor-offer.sign.flavor',    delta: { fame: 12, bond: -6, fatigue: 4 }, riskMultiplier: 1.1, payoff: { money: 1200, bond: 8 } },
       { id: 'refuse',  labelKey: 'journey.card.sponsor-offer.refuse.label',  flavorKey: 'journey.card.sponsor-offer.refuse.flavor',  delta: { bond: 8, fame: -3 }, riskMultiplier: 0.95 },
     ],
   },
@@ -319,7 +335,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.team-fatigue.prompt',
     options: [
       { id: 'rest',  labelKey: 'journey.card.team-fatigue.rest.label',  flavorKey: 'journey.card.team-fatigue.rest.flavor',  delta: { fatigue: -25, fame: -3 }, riskMultiplier: 0.7 },
-      { id: 'push',  labelKey: 'journey.card.team-fatigue.push.label',  flavorKey: 'journey.card.team-fatigue.push.flavor',  delta: { fatigue: 12, fame: 5 }, riskMultiplier: 1.3 },
+      { id: 'push',  labelKey: 'journey.card.team-fatigue.push.label',  flavorKey: 'journey.card.team-fatigue.push.flavor',  delta: { fatigue: 12, fame: 5 }, riskMultiplier: 1.3, payoff: { money: 400, fatigue: -21, fame: 2 } },
       { id: 'rotate', labelKey: 'journey.card.team-fatigue.rotate.label', flavorKey: 'journey.card.team-fatigue.rotate.flavor', delta: { fatigue: -12, catches: 1, bond: -4 }, riskMultiplier: 0.95 },
     ],
   },
@@ -328,8 +344,11 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['gym-circuit', 'regional', 'national', 'veteran'],
     promptKey: 'journey.card.shiny-rumor.prompt',
     options: [
-      { id: 'hunt',   labelKey: 'journey.card.shiny-rumor.hunt.label',   flavorKey: 'journey.card.shiny-rumor.hunt.flavor',   delta: { fatigue: 14, fame: 4 }, riskMultiplier: 0.85 },
-      { id: 'ignore', labelKey: 'journey.card.shiny-rumor.ignore.label', flavorKey: 'journey.card.shiny-rumor.ignore.flavor', delta: { fatigue: -4 }, riskMultiplier: 1.05 },
+      // Same inversion as rare-encounter: "Go hunt it" was the steady pick and
+      // "Let it go" the risky one — the consequence line made that visible for
+      // the first time, tagging the do-nothing option as the gamble.
+      { id: 'hunt',   labelKey: 'journey.card.shiny-rumor.hunt.label',   flavorKey: 'journey.card.shiny-rumor.hunt.flavor',   delta: { fatigue: 14, fame: 4 }, riskMultiplier: 1.4, payoff: { recruit: 'rare', shinies: 1, catches: 1, fatigue: -24, fame: 4 } },
+      { id: 'ignore', labelKey: 'journey.card.shiny-rumor.ignore.label', flavorKey: 'journey.card.shiny-rumor.ignore.flavor', delta: { fatigue: -4, bond: 3 }, riskMultiplier: 0.9 },
     ],
     affinity: ['shiny-hunter'],
   },
@@ -339,7 +358,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.mentor-request.prompt',
     options: [
       { id: 'mentor',  labelKey: 'journey.card.mentor-request.mentor.label',  flavorKey: 'journey.card.mentor-request.mentor.flavor',  delta: { fame: 8, bond: 10, fatigue: 6 }, riskMultiplier: 0.9 },
-      { id: 'focus',   labelKey: 'journey.card.mentor-request.focus.label',   flavorKey: 'journey.card.mentor-request.focus.flavor',   delta: { fatigue: -6 }, riskMultiplier: 1.2 },
+      { id: 'focus',   labelKey: 'journey.card.mentor-request.focus.label',   flavorKey: 'journey.card.mentor-request.focus.flavor',   delta: { fatigue: -6 }, riskMultiplier: 1.2, payoff: { money: 300, item: 'exp-share', fatigue: -5 } },
     ],
   },
   {
@@ -347,7 +366,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['national', 'worlds'],
     promptKey: 'journey.card.format-shift.prompt',
     options: [
-      { id: 'adapt',  labelKey: 'journey.card.format-shift.adapt.label',  flavorKey: 'journey.card.format-shift.adapt.flavor',  delta: { catches: 2, bond: -5, fatigue: 8 }, riskMultiplier: 1.15 },
+      { id: 'adapt',  labelKey: 'journey.card.format-shift.adapt.label',  flavorKey: 'journey.card.format-shift.adapt.flavor',  delta: { catches: 2, bond: -5, fatigue: 8 }, riskMultiplier: 1.15, payoff: { money: 350, item: 'link-cord', fatigue: -14, bond: 6 } },
       { id: 'commit', labelKey: 'journey.card.format-shift.commit.label', flavorKey: 'journey.card.format-shift.commit.flavor', delta: { bond: 12, fame: 4 }, riskMultiplier: 0.85 },
     ],
     affinity: ['stall'],
@@ -358,7 +377,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.injury-scare.prompt',
     options: [
       { id: 'withdraw', labelKey: 'journey.card.injury-scare.withdraw.label', flavorKey: 'journey.card.injury-scare.withdraw.flavor', delta: { fatigue: -22, bond: 12, fame: -6 }, riskMultiplier: 0.6 },
-      { id: 'compete',  labelKey: 'journey.card.injury-scare.compete.label',  flavorKey: 'journey.card.injury-scare.compete.flavor',  delta: { fatigue: 20, fame: 8 }, riskMultiplier: 1.45 },
+      { id: 'compete',  labelKey: 'journey.card.injury-scare.compete.label',  flavorKey: 'journey.card.injury-scare.compete.flavor',  delta: { fatigue: 20, fame: 8 }, riskMultiplier: 1.45, payoff: { recruit: 'rare', fatigue: -34, fame: 6, catches: 1} },
     ],
     affinity: ['stall'],
   },
@@ -367,7 +386,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['gym-circuit', 'regional', 'national'],
     promptKey: 'journey.card.trade-offer.prompt',
     options: [
-      { id: 'trade', labelKey: 'journey.card.trade-offer.trade.label', flavorKey: 'journey.card.trade-offer.trade.flavor', delta: { catches: 1, bond: -8, wins: 2 }, riskMultiplier: 1.1 },
+      { id: 'trade', labelKey: 'journey.card.trade-offer.trade.label', flavorKey: 'journey.card.trade-offer.trade.flavor', delta: { catches: 1, bond: -8, wins: 2 }, riskMultiplier: 1.1, payoff: { item: 'evo-stone', bond: 10, money: 300, catches: 1 } },
       { id: 'keep',  labelKey: 'journey.card.trade-offer.keep.label',  flavorKey: 'journey.card.trade-offer.keep.flavor',  delta: { bond: 12 }, riskMultiplier: 0.95 },
     ],
     affinity: ['collector'],
@@ -377,7 +396,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['worlds', 'veteran'],
     promptKey: 'journey.card.documentary.prompt',
     options: [
-      { id: 'allow',  labelKey: 'journey.card.documentary.allow.label',  flavorKey: 'journey.card.documentary.allow.flavor',  delta: { fame: 18, fatigue: 8, bond: -4 }, riskMultiplier: 1.05 },
+      { id: 'allow',  labelKey: 'journey.card.documentary.allow.label',  flavorKey: 'journey.card.documentary.allow.flavor',  delta: { fame: 18, fatigue: 8, bond: -4 }, riskMultiplier: 1.05, payoff: { money: 800, fatigue: -14, bond: 6 } },
       { id: 'refuse', labelKey: 'journey.card.documentary.refuse.label', flavorKey: 'journey.card.documentary.refuse.flavor', delta: { bond: 8, fatigue: -4 }, riskMultiplier: 0.95 },
     ],
   },
@@ -387,7 +406,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.dex-completion.prompt',
     options: [
       { id: 'chase',  labelKey: 'journey.card.dex-completion.chase.label',  flavorKey: 'journey.card.dex-completion.chase.flavor',  delta: { catches: 5, fatigue: 14, fame: 5 }, riskMultiplier: 0.8 },
-      { id: 'ladder', labelKey: 'journey.card.dex-completion.ladder.label', flavorKey: 'journey.card.dex-completion.ladder.flavor', delta: { wins: 4, fatigue: 6 }, riskMultiplier: 1.2 },
+      { id: 'ladder', labelKey: 'journey.card.dex-completion.ladder.label', flavorKey: 'journey.card.dex-completion.ladder.flavor', delta: { wins: 4, fatigue: 6 }, riskMultiplier: 1.2, payoff: { money: 450, item: 'rare-candy', recruit: 'rare', fatigue: -10, catches: 1} },
     ],
     affinity: ['collector'],
   },
@@ -397,7 +416,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.final-roster.prompt',
     options: [
       { id: 'loyal', labelKey: 'journey.card.final-roster.loyal.label', flavorKey: 'journey.card.final-roster.loyal.flavor', delta: { bond: 18, fame: 4 }, riskMultiplier: 0.85 },
-      { id: 'meta',  labelKey: 'journey.card.final-roster.meta.label',  flavorKey: 'journey.card.final-roster.meta.flavor',  delta: { wins: 5, bond: -10, catches: 2 }, riskMultiplier: 1.25 },
+      { id: 'meta',  labelKey: 'journey.card.final-roster.meta.label',  flavorKey: 'journey.card.final-roster.meta.flavor',  delta: { wins: 5, bond: -10, catches: 2 }, riskMultiplier: 1.25, payoff: { money: 600, item: 'exp-share', bond: 12 } },
     ],
   },
   {
@@ -405,7 +424,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['elite-four'],
     promptKey: 'journey.card.e4-order.prompt',
     options: [
-      { id: 'lead-ace',  labelKey: 'journey.card.e4-order.lead-ace.label',  flavorKey: 'journey.card.e4-order.lead-ace.flavor',  delta: { fame: 6, fatigue: 10 }, riskMultiplier: 1.25 },
+      { id: 'lead-ace',  labelKey: 'journey.card.e4-order.lead-ace.label',  flavorKey: 'journey.card.e4-order.lead-ace.flavor',  delta: { fame: 6, fatigue: 10 }, riskMultiplier: 1.25, payoff: { money: 500, fatigue: -17, fame: 2 } },
       { id: 'lead-wall', labelKey: 'journey.card.e4-order.lead-wall.label', flavorKey: 'journey.card.e4-order.lead-wall.flavor', delta: { bond: 8, fatigue: 4 }, riskMultiplier: 0.85 },
     ],
     affinity: ['aggro', 'stall'],
@@ -415,7 +434,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['elite-four'],
     promptKey: 'journey.card.e4-rest.prompt',
     options: [
-      { id: 'push-on',  labelKey: 'journey.card.e4-rest.push-on.label',  flavorKey: 'journey.card.e4-rest.push-on.flavor',  delta: { fame: 8, fatigue: 14 }, riskMultiplier: 1.35 },
+      { id: 'push-on',  labelKey: 'journey.card.e4-rest.push-on.label',  flavorKey: 'journey.card.e4-rest.push-on.flavor',  delta: { fame: 8, fatigue: 14 }, riskMultiplier: 1.35, payoff: { money: 500, fatigue: -24, fame: 2 } },
       { id: 'breathe',  labelKey: 'journey.card.e4-rest.breathe.label',  flavorKey: 'journey.card.e4-rest.breathe.flavor',  delta: { fatigue: -10, bond: 5 }, riskMultiplier: 0.8 },
     ],
     affinity: ['stall'],
@@ -426,7 +445,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.e4-scout.prompt',
     options: [
       { id: 'study',   labelKey: 'journey.card.e4-scout.study.label',   flavorKey: 'journey.card.e4-scout.study.flavor',   delta: { fatigue: 4, bond: 4 }, riskMultiplier: 0.85 },
-      { id: 'improvise', labelKey: 'journey.card.e4-scout.improvise.label', flavorKey: 'journey.card.e4-scout.improvise.flavor', delta: { fame: 7, fatigue: 8 }, riskMultiplier: 1.3 },
+      { id: 'improvise', labelKey: 'journey.card.e4-scout.improvise.label', flavorKey: 'journey.card.e4-scout.improvise.flavor', delta: { fame: 7, fatigue: 8 }, riskMultiplier: 1.3, payoff: { money: 450, item: 'energy-root', fatigue: -14, fame: 2 } },
     ],
     affinity: ['balance'],
   },
@@ -435,7 +454,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['elite-four'],
     promptKey: 'journey.card.e4-gambit.prompt',
     options: [
-      { id: 'all-in',   labelKey: 'journey.card.e4-gambit.all-in.label',   flavorKey: 'journey.card.e4-gambit.all-in.flavor',   delta: { fame: 12, fatigue: 18 }, riskMultiplier: 1.6 },
+      { id: 'all-in',   labelKey: 'journey.card.e4-gambit.all-in.label',   flavorKey: 'journey.card.e4-gambit.all-in.flavor',   delta: { fame: 12, fatigue: 18 }, riskMultiplier: 1.6, payoff: { recruit: 'rare', fatigue: -31, fame: 6, catches: 1} },
       { id: 'measured', labelKey: 'journey.card.e4-gambit.measured.label', flavorKey: 'journey.card.e4-gambit.measured.flavor', delta: { fatigue: -6, bond: 6 }, riskMultiplier: 0.8 },
     ],
   },
@@ -445,7 +464,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     promptKey: 'journey.card.wc-scout.prompt',
     options: [
       { id: 'scout',   labelKey: 'journey.card.wc-scout.scout.label',   flavorKey: 'journey.card.wc-scout.scout.flavor',   delta: { fatigue: 8 }, riskMultiplier: 0.8 },
-      { id: 'trust',   labelKey: 'journey.card.wc-scout.trust.label',   flavorKey: 'journey.card.wc-scout.trust.flavor',   delta: { bond: 10, fame: 4 }, riskMultiplier: 1.2 },
+      { id: 'trust',   labelKey: 'journey.card.wc-scout.trust.label',   flavorKey: 'journey.card.wc-scout.trust.flavor',   delta: { bond: 10, fame: 4 }, riskMultiplier: 1.2, payoff: { money: 600, item: 'soothe-bell', fatigue: -7 } },
     ],
   },
   {
@@ -453,7 +472,7 @@ export const DECISION_CARDS: DecisionCardSpec[] = [
     phases: ['world-cup'],
     promptKey: 'journey.card.wc-final.prompt',
     options: [
-      { id: 'signature', labelKey: 'journey.card.wc-final.signature.label', flavorKey: 'journey.card.wc-final.signature.flavor', delta: { fame: 16, fatigue: 12 }, riskMultiplier: 1.45 },
+      { id: 'signature', labelKey: 'journey.card.wc-final.signature.label', flavorKey: 'journey.card.wc-final.signature.flavor', delta: { fame: 16, fatigue: 12 }, riskMultiplier: 1.45, payoff: { recruit: 'legendary', fatigue: -21, fame: 8, catches: 1} },
       { id: 'safe',      labelKey: 'journey.card.wc-final.safe.label',      flavorKey: 'journey.card.wc-final.safe.flavor',      delta: { bond: 8, fatigue: 4 }, riskMultiplier: 0.9 },
     ],
   },
