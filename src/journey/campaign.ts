@@ -44,15 +44,18 @@ export function getCampaign(id: Campaign | undefined): CampaignSpec {
   return CAMPAIGNS.find(c => c.id === (id ?? 'short')) ?? CAMPAIGNS[0];
 }
 
-/** Total chapters for a campaign — deterministic from the seed. */
+/**
+ * Total chapters for a campaign — deterministic from the seed.
+ *
+ * Derived from `regionChapterSpans` rather than re-rolling its own total. The
+ * two used to be independent implementations of the same idea and they did not
+ * agree: for a short campaign the engine drew the career length from the
+ * `career-length` stream while the spans came from `campaign-length`, so a run
+ * of 13 chapters reported a single region span of 20. Anything reading
+ * per-region position against the career total then landed in the wrong phase.
+ */
 export function campaignChapterCount(setup: JourneySetup): number {
-  const spec = getCampaign(setup.campaign);
-  const rng = namedRng(setup.seed, 'campaign-length');
-  let total = 0;
-  for (let i = 0; i < spec.regions; i++) {
-    total += randInt(rng, spec.chaptersPerRegion[0], spec.chaptersPerRegion[1]);
-  }
-  return total;
+  return regionChapterSpans(setup).reduce((a, b) => a + b, 0);
 }
 
 /**
@@ -66,9 +69,27 @@ export function regionTour(setup: JourneySetup): string[] {
   return [start, ...rest].slice(0, spec.regions);
 }
 
-/** Chapters allotted to each stop on the tour. */
+/** Career length bounds for a single-region run. Mirrors engine.ts's
+ *  MIN_CHAPTERS/MAX_CHAPTERS, which cannot be imported here — engine.ts imports
+ *  this module, so the dependency only runs one way. `campaign.test.ts` asserts
+ *  the two stay equal. */
+const SHORT_MIN = 12;
+const SHORT_MAX = 20;
+
+/**
+ * Chapters allotted to each stop on the tour.
+ *
+ * This is the single source of truth for career length, including the
+ * one-region case. A short campaign deliberately draws from the
+ * `career-length` stream with the engine's own bounds, so every `?seed=` link
+ * ever shared for a short run replays to the identical length — that path is
+ * bit-identical to before this became authoritative.
+ */
 export function regionChapterSpans(setup: JourneySetup): number[] {
   const spec = getCampaign(setup.campaign);
+  if (spec.regions === 1) {
+    return [randInt(namedRng(setup.seed, 'career-length'), SHORT_MIN, SHORT_MAX)];
+  }
   const rng = namedRng(setup.seed, 'campaign-length');
   const out: number[] = [];
   for (let i = 0; i < spec.regions; i++) {

@@ -121,7 +121,7 @@ export function TeamMemberConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl p-0 gap-0 max-h-[92vh] overflow-y-auto scroll-y bg-card">
+      <DialogContent className="max-w-2xl p-0 gap-0 max-h-[92dvh] overflow-y-auto scroll-y bg-card">
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
           <div className="flex items-center gap-2">
             <div

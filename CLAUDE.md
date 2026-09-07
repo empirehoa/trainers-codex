@@ -216,7 +216,7 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 331 tests · engine, battles/badges/shinies/events, level economy,
+pnpm test:unit     # vitest · 349 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
                    #            content health, i18n, deeplink, streak, analytics, prepare
 pnpm test:browser  # puppeteer · 21 suites / 222 tests (incl. 44 Journey Mode, 16 responsive,
@@ -406,7 +406,39 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     12-item list. It now has a first-screen CTA in the empty state. Anything
     you would put in the marketing copy needs a reachable entry point at 390px.
 
-28. **A build-time script that shares code with `src/` must import with an
+29. **Two functions computing "the same" number will disagree.** Career length
+    had two implementations: `chapterCountFor` drew a short run from the
+    `career-length` stream, `regionChapterSpans` drew from `campaign-length`.
+    A 13-chapter career therefore reported a 20-chapter region, and anything
+    measuring position *within* a region against the *career* total resolved to
+    the wrong phase. `regionChapterSpans` is now the single source and
+    `campaignChapterCount` sums it; `campaign.test.ts` asserts they agree for
+    every campaign and seed. When you add a second way to compute a quantity,
+    delete the first.
+
+30. **A default that is also a fallback hides its own failure.**
+    `visited[Math.min(tourIndex, visited.length - 1)]` looks defensive and is
+    the reason a nine-region saga ran nine regions of chapters inside Kanto:
+    `visited` only grows through a player travel choice, so every later tour
+    stop clamped back to region one. Badges hit the 8-per-region ceiling,
+    `gymLeaders` ran dry, and eight regions had nothing to fight. `?? ` to the
+    seeded value, don't clamp to the last known one.
+
+31. **Type effectiveness against a dual type is the PRODUCT, never the max, and
+    an accumulator seeded at 1 can never record a resistance.** `matchupFor`
+    made both mistakes at once, so Charizard read as *weak* to Ground (it is
+    immune) and every resistance in the game read as neutral. Both `<= 0.5`
+    arms of the function were unreachable, which meant the defensive half of
+    "bring the right team" did nothing. `lib/analysis.ts` `eff` has always been
+    correct — match it. `journey/matchup.test.ts` pins the cases.
+
+32. **A paid reroll must exclude what it replaces.** Drawing the reroll from an
+    independent rng stream returned the same card 19.4% of the time — 21% in
+    the six-card gym pool, ~50% in world-cup's two. Walk the chain from zero and
+    filter what has been shown, which keeps the draw a pure function of
+    (seed, chapterIndex, rerolls) and the replay contract intact.
+
+33. **A build-time script that shares code with `src/` must import with an
     explicit `.ts` extension.** `scripts/gen-seo-pages.ts` runs under Node's
     native type stripping, which is real ESM: extensionless specifiers do not
     resolve. `allowImportingTsExtensions` is already on, so

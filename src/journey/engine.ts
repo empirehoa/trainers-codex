@@ -90,11 +90,28 @@ export function chapterCountFor(seedOrSetup: number | JourneySetup): number {
 
 /**
  * Map a chapter index onto a career phase.
+ *
  * Proportional rather than absolute so a 12-chapter career and a 20-chapter
  * career both get a full arc — gyms, the climb, Worlds, veteran years, exit.
+ *
+ * `index`/`chapterCount` are REGION-LOCAL on a multi-region campaign. They used
+ * to be career-wide, which quietly emptied every region after the first: the
+ * gym circuit is the opening 26% and the Elite Four the next 16%, so on a
+ * nine-region saga both fell entirely inside region one. Measured over 25 saga
+ * runs, 135 chapters produced gym wins in 1.00 of 9 regions, 8 badges total and
+ * zero crowns — eight regions of an advertised 45-minute mode with no gyms, no
+ * badges and no champion, and `travelOptionsFor` (gated on the elite-four phase)
+ * dead alongside them. Season was 1.00 of 3.
+ *
+ * A one-region campaign passes its own length, so `short` — the default, and
+ * the only campaign with shipped `?seed=` links — is bit-identical to before.
+ *
+ * `isFinalRegion` keeps the endgame singular: worlds, the World Cup, the
+ * veteran years and retirement belong to the last stop on the tour, not to
+ * every stop. Earlier regions end after their champion and hand off to the next.
  */
-export function phaseFor(index: number, chapterCount: number): ChapterPhase {
-  if (index >= chapterCount - 1) return 'retirement';
+export function phaseFor(index: number, chapterCount: number, isFinalRegion = true): ChapterPhase {
+  if (index >= chapterCount - 1) return isFinalRegion ? 'retirement' : 'regional';
   const t = index / (chapterCount - 1);
   if (t < 0.26) return 'gym-circuit';
   // The Elite Four sits right after the gym circuit — it is the region's exam.
@@ -160,8 +177,38 @@ function selectCard(
 ): DecisionCardSpec {
   const eligible = cardsForPhase(phase);
   const fresh = eligible.filter(c => !usedCardIds.has(c.id));
-  const pool = fresh.length > 0 ? fresh : eligible;
+  const basePool = fresh.length > 0 ? fresh : eligible;
 
+  // Walk the reroll chain from zero rather than jumping straight to the final
+  // key. Drawing each reroll from an independent stream let it hand back the
+  // card the player had just paid to get rid of: measured at 19.4% of paid
+  // rerolls overall, 21% in the six-card gym-circuit pool, and around half in
+  // world-cup, which ships two. Paying ₽400-1800 for the same card again is the
+  // worst feel this mechanic could have.
+  //
+  // Each step excludes everything already shown for this chapter, so a reroll
+  // always changes something. The result stays a pure function of
+  // (seed, chapterIndex, rerolls) — a replay reproduces a rerolled card
+  // exactly, which is what keeps `?seed=` links honest.
+  const seen = new Set<string>();
+  let card = drawCard(basePool, seed, chapterIndex, archetype, 0);
+  for (let r = 1; r <= rerolls; r++) {
+    seen.add(card.id);
+    const remaining = basePool.filter(c => !seen.has(c.id));
+    // A pool that runs dry reopens rather than failing the reroll outright.
+    card = drawCard(remaining.length ? remaining : basePool, seed, chapterIndex, archetype, r);
+  }
+  return card;
+}
+
+/** One weighted draw from `pool` for a given reroll index. */
+function drawCard(
+  pool: DecisionCardSpec[],
+  seed: number,
+  chapterIndex: number,
+  archetype: JourneySetup['archetype'],
+  reroll: number,
+): DecisionCardSpec {
   // Cards tagged with this archetype get a second entry in the weighted pool,
   // so a Collector run leans toward catch-flavoured dilemmas without ever
   // being locked out of the others.
@@ -169,7 +216,7 @@ function selectCard(
   // A phase with no cards would otherwise crash the sim. Fall back to the
   // whole deck rather than dying — a wrong-flavoured card beats a dead run.
   const safe = weighted.length ? weighted : DECISION_CARDS;
-  const key = rerolls > 0 ? `card-${chapterIndex}-r${rerolls}` : `card-${chapterIndex}`;
+  const key = reroll > 0 ? `card-${chapterIndex}-r${reroll}` : `card-${chapterIndex}`;
   return pick(namedRng(seed, key), safe);
 }
 
@@ -1266,6 +1313,10 @@ export function simulate(
     if (!visited.includes(regionId)) visited.push(regionId);
   }
   let e4Step = 0;
+  // e4Step is region-local: each stop on a tour runs its own Elite Four, so
+  // carrying the previous region's progress forward would start region two
+  // mid-gauntlet and skip members the player never faced.
+  let e4Region = -1;
   let wcStep = 0;
   let syndicateBeaten = 0;
 
@@ -1278,10 +1329,24 @@ export function simulate(
   };
 
   for (let index = 0; index < chapterCount; index++) {
-    const phase = phaseFor(index, chapterCount);
     const here = regionAt(setup, index);
-    // Player travel choices replace the seeded tour stop for their leg.
-    const regionId = visited[Math.min(here.tourIndex, visited.length - 1)] ?? here.regionId;
+    // Region-local so every stop on a tour gets its own gym circuit and exam.
+    // See phaseFor's contract note for what career-wide phases did to a saga.
+    const isFinalRegion = here.tourIndex >= tour.length - 1;
+    const phase = phaseFor(here.localIndex, here.localCount, isFinalRegion);
+    if (here.tourIndex !== e4Region) { e4Region = here.tourIndex; e4Step = 0; }
+    // Player travel choices replace the seeded tour stop for their leg; where
+    // the player has not chosen, the seeded tour stands.
+    //
+    // This used to clamp the index to `visited.length - 1`, so once the tour
+    // moved past the legs the player had actually chosen — which is all of them
+    // by default, since `visited` starts as just the home region and only grows
+    // through a travel choice — every later stop resolved back to region one.
+    // A nine-region saga therefore ran nine regions' worth of chapters inside
+    // Kanto: `regionBadgeCount` for that one region hit 8, `gymLeaders` ran out
+    // of leaders, and the remaining regions had nothing left to fight. Falling
+    // through to `here.regionId` is what makes a tour a tour.
+    const regionId = visited[here.tourIndex] ?? here.regionId;
     const regionGen = getRegion(regionId).gen;
     const earnedHere = regionBadgeCount.get(regionId) ?? 0;
 

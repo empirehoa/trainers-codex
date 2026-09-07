@@ -32,7 +32,7 @@ export function PokemonDetailDialog({ pokemon, open, onClose, onAdd, onViewTCG, 
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md p-0 gap-0 border bg-card max-h-[94vh] overflow-y-auto scroll-y">
+      <DialogContent className="max-w-md p-0 gap-0 border bg-card max-h-[94dvh] overflow-y-auto scroll-y">
         <DialogHeader className="px-4 py-3 border-b border-border sticky top-0 bg-card z-10">
           {/* v6: explicit close button — the default shadcn X is too small to
               tap reliably on mobile and was sometimes hidden behind the iOS

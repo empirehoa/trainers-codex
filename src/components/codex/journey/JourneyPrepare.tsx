@@ -264,7 +264,7 @@ export function JourneyPrepare({
                       autoFocus
                       placeholder={rosterCaption(m.id)}
                       data-testid={`journey-nick-input-${m.id}`}
-                      className="flex-1 min-w-0 font-mono text-[10px] px-2 py-1 rounded border bg-transparent"
+                      className="flex-1 min-w-0 font-mono text-base sm:text-xs px-2 py-1 rounded border bg-transparent"
                       style={{ borderColor: 'hsl(var(--border))' }}
                     />
                     <button type="submit" data-testid={`journey-nick-save-${m.id}`}

@@ -248,9 +248,16 @@ function buildSyndicate(seed: number, regionId: string): Opponent {
 // TYPE MATCHUP — the payoff for team-building
 // ============================================================
 
-/** Best offensive multiplier any of `attackerTypes` gets against `defender`. */
+/**
+ * Best offensive multiplier any of `attackerTypes` gets against `defender`.
+ *
+ * Seeded at 0, not 1. The first version started at 1 and only ever accepted a
+ * larger value, so a party whose every type is resisted by the specialty still
+ * reported neutral — which is what made the `off <= 0.5` arm of `matchupFor`
+ * unreachable. Bringing a bad answer now costs you something.
+ */
 function bestAgainst(attackerTypes: PokemonType[], defender: PokemonType): number {
-  let best = 1;
+  let best = 0;
   for (const a of attackerTypes) {
     const m = TYPE_CHART[a]?.[defender] ?? 1;
     if (m > best) best = m;
@@ -258,14 +265,27 @@ function bestAgainst(attackerTypes: PokemonType[], defender: PokemonType): numbe
   return best;
 }
 
-/** Worst multiplier the defender's type lands on any of `defenderTypes`. */
-function worstFrom(attacker: PokemonType, defenderTypes: PokemonType[]): number {
-  let worst = 1;
-  for (const d of defenderTypes) {
-    const m = TYPE_CHART[attacker]?.[d] ?? 1;
-    if (m > worst) worst = m;
-  }
-  return worst;
+/**
+ * What an `attacker`-type move does to a Pokémon of `defenderTypes`.
+ *
+ * Effectiveness against a dual type is the PRODUCT of the two lookups, never
+ * the larger of them. This function used to take the max from a floor of 1,
+ * which inverted the two cases team-building is actually about:
+ *
+ *   Charizard (Fire/Flying) vs a Ground specialist → reported 2, a weakness.
+ *     Ground is 2x on Fire and 0x on Flying, so the real answer is 0: immune.
+ *   Gengar (Ghost/Poison) vs a Normal specialist  → reported 1, neutral.
+ *     Normal cannot touch a Ghost at all.
+ *
+ * Every resistance and every immunity in the game read as neutral-or-worse, so
+ * the `def <= 0.5` arm of `matchupFor` never fired and the defensive half of a
+ * matchup contributed nothing. Same rule as `lib/analysis.ts` `eff`, kept local
+ * so the journey sim stays off the team-analysis module graph.
+ */
+function incomingOn(attacker: PokemonType, defenderTypes: PokemonType[]): number {
+  let m = 1;
+  for (const d of defenderTypes) m *= TYPE_CHART[attacker]?.[d] ?? 1;
+  return m;
 }
 
 export interface Matchup {
@@ -298,7 +318,7 @@ export function matchupFor(
 
   for (const m of roster) {
     const off = bestAgainst(m.types, opponent.specialty);
-    const def = worstFrom(opponent.specialty, m.types);
+    const def = incomingOn(opponent.specialty, m.types);
     if (off >= 2) strongPicks.push(m.id);
     if (def >= 2) weakPicks.push(m.id);
     offense += off >= 2 ? 1 : off <= 0.5 ? -0.6 : 0;

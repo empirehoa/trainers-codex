@@ -842,7 +842,9 @@ export default function App() {
       />
 
       {/* ============== HEADER ============== */}
-      <header className="border-b sticky top-0 z-30 backdrop-blur-md bg-background/92" style={{ borderColor: 'hsl(var(--border))' }}>
+      {/* Same `viewport-fit=cover` story as the bottom bar: in standalone mode
+          with a translucent status bar, the header rendered under the notch. */}
+      <header className="border-b sticky top-0 z-30 backdrop-blur-md bg-background/92 pt-[env(safe-area-inset-top)]" style={{ borderColor: 'hsl(var(--border))' }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
@@ -1458,7 +1460,12 @@ export default function App() {
       </main>
 
       {/* ============== STICKY TEAM BAR ============== */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-md bg-background/95" style={{ borderColor: 'hsl(var(--border))' }}>
+      {/* index.html sets `viewport-fit=cover`, which extends the page under the
+          iOS home indicator — and nothing in the app compensated for it, so in
+          standalone (installed) mode this bar sat beneath the indicator and the
+          bottom row of slots was awkward to tap. The inset is 0 everywhere that
+          has no notch, so this is safe on every other device. */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-md bg-background/95 pb-[env(safe-area-inset-bottom)]" style={{ borderColor: 'hsl(var(--border))' }}>
         <LiveCoverageStrip team={team} />
         {formatActive && !teamLegal.legal && (
           <div data-testid="legality-banner"

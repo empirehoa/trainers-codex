@@ -71,8 +71,71 @@ Journey CTA, and an un-clipped wordmark at 768/820/1024.
 **Suite: 331 unit + 222 browser (21 suites) + 19 worker = 572 passing, 0 eslint
 errors.**
 
+### Second-opinion pass (Fable 5.1)
+
+An independent adversarial audit was run on the finished work, told to find
+what the first pass missed. It found five real defects, four of which are now
+fixed. It also correctly flagged that the first pass's `git add -A` had swept
+its own scratch file into the tree — removed.
+
+**Season and Saga campaigns were structurally broken.** Measured over 25 runs
+each: a nine-region saga ran 135 chapters and produced **8 badges and gym wins
+in 1 of 9 regions**. Two independent causes, both now fixed:
+
+1. `phaseFor` was proportional to the *whole* career, so the gym circuit (the
+   opening 26%) and the Elite Four (the next 16%) fell entirely inside region
+   one. Phases are region-local now, with the endgame reserved for the last
+   stop on the tour.
+2. `visited[Math.min(tourIndex, visited.length - 1)]` clamped every tour stop
+   past the player's chosen legs back to the home region — and `visited` only
+   grows through a travel choice, so by default *every* stop was region one.
+
+Underneath both sat a third bug: career length had **two implementations that
+disagreed**. A short run drew from the `career-length` stream while its region
+span came from `campaign-length`, so a 13-chapter career reported a 20-chapter
+region. `regionChapterSpans` is now the single source.
+
+Result — badges by campaign, same strategy and seeds: **short 4.6 · season
+15.4 · saga 41.7** (all three were pinned at 8 before). Crowns 0.08 / 0.28 /
+0.84. `short` is bit-identical: it draws from the same stream with the same
+bounds, and all 262 pre-existing journey tests pass unchanged.
+
+**Type matchups had the defensive half inverted.** `matchupFor` took the *max*
+across a dual type where the rule is the *product*, from an accumulator seeded
+at 1 that no resistance could ever beat. Charizard read as **weak** to Ground
+(Flying makes it immune); Gengar read as neutral against Normal. Both `<= 0.5`
+arms were unreachable dead code, so the entire "bring the right team" payoff
+did nothing. Fixed and pinned by `journey/matchup.test.ts` — 3 of its 8 tests
+fail against the old code.
+
+**Share codes silently dropped every alternate form.** `parseTeamCode` rejected
+any id `> 1025`, but form ids live above 10000 — so a shared team containing a
+Mega, a regional or a Gigantamax lost those slots, and the builder then rewrote
+the URL from the parsed result, destroying the original. Now validated against
+the dataset.
+
+**A paid reroll returned the same card 19.4% of the time** (~50% in world-cup's
+two-card pool) because each reroll drew from an independent stream. It now
+walks the chain and excludes what it has shown, without breaking determinism.
+
+Also fixed: `skipToEnd` capped at 32 iterations and stranded long campaigns
+mid-run; `buildSeedLink` omitted `campaign`, so a shared saga replayed as a
+short run — a different game on the same seed.
+
+Not fixed, and worth knowing: the audit measured that **the safe option
+strictly dominates** across all five archetypes, and that seed-to-seed variance
+(SD 83-108) outweighs every decision in a run combined (spread 34-90). That is
+a design problem, not a bug — risky choices buy a one-chapter mean shift while
+fatigue and bond compound for the rest of the run. Fixing it means giving risk
+a persistent payoff, which is a balance change that deserves its own pass.
+
 ### Not done
 
+- The choice-weight problem above. It is the single biggest remaining lever on
+  whether Journey Mode is actually fun.
+- The World Cup is always one fight against your own region champion; the ghost
+  pipeline never surfaces because ghosts sit past the end of the field.
+- Saga ante targets scale past 999 and can never be cleared.
 - The 19 remaining eslint warnings are `react-hooks` rules on pre-existing
   components (10 in `App.tsx`); their fix is a restructure, not an edit.
 - `App.tsx` is 1,600 lines with 15 `useEffect`s. It is the next thing to split.

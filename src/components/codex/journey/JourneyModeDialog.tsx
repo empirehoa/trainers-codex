@@ -9,7 +9,7 @@ import {
 import { useI18n } from '@/i18n/useI18n';
 import { LOCALES, type Locale } from '@/i18n/strings';
 import { isEnabled } from '@/lib/flags';
-import { simulate } from '@/journey/engine';
+import { simulate, decisionChapterIndices} from '@/journey/engine';
 import { TRAINER_NAMES, getPace, getRegion, JOURNEY_REGIONS } from '@/journey/content';
 import {
   dailySeed, localDateString, namedRng, pick, randomSeed,
@@ -277,8 +277,14 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
   const skipToEnd = useCallback(() => {
     if (!setup) return;
     const acc = [...choices];
-    // Bounded by MAX_CHAPTERS decisions; the guard is a runaway-loop backstop.
-    for (let i = 0; i < 32; i++) {
+    // The bound has to come from the run, not from a constant: 32 was written
+    // when every career was a single 12-20 chapter region, and a saga has up to
+    // ~140 chapters. Skipping a long campaign stopped a third of the way in and
+    // left the player on a recap with dozens of chapters never revealed.
+    // +1 so the loop gets one iteration past the last decision to read the
+    // finished snapshot.
+    const maxSteps = decisionChapterIndices(setup).length + 1;
+    for (let i = 0; i < maxSteps; i++) {
       const snap = simulate(setup, acc, actions);
       if (snap.status !== 'awaiting-decision' || !snap.decision) {
         setChoices(acc);
@@ -334,7 +340,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
       <DialogContent
-        className="max-w-md p-0 gap-0 max-h-[94vh] overflow-y-auto scroll-y bg-card"
+        className="max-w-md p-0 gap-0 max-h-[94dvh] overflow-y-auto scroll-y bg-card"
         data-testid="journey-dialog"
       >
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">

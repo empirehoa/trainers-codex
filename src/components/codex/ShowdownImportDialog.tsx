@@ -83,7 +83,7 @@ export function ShowdownImportDialog({ open, onClose, members, onImport }: Showd
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-lg p-0 gap-0 max-h-[90vh] overflow-y-auto scroll-y bg-card">
+      <DialogContent className="max-w-lg p-0 gap-0 max-h-[90dvh] overflow-y-auto scroll-y bg-card">
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
           <DialogTitle className="font-display text-lg text-primary lowercase">showdown / pokepaste</DialogTitle>
           <DialogDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">

@@ -227,7 +227,7 @@ export function MerchStudioDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
