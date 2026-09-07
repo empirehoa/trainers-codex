@@ -12,6 +12,7 @@ import { renderLegendCard } from '@/journey/legend-card';
 import { buildDailyLink, buildSeedLink } from '@/journey/deeplink';
 import { dailyIssueNumber } from '@/journey/prng';
 import { resolveRank, rosterRarity } from '@/journey/ranks';
+import { signed, skillVsLuck } from '@/journey/luck';
 import { AreaMap } from './AreaMap';
 import { canRecordVideo, renderCardVideo } from '@/journey/card-video';
 import {
@@ -68,6 +69,11 @@ export function JourneyResult({
   const verdictText = t(run.verdict.titleKey, {
     region: String(run.chapters[0]?.vars.region ?? ''),
   });
+
+  // Skill vs luck: four deterministic replays of this seed. Memoised on the run
+  // because the retired beat re-renders on every share-state change and the
+  // replays, while cheap, are not free.
+  const luck = useMemo(() => skillVsLuck(run), [run]);
 
   // Wordle-style emoji strip leads the text share: it's the part that reads as
   // a "result" when pasted into Discord/X, and it stays spoiler-free for the
@@ -263,6 +269,37 @@ export function JourneyResult({
           </div>
         </div>
 
+        {/* Skill vs luck. The question every run-based player asks afterwards
+            and the one thing the game could not answer before: was that me, or
+            the dice? The engine is deterministic, so this is measured by
+            replaying THIS seed four ways, not estimated. NYT sells the same
+            readout (WordleBot) to subscribers; it is free here because it is
+            what makes a second try on the same seed mean something. */}
+        <div className="rounded-md border p-3 text-left space-y-2" data-testid="journey-luck"
+             style={{ borderColor: 'hsl(var(--border))' }}>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-primary">
+            // {t('journey.luck.heading')}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded border px-2.5 py-2" style={{ borderColor: 'hsl(var(--border))' }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{t('journey.luck.dice')}</div>
+              <div className={`font-mono text-xl font-bold ${luck.luck >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
+                   data-testid="journey-luck-dice">{signed(luck.luck)}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">{t('journey.luck.diceSub', { n: signed(luck.luck) })}</div>
+            </div>
+            <div className="rounded border px-2.5 py-2" style={{ borderColor: 'hsl(var(--border))' }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{t('journey.luck.choices')}</div>
+              <div className={`font-mono text-xl font-bold ${luck.skill >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
+                   data-testid="journey-luck-skill">{signed(luck.skill)}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">{t('journey.luck.choicesSub', { n: signed(luck.skill) })}</div>
+            </div>
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground" data-testid="journey-luck-range">
+            {t('journey.luck.range', { worst: luck.worst, best: luck.best, pct: luck.withinSeedPct })}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground/70">{t('journey.luck.note')}</div>
+        </div>
+
         {/* The road walked. Open by default here — mid-run the map is a
             reference you consult, but on the retired beat it is part of the
             artifact, and hiding it behind a tap loses the moment. */}
@@ -284,7 +321,7 @@ export function JourneyResult({
   // CARD — the shareable result screen
   // ============================================================
   return (
-    <div className="p-4 space-y-4" data-testid="journey-card-screen">
+    <div className="p-4 space-y-4 min-w-0 overflow-x-hidden" data-testid="journey-card-screen">
       {/* ---- card preview ---- */}
       <div className="aspect-[4/5] w-full max-w-sm mx-auto rounded-md border overflow-hidden flex items-center justify-center"
            style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--muted))' }}>
@@ -332,6 +369,7 @@ export function JourneyResult({
               <Download size={11} className="mr-1" />
               {t('journey.share.download')}
             </Button>
+            {/* placeholder kept for grid flow */}
             {videoSupported && (
               <Button variant="outline" onClick={doVideo}
                       disabled={videoState === 'rendering'}
@@ -345,6 +383,18 @@ export function JourneyResult({
                   : t('journey.share.video')}
               </Button>
             )}
+          </div>
+          {/* The text artifact, visible. Only ~5% of Wordle players ever posted
+              a grid publicly; the format carried the game by being pasted into
+              private chats, legible with no image and no context. Ours existed
+              but was hidden behind a button called "Copy link" — so nobody knew
+              there was a grid to paste. */}
+          <div className="rounded-md border p-2.5" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--muted)/0.4)' }}>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+              // {t('journey.share.preview')}
+            </div>
+            <pre className="font-mono text-[10px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] min-w-0 max-w-full text-foreground/90 m-0"
+                 data-testid="journey-share-preview">{shareText}</pre>
           </div>
         </div>
       )}

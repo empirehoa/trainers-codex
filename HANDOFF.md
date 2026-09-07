@@ -67,10 +67,50 @@ tagline on every screen; Close was 16×16.
 Archetype rows went two-up, pace and campaign became segmented controls (same
 testids), the tagline is `sr-only` under 640px, the locale picker is icon-only.
 
+### The research landed, and it justified two more things
+
+`docs/RESEARCH_2026-09-07.md` — 102 agents, 3-vote adversarial verification,
+8 claims survived, 12 refuted (recorded so nobody rebuilds on the same sand).
+The harness was honest that only sharing, archive/retention and fan-project
+legal posture produced verifiable evidence; nothing on decision-vs-RNG balance
+or mobile browser UX survived, so those decisions stand on this repo's own
+measurements.
+
+**Skill vs luck (shipped).** The strongest verified precedent was NYT's
+WordleBot — a post-game readout scoring a finished puzzle on skill versus luck.
+It answers exactly what the audit found Journey could not: was that me or the
+dice? The engine is deterministic, so `journey/luck.ts` replays the finished
+seed under the same four strategies `risk.test.ts` sweeps with and decomposes
+the score: *this seed's dice* (seed mean − reference median) and *your
+choices* (player − seed mean), which sum to the player's distance from an
+average career by construction. Shown on the retired beat. NYT sells this to
+subscribers; it is free here because it is what makes a second try on the same
+seed mean something.
+
+**The text share artifact, made visible (shipped).** Only ~5% of Wordle
+players ever posted a grid publicly; the format carried the game by being
+pasted into private chats. Journey already had one (`buildShareText`: rank line
++ emoji badge strip + sentence + link) — hidden behind a button labelled
+"Copy link". It is now previewed on the card screen and the button says what it
+does.
+
+**Recorded, not built — Jose's calls:** NYT gated its 1,000-puzzle archive
+behind the subscription (archive play does not count toward streaks) while
+keeping the daily free — a direct precedent for gating `?issue=N`. And the
+fan-project legal evidence (PokéRogue's cost-recovery-only posture; TPC's
+former CLO naming *money + press* as the trigger) confirms `JOURNEY_MERCH_CTA`
+staying off until counsel clears it, and adds that a Product Hunt / HN launch
+is itself the exposure event.
+
 ### Not done
 
-- Deep-research findings are still landing; anything they justify beyond this
-  is a follow-up.
+- **Recruitment ignores evolution families.** After the starter evolves
+  (Bulbasaur → Ivysaur), a wild Bulbasaur can still join, because the recruit
+  filter excludes exact roster ids only. `evolutionsOf` in `journey/evolution.ts`
+  gives the forward edges; a `familyOf(id)` built from a reverse map would let
+  the filter exclude the whole line. Deliberately not done here: it changes
+  which species land on every seed, so it needs its own sweep and a rank-table
+  regeneration, not a footnote in a research commit.
 - Shiny Hunter's decision/dice ratio is 0.33 — held to a lower floor
   deliberately, because a third of its score *is* dice. If that ever feels flat
   in play, the lever is more payoffs in its currency, not a higher floor.

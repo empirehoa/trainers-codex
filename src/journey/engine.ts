@@ -686,8 +686,12 @@ function resolveChapter(input: ChapterInput): {
   // XP) is unchanged, so a payoff partner is a real member, not a trophy.
   const forcedTier = payoff?.recruit === 'legendary' ? pools.legendary
     : payoff?.recruit === 'rare' ? pools.rare : null;
-  const recruitRoll = chance(rng, phase === 'gym-circuit' ? 0.85 : 0.55);
-  if (roster.length < ROSTER_SIZE && (recruitRoll || forcedTier)) {
+  // Roll only when there is a seat to fill, exactly as before payoffs existed:
+  // drawing from the rng on a full roster shifts every later roll on the seed
+  // for no reason and would change short-campaign replays gratuitously.
+  const hasSeat = roster.length < ROSTER_SIZE;
+  const recruitRoll = hasSeat && !forcedTier && chance(rng, phase === 'gym-circuit' ? 0.85 : 0.55);
+  if (hasSeat && (recruitRoll || forcedTier)) {
     // Legendaries only become plausible once the career is on a real stage.
     const tier = forcedTier ?? (phase === 'gym-circuit'
       ? pools.common

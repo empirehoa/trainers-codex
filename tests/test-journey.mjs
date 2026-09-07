@@ -372,6 +372,70 @@ const tests = [
   },
 
   {
+    // Skill vs luck: the retired beat decomposes the score into this seed's
+    // dice and the player's choices by replaying the seed four ways. Both
+    // numbers are signed, they sum to the player's distance from an average
+    // career, and the range line names the best and worst path on this seed.
+    name: 'a finished run says whether it was skill or luck, with numbers that add up',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      const { score } = await playToEnd(page);
+      assert(await has(page, '[data-testid="journey-luck"]'), 'skill-vs-luck block should render on the retired beat');
+      const dice = await page.$eval('[data-testid="journey-luck-dice"]', el => el.innerText.trim());
+      const skill = await page.$eval('[data-testid="journey-luck-skill"]', el => el.innerText.trim());
+      const signedRe = /^([+\u2212-]\d+|\u00b10)$/;
+      assert(signedRe.test(dice), `dice should be a signed integer, got "${dice}"`);
+      assert(signedRe.test(skill), `skill should be a signed integer, got "${skill}"`);
+      const range = await page.$eval('[data-testid="journey-luck-range"]', el => el.innerText.trim());
+      const nums = (range.match(/\d+/g) || []).map(Number);
+      assertGte(nums.length, 3, `range line should carry worst, best and a percent: "${range}"`);
+      const [worst, best] = nums;
+      const s = Number(score);
+      assert(worst <= s && s <= best, `player ${s} must sit inside this seed's range ${worst}..${best}`);
+      const body = await text(page);
+      assert(!/journey\.luck\./.test(body), 'luck keys must not leak into the UI');
+      const o = await page.evaluate(() => {
+        const d = document.querySelector('[data-testid="journey-dialog"]');
+        return { s: d.scrollWidth, c: d.clientWidth };
+      });
+      assert(o.s <= o.c + 1, `retired beat overflows its dialog sideways: ${o.s} vs ${o.c}`);
+    },
+  },
+
+  {
+    // The text share artifact is what actually travels (Wordle's grid was pasted
+    // into private chats far more than posted publicly). It existed here but was
+    // hidden behind a button called "Copy link"; it is previewed now.
+    name: 'the card screen previews the text that gets pasted, emoji strip included',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-reveal-card"]').click());
+      await page.waitForSelector('[data-testid="journey-share-preview"]', { timeout: 20_000 });
+      const preview = await page.$eval('[data-testid="journey-share-preview"]', el => el.innerText);
+      assert(/[\u{1F3C5}\u25FD]/u.test(preview), `preview should carry the badge strip, got: ${preview.slice(0, 80)}`);
+      assert(/https?:\/\//.test(preview), 'preview should end with the play link');
+      const label = await page.$eval('[data-testid="journey-share-link"]', el => el.innerText.trim());
+      assert(!/link/i.test(label), `the copy button copies the whole text, not a link — label reads "${label}"`);
+      // The dialog scrolls vertically inside a fixed-width box, so a child that
+      // overflows sideways clips inside it without moving the page — the
+      // page-level overflow checks elsewhere cannot see that. Measure the dialog
+      // itself. (The share URL is one unbreakable token; this is where it broke.)
+      const o = await page.evaluate(() => {
+        const d = document.querySelector('[data-testid="journey-dialog"]');
+        return { s: d.scrollWidth, c: d.clientWidth };
+      });
+      assert(o.s <= o.c + 1, `card screen overflows its dialog sideways: scrollWidth ${o.s} vs clientWidth ${o.c}`);
+    },
+  },
+
+  {
     name: 'gym battles are shown as battles, with the badge attached to a win',
     async fn(page) {
       await openJourney(page);

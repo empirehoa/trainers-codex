@@ -96,6 +96,9 @@ src/
     legend-card.ts                 ← canvas renderer, 1080×1350 + 300 DPI
     card-video.ts                  ← v11 — 9:16 clip, captureStream + MediaRecorder
     atlas.ts                       ← v12 — seeded region route maps (pure geometry)
+    luck.ts                        ← v14 — skill-vs-luck: replay the seed 4 ways, decompose the score
+    risk.test.ts                   ← v14 — 3,000-career sweep pinning "risk is a choice, not a tax"
+    ranks.gen.test.ts              ← v14 — regenerates SCORE_PERCENTILES (GEN_RANKS=1), skipped otherwise
     *.test.ts                      ← vitest, colocated
   i18n/
     strings.ts                     ← EN + ES complete; PT + JA seeded
@@ -126,6 +129,8 @@ src/
     moves.json                     ← 919 moves, ~92KB
     species.json                   ← ~56KB
 inline.mjs                         ← bundle.html generator (regex-based Vite dist inliner)
+docs/
+  RESEARCH_2026-09-07.md           ← deep-research report: what moves retention/sharing (cited, with refuted claims)
 scripts/
   make-og-image.mjs                ← renders public/og-journey.jpg via puppeteer (`pnpm og`)
   gen-seo-pages.ts                 ← v12 — emits ~1,330 static pages + sitemap.xml (`pnpm seo`)
@@ -216,10 +221,10 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 358 tests · engine, battles/badges/shinies/events, level economy,
+pnpm test:unit     # vitest · 365 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
                    #            content health, i18n, deeplink, streak, analytics, prepare
-pnpm test:browser  # puppeteer · 21 suites / 222 tests (incl. 44 Journey Mode, 16 responsive,
+pnpm test:browser  # puppeteer · 21 suites / 224 tests (incl. 44 Journey Mode, 16 responsive,
                    #            10 SEO pages — the last needs `pnpm build` for dist/)
 (cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
@@ -480,7 +485,29 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     phones. Anything that asks the player something goes above the things
     that merely inform them.
 
-39. **A build-time script that shares code with `src/` must import with an
+39. **Measure overflow on the scroll container, not the page.** Journey's
+    dialog scrolls vertically inside a fixed-width box, so a child that grows
+    sideways (an unbreakable share URL in a `<pre>`) clips *inside* the dialog
+    and never moves `document.documentElement.scrollWidth`. Every page-level
+    overflow test stayed green while the card screen ran off the right edge of
+    a 390px phone. Assert `dialog.scrollWidth <= dialog.clientWidth` on the
+    dialog itself; for long tokens use `[overflow-wrap:anywhere]` — plain
+    `break-words` does not reduce min-content width.
+
+40. **`pkill -f` matches its own shell.** A chain that begins
+    `pkill -f "tests/test-"` and later runs `tests/test-journey.mjs` kills
+    itself at line one (exit 144), because the pattern appears in the shell's
+    own command line — and every edit after it silently never happens. Use a
+    pattern that matches the target but not the literal text you typed:
+    `pkill -f "run-al[l].mjs"`.
+
+41. **Don't draw from the RNG when the outcome is moot.** Moving a recruit
+    roll out of a short-circuited `&&` so it ran even on a full roster shifted
+    every later roll on the seed and flipped a browser test that had nothing to
+    do with recruitment. Under the replay contract *any* extra `rng()` call is
+    a behaviour change; keep draws behind the guards they were behind.
+
+42. **A build-time script that shares code with `src/` must import with an
     explicit `.ts` extension.** `scripts/gen-seo-pages.ts` runs under Node's
     native type stripping, which is real ESM: extensionless specifiers do not
     resolve. `allowImportingTsExtensions` is already on, so

@@ -43,6 +43,9 @@ function contentKeys(): string[] {
     keys.push(`journey.battle.${k}`);
   }
   keys.push('journey.recap.event', 'journey.recap.eventShiny', 'journey.recap.landed');
+  // Skill-vs-luck block on the retired beat, and the share-text preview.
+  for (const k of ['heading', 'dice', 'diceSub', 'choices', 'choicesSub', 'range', 'note']) keys.push(`journey.luck.${k}`);
+  keys.push('journey.share.preview');
   // The option consequence line: risk tags and every payoff kind an option can
   // carry. A payoff key that resolves to its own name would print
   // `journey.payoff.recruit.rare` under a decision button.
