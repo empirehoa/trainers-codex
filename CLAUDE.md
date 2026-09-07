@@ -144,7 +144,7 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 21 suites, 222 tests
+  test-*.mjs                       ← 21 suites, 224 tests
 ```
 
 ## Build + bundle workflow
