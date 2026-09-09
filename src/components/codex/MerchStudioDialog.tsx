@@ -26,6 +26,17 @@ import { isWorkerConfigured, submitPrintfulOrder, startMerchCheckout } from '@/l
 import { trackCommerce } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
 
+/**
+ * The Worker answers 503 `{"error":"merch_disabled"}` on /printful/order and
+ * /merch/checkout while its MERCH kill switch is off. license.ts surfaces the
+ * status + body in the thrown message; match on the token, not the status, so
+ * an unrelated 503 still reads as the real error.
+ */
+function isMerchDisabled(message: string): boolean {
+  return /merch_disabled/.test(message);
+}
+const MERCH_CLOSED_MSG = 'merch ordering is not open yet';
+
 interface MerchStudioDialogProps {
   open: boolean;
   onClose: () => void;
@@ -120,6 +131,11 @@ export function MerchStudioDialog({
   // Worker's authoritative .99 price, because that is what the buyer is
   // charged and /merch/checkout 409s on any drift.
   const buyEnabled = isEnabled('MERCH_CHECKOUT') && isWorkerConfigured() && selectedProduct.vendor === 'printful';
+  // Seller-side ordering ("order on printful": upload → sync product in the
+  // owner's store, or the vendor deeplink) is dark behind the same flag. Until
+  // counsel clears merch, nothing on this surface reaches fulfilment; the
+  // print PNG download stays open for personal use.
+  const orderEnabled = isEnabled('MERCH_CHECKOUT');
   const retail = buyEnabled
     ? computeRetail99(selectedProduct.baseCostUSD, markupPct)
     : computeRetail(selectedProduct.baseCostUSD, markupPct);
@@ -214,6 +230,12 @@ export function MerchStudioDialog({
         return;
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'printful order failed';
+        if (isMerchDisabled(msg)) {
+          // The Worker's kill switch is authoritative: do not fall through to
+          // the vendor deeplink either.
+          toast.error(MERCH_CLOSED_MSG);
+          return;
+        }
         toast.error(`${msg} · falling back to URL deeplink`);
         // Fall through to URL-deeplink path below
       } finally {
@@ -254,7 +276,8 @@ export function MerchStudioDialog({
       });
       // startMerchCheckout navigates away; reaching here means it threw.
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'checkout failed');
+      const msg = e instanceof Error ? e.message : 'checkout failed';
+      toast.error(isMerchDisabled(msg) ? MERCH_CLOSED_MSG : msg);
     } finally {
       setBuying(false);
     }
@@ -270,8 +293,11 @@ export function MerchStudioDialog({
     return groups;
   }, []);
 
-  // Printing is open to everyone — no design is premium-gated. (Merch is the
-  // primary monetization path via POD markup; AI generation is the paid tier.)
+  // Downloading the print PNG is open to everyone — no design is premium-gated
+  // and there is no paywall on this surface (AI generation is the paid tier).
+  // ORDERING (buy / order on printful) is a separate question: it is dark
+  // behind MERCH_CHECKOUT until counsel clears merch, and the Worker enforces
+  // the same switch server-side (503 merch_disabled).
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -373,25 +399,33 @@ export function MerchStudioDialog({
                   )}
                 </Button>
               )}
-              <div className={cn('grid grid-cols-2 gap-2', buyEnabled ? 'mt-2' : 'mt-3')}>
-                <Button variant="outline" onClick={handleDownload} className="font-mono text-xs">
+              <div className={cn('grid gap-2', orderEnabled ? 'grid-cols-2' : 'grid-cols-1', buyEnabled ? 'mt-2' : 'mt-3')}>
+                <Button variant={orderEnabled || buyEnabled ? 'outline' : 'default'} onClick={handleDownload}
+                        className="font-mono text-xs" data-testid="merch-download">
                   <Download size={12} className="mr-1.5" /> download print PNG
                 </Button>
-                <Button variant={buyEnabled ? 'outline' : 'default'} onClick={handleOrder} disabled={ordering}
-                        className="font-mono text-xs font-bold" data-testid="merch-order">
-                  {ordering ? (
-                    <><Loader2 size={12} className="mr-1.5 animate-spin" /> uploading…</>
-                  ) : (
-                    <><ExternalLink size={12} className="mr-1.5" /> order on {selectedProduct.vendor}</>
-                  )}
-                </Button>
+                {orderEnabled && (
+                  <Button variant={buyEnabled ? 'outline' : 'default'} onClick={handleOrder} disabled={ordering}
+                          className="font-mono text-xs font-bold" data-testid="merch-order">
+                    {ordering ? (
+                      <><Loader2 size={12} className="mr-1.5 animate-spin" /> uploading…</>
+                    ) : (
+                      <><ExternalLink size={12} className="mr-1.5" /> order on {selectedProduct.vendor}</>
+                    )}
+                  </Button>
+                )}
               </div>
               <p className="text-[10px] font-mono text-muted-foreground mt-2 leading-relaxed">
                 {buyEnabled && <>
                   "Buy this" checks out on Stripe with your shipping address — the item prints and ships to you.{' '}
                 </>}
-                Clicking "order" downloads the print-ready file and opens {selectedProduct.vendor}.com.
-                Drag the downloaded PNG onto their design uploader to complete the order.
+                {orderEnabled ? <>
+                  Clicking "order" downloads the print-ready file and opens {selectedProduct.vendor}.com.
+                  Drag the downloaded PNG onto their design uploader to complete the order.{' '}
+                </> : <>
+                  Ordering is not open yet — download the print-ready PNG for personal use.
+                  Every figure is an original silhouette in your team's type colours; no official artwork is printed.{' '}
+                </>}
                 The print is {selectedProduct.printWidth}×{selectedProduct.printHeight}px at 300 DPI.
               </p>
             </div>

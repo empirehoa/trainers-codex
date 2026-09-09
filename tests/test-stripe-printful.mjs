@@ -148,18 +148,26 @@ const tests = [
     },
   },
   {
-    name: 'merch order button is enabled and rejects empty teams via vendor URL fallback',
-    async fn(page) {
-      await openMerchStudio(page);
-      // The Order button should be present
-      const orderText = await page.evaluate(() => {
-        const dialog = document.querySelector('[role="dialog"]');
-        if (!dialog) return null;
-        const btn = [...dialog.querySelectorAll('button')].find(b => /order on/i.test(b.innerText));
-        return btn ? btn.innerText : null;
-      });
-      assert(orderText, 'order button missing');
-      assert(/printful|stickermule|printify|gelato/i.test(orderText), `expected vendor name in button text · got "${orderText}"`);
+    name: 'seller-side "order on <vendor>" is DARK by default and lights up behind MERCH_CHECKOUT',
+    ownPage: true,
+    async fn() {
+      // Default flags: no path from this surface reaches fulfilment.
+      const dark = await newPage();
+      try {
+        await openMerchStudio(dark);
+        assert(!(await exists(dark, '[data-testid="merch-order"]')), 'order button must be absent while MERCH_CHECKOUT is off');
+      } finally {
+        await closePage(dark);
+      }
+      const lit = await newPage({ query: 'ff=MERCH_CHECKOUT:1' });
+      try {
+        await openMerchStudio(lit);
+        const orderText = await lit.evaluate(() => document.querySelector('[data-testid="merch-order"]')?.innerText ?? null);
+        assert(orderText, 'order button missing behind the flag');
+        assert(/printful|stickermule|printify|gelato/i.test(orderText), `expected vendor name in button text · got "${orderText}"`);
+      } finally {
+        await closePage(lit);
+      }
     },
   },
 
@@ -198,12 +206,15 @@ const tests = [
         assert(/\$17\.99/.test(buyText), `buy button must show the .99 checkout price · got "${buyText}"`);
         // Clicking must fail SOFT — the harness aborts all network, standing in
         // for an unreachable worker. No crash, dialog stays up, an error toasts.
+        // The click renders the full 3600×4800 print first; that PNG encode
+        // alone is ~2s on a loaded runner, so poll for the toast rather than
+        // sleeping a fixed interval.
         await page.evaluate(() => document.querySelector('[data-testid="merch-buy"]').click());
-        await sleep(1500);
+        await page.waitForFunction(
+          () => [...document.querySelectorAll('[data-sonner-toast], [role="status"]')].length > 0,
+          { timeout: 20_000 },
+        ).catch(() => { throw new Error('a failed checkout should surface a toast'); });
         assert(await exists(page, '[data-testid="merch-buy"]'), 'dialog survives a failed checkout');
-        const toasted = await page.evaluate(() =>
-          [...document.querySelectorAll('[data-sonner-toast], [role="status"]')].length > 0);
-        assert(toasted, 'a failed checkout should surface a toast');
       } finally {
         await closePage(page);
       }
