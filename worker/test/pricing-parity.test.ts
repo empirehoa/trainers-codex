@@ -9,7 +9,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BASE_COST_USD } from '../src/pf-catalog.ts';
-import { MERCH_PRODUCTS } from '../../src/lib/merch.ts';
+import { computeRetailUsd } from '../src/merch.ts';
+import { MERCH_PRODUCTS, MARKUP_OPTIONS, computeRetail99 } from '../../src/lib/merch.ts';
 
 test('every app product has a matching worker base cost, to the cent', () => {
   assert.ok(MERCH_PRODUCTS.length >= 12, 'catalog present');
@@ -24,5 +25,19 @@ test('the worker table carries no products the app cannot sell', () => {
   const appIds = new Set(MERCH_PRODUCTS.map(p => p.id));
   for (const id of Object.keys(BASE_COST_USD)) {
     assert.ok(appIds.has(id), `worker-only product ${id}`);
+  }
+});
+
+test('the price the buyer is SHOWN equals the price the Worker CHARGES', () => {
+  // The buy button displays computeRetail99 and sends it as expectedRetail;
+  // the Worker computes computeRetailUsd and 409s on drift. If these two
+  // functions ever disagree for any product × markup the UI can offer, every
+  // buy click fails — so pin them to each other here.
+  for (const product of MERCH_PRODUCTS) {
+    for (const { pct } of MARKUP_OPTIONS) {
+      const shown = computeRetail99(product.baseCostUSD, pct);
+      const charged = computeRetailUsd(product.id, pct);
+      assert.equal(shown, charged, `${product.id} @ ${pct}%: shown ${shown} vs charged ${charged}`);
+    }
   }
 });

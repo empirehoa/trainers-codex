@@ -3,7 +3,7 @@
 // without requiring a deployed worker (offline-test friendly).
 
 import {
-  runSuite, sleep, exists, assert, assertEq, closeBrowser,
+  runSuite, sleep, exists, assert, assertEq, closeBrowser, newPage, closePage,
 } from './harness.mjs';
 
 async function loadStarterTeam(page) {
@@ -160,6 +160,74 @@ const tests = [
       });
       assert(orderText, 'order button missing');
       assert(/printful|stickermule|printify|gelato/i.test(orderText), `expected vendor name in button text · got "${orderText}"`);
+    },
+  },
+
+  {
+    name: 'buyer checkout button stays DARK by default, even with a worker configured',
+    async fn(page) {
+      // Worker present but MERCH_CHECKOUT flag off (the shipping default) —
+      // the buy button must not render. isWorkerConfigured/isEnabled both read
+      // at render time, so setting the config before opening the dialog works.
+      await page.evaluate(() => {
+        window.TRAINERS_CODEX_CONFIG = { worker: { url: 'https://api.example.test' } };
+      });
+      await openMerchStudio(page);
+      assert(!(await exists(page, '[data-testid="merch-buy"]')),
+        'buy button must be dark while MERCH_CHECKOUT is off');
+    },
+  },
+
+  {
+    name: 'MERCH_CHECKOUT flag lights the buy button with the worker-parity .99 price',
+    ownPage: true,
+    async fn() {
+      const page = await newPage({ query: 'ff=MERCH_CHECKOUT:1' });
+      try {
+        await page.waitForSelector('header', { timeout: 8000 });
+        await page.evaluate(() => {
+          window.TRAINERS_CODEX_CONFIG = { worker: { url: 'https://api.example.test' } };
+        });
+        await openMerchStudio(page);
+        const buyText = await page.evaluate(() =>
+          document.querySelector('[data-testid="merch-buy"]')?.innerText ?? null);
+        assert(buyText, 'buy button should render with flag + worker on');
+        // Default product is the Bella tee ($8.95 base) at the default 100%
+        // markup → the Worker's authoritative price is $17.99. The button must
+        // show exactly that number (409 price_mismatch otherwise).
+        assert(/\$17\.99/.test(buyText), `buy button must show the .99 checkout price · got "${buyText}"`);
+        // Clicking must fail SOFT — the harness aborts all network, standing in
+        // for an unreachable worker. No crash, dialog stays up, an error toasts.
+        await page.evaluate(() => document.querySelector('[data-testid="merch-buy"]').click());
+        await sleep(1500);
+        assert(await exists(page, '[data-testid="merch-buy"]'), 'dialog survives a failed checkout');
+        const toasted = await page.evaluate(() =>
+          [...document.querySelectorAll('[data-sonner-toast], [role="status"]')].length > 0);
+        assert(toasted, 'a failed checkout should surface a toast');
+      } finally {
+        await closePage(page);
+      }
+    },
+  },
+
+  {
+    name: 'a ?merch=cancel return is consumed: toast shown, params stripped',
+    ownPage: true,
+    async fn() {
+      const page = await newPage({ query: 'merch=cancel&session_id=cs_test_cancelled' });
+      try {
+        await page.waitForSelector('header', { timeout: 8000 });
+        await sleep(800);
+        const { search, toasted } = await page.evaluate(() => ({
+          search: window.location.search,
+          toasted: [...document.querySelectorAll('[data-sonner-toast], [role="status"]')]
+            .some(el => /cancelled/i.test(el.textContent || '')),
+        }));
+        assert(!/merch=|session_id=/.test(search), `one-time params must be stripped · got "${search}"`);
+        assert(toasted, 'the cancel return should acknowledge with a toast');
+      } finally {
+        await closePage(page);
+      }
     },
   },
 ];

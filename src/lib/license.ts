@@ -484,3 +484,75 @@ export async function submitPrintfulOrder(opts: {
   }
   return await resp.json() as PrintfulOrderResult;
 }
+
+/**
+ * BUYER merch checkout (POST /merch/checkout): uploads the print PNG, has the
+ * Worker price the product server-side, and navigates to the returned
+ * Stripe-hosted Checkout page (payment mode, shipping collected there).
+ *
+ * `expectedRetail` is the price the buyer was shown — the Worker refuses with
+ * 409 `price_mismatch` when it drifts from the authoritative computation, so a
+ * stale or tampered client can never silently mischarge.
+ *
+ * Behind the MERCH_CHECKOUT feature flag (default off) — see worker/src/merch.ts
+ * for the full pipeline (R2 staging → Stripe → webhook → Printful DRAFT order).
+ */
+export async function startMerchCheckout(opts: {
+  productId: string;
+  design: string;
+  markup: number;
+  expectedRetail: number;
+  metadata: { teamName?: string; gymName?: string; region?: string; trainer?: string };
+  pngBlob: Blob;
+}): Promise<void> {
+  const workerUrl = getWorkerUrl();
+  if (!workerUrl) throw new Error('checkout not configured');
+
+  const form = new FormData();
+  form.append('product', opts.productId);
+  form.append('design', opts.design);
+  form.append('markup', String(opts.markup));
+  form.append('expectedRetail', opts.expectedRetail.toFixed(2));
+  form.append('metadata', JSON.stringify(opts.metadata));
+  form.append('returnUrl', window.location.origin + window.location.pathname);
+  form.append('file', opts.pngBlob, `${opts.productId}-${opts.design}.png`);
+
+  const resp = await fetch(`${workerUrl}/merch/checkout`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  if (!resp.ok) {
+    const body = await resp.text();
+    if (resp.status === 409) {
+      // Price drifted between render and click (e.g. a deploy changed base
+      // costs). Reload picks up the new table — surface that, don't retry.
+      throw new Error('the price just changed — refresh the page and try again');
+    }
+    throw new Error(`checkout failed (${resp.status}): ${body.slice(0, 200)}`);
+  }
+  const { url } = await resp.json() as { url: string };
+  if (!url) throw new Error('checkout failed: no redirect URL');
+  window.location.assign(url);
+}
+
+/**
+ * Consume a merch-checkout return (`?merch=success|cancel`) — strips the
+ * one-time params and reports which way the buyer came back. Runs on boot,
+ * before `bootstrapFromCheckoutReturn` (which ignores merch sessions: they
+ * carry `session_id` but no `checkout`/`credits` flag).
+ */
+export function consumeMerchReturn(): 'success' | 'cancel' | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const flag = params.get('merch');
+    if (flag !== 'success' && flag !== 'cancel') return null;
+    params.delete('merch');
+    params.delete('session_id');
+    const cleanUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '') + window.location.hash;
+    window.history.replaceState(null, '', cleanUrl);
+    return flag;
+  } catch {
+    return null;
+  }
+}

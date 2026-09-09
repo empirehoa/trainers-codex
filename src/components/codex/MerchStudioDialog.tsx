@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ShoppingBag, Download, ExternalLink, Loader2, Sparkles } from 'lucide-react';
+import { ShoppingBag, Download, ExternalLink, Loader2, Sparkles, CreditCard } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
@@ -11,9 +11,10 @@ import { toast } from 'sonner';
 import type { TeamMember, TrainerProfile } from '@/lib/types';
 import {
   MERCH_PRODUCTS, MERCH_SLOGANS, MARKUP_OPTIONS, buildVendorOrderUrl, computeRetail,
-  sanitizeListingTitle,
+  computeRetail99, sanitizeListingTitle,
   type MerchProduct, type MerchCategory
 } from '@/lib/merch';
+import { isEnabled } from '@/lib/flags';
 import { POKEMON_BY_ID } from '@/lib/pokemon';
 import {
   renderMerchDesign, renderMerchPreview, MERCH_DESIGNS,
@@ -21,7 +22,7 @@ import {
   type MerchDesign
 } from '@/lib/merch-renderers';
 import { PremiumControl } from './PremiumControl';
-import { isWorkerConfigured, submitPrintfulOrder } from '@/lib/license';
+import { isWorkerConfigured, submitPrintfulOrder, startMerchCheckout } from '@/lib/license';
 import { trackCommerce } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
 
@@ -114,7 +115,14 @@ export function MerchStudioDialog({
   }, [previewUrl, printUrl]);
 
   const teamCount = team.filter(Boolean).length;
-  const retail = computeRetail(selectedProduct.baseCostUSD, markupPct);
+  // Buyer checkout: dark until the MERCH_CHECKOUT flag flips (counsel gate —
+  // see docs/JOURNEY_MODE.md). When live, the DISPLAYED price must be the
+  // Worker's authoritative .99 price, because that is what the buyer is
+  // charged and /merch/checkout 409s on any drift.
+  const buyEnabled = isEnabled('MERCH_CHECKOUT') && isWorkerConfigured() && selectedProduct.vendor === 'printful';
+  const retail = buyEnabled
+    ? computeRetail99(selectedProduct.baseCostUSD, markupPct)
+    : computeRetail(selectedProduct.baseCostUSD, markupPct);
   const margin = retail - selectedProduct.baseCostUSD;
 
   // Legal bright-line: anything that becomes a public Printful listing title
@@ -216,6 +224,40 @@ export function MerchStudioDialog({
     // Fallback: URL deeplink. Open vendor's product page; user drag-drops
     // the downloaded PNG onto the vendor's design uploader.
     window.open(buildVendorOrderUrl(selectedProduct, url), '_blank', 'noopener');
+  };
+
+  const [buying, setBuying] = useState(false);
+
+  /** Buyer path: render → POST /merch/checkout → Stripe-hosted payment page. */
+  const handleBuy = async () => {
+    setBuying(true);
+    trackCommerce({ event: 'merch_render_started', product: selectedProduct.id, design });
+    trackCommerce({
+      event: 'checkout_started', surface: 'merch-studio', plan: 'merch',
+      pack: `${selectedProduct.id}:${design}`, valueUsd: retail,
+    });
+    try {
+      const blob = await generatePrintBlob();
+      if (!blob) return;
+      await startMerchCheckout({
+        productId: selectedProduct.id,
+        design,
+        markup: markupPct,
+        expectedRetail: retail,
+        metadata: {
+          teamName: cleanListing(teamName),
+          gymName: cleanListing(gymName),
+          region: cleanListing(region),
+          trainer: cleanListing(trainer?.name),
+        },
+        pngBlob: blob,
+      });
+      // startMerchCheckout navigates away; reaching here means it threw.
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'checkout failed');
+    } finally {
+      setBuying(false);
+    }
   };
 
   // Filter products by category for the picker
@@ -321,11 +363,22 @@ export function MerchStudioDialog({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 mt-3">
+              {buyEnabled && (
+                <Button onClick={() => void handleBuy()} disabled={buying}
+                        className="w-full mt-3 font-mono text-xs font-bold" data-testid="merch-buy">
+                  {buying ? (
+                    <><Loader2 size={12} className="mr-1.5 animate-spin" /> preparing checkout…</>
+                  ) : (
+                    <><CreditCard size={12} className="mr-1.5" /> buy this · ${retail.toFixed(2)} + shipping</>
+                  )}
+                </Button>
+              )}
+              <div className={cn('grid grid-cols-2 gap-2', buyEnabled ? 'mt-2' : 'mt-3')}>
                 <Button variant="outline" onClick={handleDownload} className="font-mono text-xs">
                   <Download size={12} className="mr-1.5" /> download print PNG
                 </Button>
-                <Button onClick={handleOrder} disabled={ordering} className="font-mono text-xs font-bold" data-testid="merch-order">
+                <Button variant={buyEnabled ? 'outline' : 'default'} onClick={handleOrder} disabled={ordering}
+                        className="font-mono text-xs font-bold" data-testid="merch-order">
                   {ordering ? (
                     <><Loader2 size={12} className="mr-1.5 animate-spin" /> uploading…</>
                   ) : (
@@ -334,6 +387,9 @@ export function MerchStudioDialog({
                 </Button>
               </div>
               <p className="text-[10px] font-mono text-muted-foreground mt-2 leading-relaxed">
+                {buyEnabled && <>
+                  "Buy this" checks out on Stripe with your shipping address — the item prints and ships to you.{' '}
+                </>}
                 Clicking "order" downloads the print-ready file and opens {selectedProduct.vendor}.com.
                 Drag the downloaded PNG onto their design uploader to complete the order.
                 The print is {selectedProduct.printWidth}×{selectedProduct.printHeight}px at 300 DPI.

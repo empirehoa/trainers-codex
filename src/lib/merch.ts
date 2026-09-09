@@ -261,6 +261,20 @@ export function computeRetail(baseCost: number, markupPct: number): number {
   return Math.round((baseCost * (1 + markupPct / 100)) * 100) / 100;
 }
 
+/**
+ * The BUYER-checkout retail: base cost marked up, rounded UP to the next .99.
+ * This must stay byte-identical to `computeRetailUsd` in worker/src/merch.ts —
+ * the Worker prices authoritatively and returns 409 `price_mismatch` when the
+ * number the buyer saw drifts from it, so the client has to display the same
+ * math. `worker/test/pricing-parity.test.ts` pins the two together.
+ */
+export function computeRetail99(baseCost: number, markupPct: number): number {
+  const raw = baseCost * (1 + markupPct / 100);
+  const dollars = Math.floor(raw);
+  const retail = raw <= dollars + 0.99 ? dollars + 0.99 : dollars + 1.99;
+  return Math.round(retail * 100) / 100;
+}
+
 export const MARKUP_OPTIONS = [
   { label: 'fair',    pct: 50,  desc: 'low-margin, high-volume' },
   { label: 'pro',     pct: 100, desc: 'standard POD markup' },

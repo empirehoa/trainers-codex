@@ -46,7 +46,8 @@ import {
 } from '@/lib/formats';
 import {
   getStoredLicense, bootstrapFromCheckoutReturn, isWorkerConfigured,
-  applyOwnerUnlock, hasOwnerUnlock, clearLicense, maybeReverifyLicense } from '@/lib/license';
+  applyOwnerUnlock, hasOwnerUnlock, clearLicense, maybeReverifyLicense,
+  consumeMerchReturn } from '@/lib/license';
 
 import { PokemonCard } from '@/components/codex/PokemonCard';
 import { TeamSlot } from '@/components/codex/TeamSlot';
@@ -408,6 +409,16 @@ export default function App() {
       }
     }
     setHasLoadedStorage(true);
+
+    // Merch checkout return (?merch=success|cancel) — a payment-mode session,
+    // no license to mint. Fulfillment runs server-side off the webhook; the
+    // toast is the buyer's acknowledgment.
+    const merchReturn = consumeMerchReturn();
+    if (merchReturn === 'success') {
+      toast.success('order placed · it prints and ships to the address you gave at checkout');
+    } else if (merchReturn === 'cancel') {
+      toast('checkout cancelled · your design is still here whenever you are ready');
+    }
 
     // Stripe Checkout return path — if we landed here with ?session_id=...,
     // exchange it for a JWT and flip premium on. Fires asynchronously; the
