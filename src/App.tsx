@@ -39,7 +39,7 @@ import {
 } from '@/lib/analysis';
 import { BADGE_REGIONS, badgesForRegion } from '@/lib/merch-renderers';
 import { loadStorage, saveStorage, genId } from '@/lib/storage';
-import { initialSearchQuery } from '@/lib/search-param';
+import { initialSearchQuery, parseShareHash } from '@/lib/search-param';
 import {
   type Ruleset, UNRESTRICTED, FORMAT_PRESETS, presetById,
   checkLegality, teamLegality, isUnrestricted, isLegal,
@@ -297,17 +297,11 @@ export default function App() {
     try {
       const hash = window.location.hash || '';
       // `#team=` is an INCOMING SHARE: show the landing, don't auto-load.
-      const shared = hash.match(/(?:^#|&)team=([0-9a-z,-]+)/);
+      const shared = parseShareHash(hash);
       if (shared) {
-        const parsed = parseShareCode(shared[1]);
+        const parsed = parseShareCode(shared.code);
         if (parsed && parsed.some(Boolean)) {
-          const tn = hash.match(/(?:^#|&)tn=([^&]+)/);
-          const by = hash.match(/(?:^#|&)by=([^&]+)/);
-          const dec = (s: string | undefined) => {
-            if (!s) return undefined;
-            try { return decodeURIComponent(s) || undefined; } catch { return undefined; }
-          };
-          setSharedIncoming({ members: parsed, teamName: dec(tn?.[1]), by: dec(by?.[1]) });
+          setSharedIncoming({ members: parsed, teamName: shared.teamName, by: shared.by });
           return; // a share link supersedes the `#t=` resume hash
         }
       }
@@ -401,11 +395,12 @@ export default function App() {
     }
 
     if (stored.current && !pendingTeam && !members.some(Boolean)) {
-      const next = stored.current.members.slice(0, 6) as (TeamMember | null)[];
-      while (next.length < 6) next.push(null);
+      // loadStorage already ran sanitizeMembers / sanitizeName over `current`,
+      // so this is exactly six well-typed slots and a string.
+      const next = stored.current.members;
       if (next.some(Boolean)) {
         setMembers(next);
-        setTeamName(stored.current.name || '');
+        setTeamName(stored.current.name);
       }
     }
     setHasLoadedStorage(true);

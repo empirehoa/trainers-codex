@@ -6,6 +6,7 @@ import type { Pokemon, TeamMember, TrainerProfile } from './types';
 import { TYPE_COLORS } from './constants';
 import { spriteUrl, padId, POKEMON_BY_ID } from './pokemon';
 import type { ArtStyle } from './constants';
+import { ellipsize, fitLine } from './canvas-text';
 
 export interface PosterContext {
   team: (TeamMember | null)[];
@@ -17,6 +18,10 @@ export interface PosterContext {
 
 const WIDTH = 1080;
 const HEIGHT = 1350;  // 4:5 ratio for IG portrait
+// Titles and mottos are user text. Every renderer fits them to the canvas with
+// `ellipsize` / `fitLine` (lib/canvas-text.ts) — a 60-character name used to
+// run straight off the 1080px edge.
+const TITLE_MAX_W = WIDTH - 120;
 
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
@@ -168,7 +173,7 @@ async function renderCRTManifest(ctx: PosterContext): Promise<Blob> {
   c.fillText("TRAINER'S CODEX", W/2, 90);
   c.font = ctx.teamName ? '28px "Sora", system-ui' : '24px "JetBrains Mono", monospace';
   c.fillStyle = ctx.teamName ? '#f5ead2' : '#8a7e62';
-  c.fillText(ctx.teamName ? `"${ctx.teamName}"` : '// 6-pokémon team manifest', W/2, 130);
+  c.fillText(ellipsize(c, ctx.teamName ? `"${ctx.teamName}"` : '// 6-pokémon team manifest', TITLE_MAX_W), W/2, 130);
 
   await drawTrainerPill(c, ctx.trainer, 40, 160);
 
@@ -241,7 +246,7 @@ async function renderCRTManifest(ctx: PosterContext): Promise<Blob> {
   if (ctx.trainer?.motto) {
     c.font = 'italic 18px "Sora", system-ui';
     c.fillStyle = '#8a7e62';
-    c.fillText(`"${ctx.trainer.motto}"`, W/2, H - 60);
+    c.fillText(ellipsize(c, `"${ctx.trainer.motto}"`, TITLE_MAX_W), W/2, H - 60);
   }
 
   c.font = '12px "JetBrains Mono", monospace';
@@ -277,7 +282,7 @@ async function renderPixelGrid(ctx: PosterContext): Promise<Blob> {
   c.fillText("TEAM ROSTER", W/2, 110);
   c.fillStyle = '#f5ead2';
   c.font = '20px "JetBrains Mono", monospace';
-  c.fillText(ctx.teamName || '// untitled team', W/2, 145);
+  c.fillText(ellipsize(c, ctx.teamName || '// untitled team', TITLE_MAX_W), W/2, 145);
 
   await drawTrainerPill(c, ctx.trainer, 40, 200, { color: '#0c0a08', titleColor: '#a16207' });
 
@@ -377,7 +382,7 @@ async function renderEditorial(ctx: PosterContext): Promise<Blob> {
   c.fillText("SIX", 60, 190);
   c.font = '24px "JetBrains Mono", monospace';
   c.fillStyle = '#f4ae3c';
-  c.fillText(ctx.teamName || '// untitled team', 60, 230);
+  c.fillText(ellipsize(c, ctx.teamName || '// untitled team', TITLE_MAX_W), 60, 230);
 
   await drawTrainerPill(c, ctx.trainer, W - 280, 50, { color: '#f5ead2', titleColor: '#f4ae3c' });
 
@@ -460,7 +465,7 @@ async function renderGameBoy(ctx: PosterContext): Promise<Blob> {
   c.textAlign = 'center';
   c.fillText("TEAM ROSTER", W/2, 110);
   c.font = '20px "JetBrains Mono", monospace';
-  c.fillText(ctx.teamName.toUpperCase() || '— UNTITLED —', W/2, 145);
+  c.fillText(ellipsize(c, ctx.teamName.toUpperCase() || '— UNTITLED —', TITLE_MAX_W), W/2, 145);
 
   await drawTrainerPill(c, ctx.trainer, 30, 170, { color: palette[0], titleColor: palette[0] });
 
@@ -574,7 +579,7 @@ async function renderArcadeCabinet(ctx: PosterContext): Promise<Blob> {
   c.shadowBlur = 0;
   c.font = '22px "JetBrains Mono", monospace';
   c.fillStyle = '#fde047';
-  c.fillText(`★ ${(ctx.teamName || 'PARTY OF SIX').toUpperCase()} ★`, W/2, 170);
+  c.fillText(`★ ${ellipsize(c, (ctx.teamName || 'PARTY OF SIX').toUpperCase(), TITLE_MAX_W - 80)} ★`, W/2, 170);
 
   await drawTrainerPill(c, ctx.trainer, 40, 200, { color: '#fff', titleColor: '#ff00ff' });
 
@@ -658,7 +663,7 @@ async function renderPolaroid(ctx: PosterContext): Promise<Blob> {
   c.fillStyle = '#0c0a08';
   c.font = 'bold 30px "Sora", system-ui';
   c.textAlign = 'center';
-  c.fillText(ctx.teamName || "trainer's team", W/2, 90);
+  c.fillText(ellipsize(c, ctx.teamName || "trainer's team", TITLE_MAX_W), W/2, 90);
 
   await drawTrainerPill(c, ctx.trainer, 60, 130, { color: '#f5ead2', titleColor: '#f4ae3c' });
 
@@ -754,7 +759,7 @@ async function renderStickerSheet(ctx: PosterContext): Promise<Blob> {
   c.fillText("CATCH 'EM ALL", W/2, 110);
   c.font = '24px "JetBrains Mono", monospace';
   c.fillStyle = '#0c0a08';
-  c.fillText(ctx.teamName || '// the chosen six', W/2, 150);
+  c.fillText(ellipsize(c, ctx.teamName || '// the chosen six', TITLE_MAX_W), W/2, 150);
 
   await drawTrainerPill(c, ctx.trainer, 60, 180, { color: '#0c0a08', titleColor: '#9333ea' });
 
@@ -843,7 +848,7 @@ async function renderTCGCardSheet(ctx: PosterContext): Promise<Blob> {
   c.fillText("PROOF OF TEAM", W/2, 80);
   c.font = '20px "JetBrains Mono", monospace';
   c.fillStyle = '#f5ead2';
-  c.fillText(ctx.teamName || '// six-card spread', W/2, 110);
+  c.fillText(ellipsize(c, ctx.teamName || '// six-card spread', TITLE_MAX_W), W/2, 110);
 
   await drawTrainerPill(c, ctx.trainer, 40, 140);
 
@@ -1018,7 +1023,7 @@ async function renderHoloFoil(ctx: PosterContext): Promise<Blob> {
 
   c.fillStyle = '#fff';
   c.font = '22px "Sora", system-ui';
-  c.fillText((ctx.teamName || 'six-card spread').toUpperCase(), W/2, 175);
+  c.fillText(ellipsize(c, (ctx.teamName || 'six-card spread').toUpperCase(), TITLE_MAX_W), W/2, 175);
 
   await drawTrainerPill(c, ctx.trainer, W/2 - 100, 200, { color: '#fff', titleColor: '#fde047' });
 
@@ -1161,7 +1166,7 @@ async function renderBlueprint(ctx: PosterContext): Promise<Blob> {
   c.fillText('EXHIBIT A — SIX-POKÉMON COMPOSITION', 56, 70);
   c.font = '11px "JetBrains Mono", monospace';
   c.fillStyle = 'rgba(255,255,255,0.7)';
-  c.fillText(`PROJECT: ${(ctx.teamName || 'untitled').toUpperCase()}`, 56, 96);
+  c.fillText(ellipsize(c, `PROJECT: ${(ctx.teamName || 'untitled').toUpperCase()}`, W - 112), 56, 96);
   c.fillText(`CODE: ${ctx.code}`, 56, 116);
   c.fillText(`SCALE: 1:1   ·   SHEET: 1/1`, 56, 136);
 
@@ -1388,8 +1393,9 @@ async function renderGrainyCinema(ctx: PosterContext): Promise<Blob> {
   // Title in upper letterbox — serif, large
   c.textAlign = 'center';
   c.fillStyle = '#f5ead2';
-  c.font = 'bold italic 76px "Cormorant Garamond", "Crimson Text", Georgia, serif';
-  c.fillText(ctx.teamName || 'THE TEAM', W/2, 100);
+  const cinemaTitle = fitLine(c, ctx.teamName || 'THE TEAM', TITLE_MAX_W, 76,
+    px => `bold italic ${px}px "Cormorant Garamond", "Crimson Text", Georgia, serif`, 44);
+  c.fillText(cinemaTitle, W/2, 100);
 
   c.fillStyle = '#d97757';
   c.font = '20px "JetBrains Mono", monospace';
@@ -1398,7 +1404,7 @@ async function renderGrainyCinema(ctx: PosterContext): Promise<Blob> {
   if (ctx.trainer?.motto) {
     c.fillStyle = 'rgba(245,234,210,0.6)';
     c.font = 'italic 16px "Cormorant Garamond", "Crimson Text", Georgia, serif';
-    c.fillText(`"${ctx.trainer.motto.slice(0, 60)}"`, W/2, 170);
+    c.fillText(ellipsize(c, `"${ctx.trainer.motto}"`, TITLE_MAX_W), W/2, 170);
   }
 
   // Supporting 5 mons — small, in lower band
@@ -1510,7 +1516,7 @@ async function renderTypeCollage(ctx: PosterContext): Promise<Blob> {
   c.fillStyle = '#264653';
   c.font = 'bold 24px "JetBrains Mono", monospace';
   c.textAlign = 'left';
-  c.fillText('// ' + (ctx.teamName || 'untitled six').toUpperCase(), 0, 0);
+  c.fillText(ellipsize(c, '// ' + (ctx.teamName || 'untitled six').toUpperCase(), W - 160), 0, 0);
   c.restore();
 
   // Trainer signature scribble

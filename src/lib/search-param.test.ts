@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSearchParam } from './search-param';
+import { parseSearchParam, parseShareHash, MAX_SHARE_NAME_LENGTH } from './search-param';
 
 describe('parseSearchParam', () => {
   it('reads the q param with or without a leading ?', () => {
@@ -40,5 +40,31 @@ describe('parseSearchParam', () => {
     // The value reaches React as text content, never as markup, so escaping is
     // React's job. This asserts we do not "helpfully" strip or rewrite it.
     expect(parseSearchParam('?q=%3Cscript%3E')).toBe('<script>');
+  });
+});
+
+describe('parseShareHash', () => {
+  it('returns null without a team segment', () => {
+    expect(parseShareHash('')).toBeNull();
+    expect(parseShareHash('#t=25-6')).toBeNull();
+    expect(parseShareHash('#tn=hello')).toBeNull();
+  });
+
+  it('reads the code and decodes the labels', () => {
+    expect(parseShareHash('#team=25-6-9&tn=Rain%20Squad&by=Ash')).toEqual({ code: '25-6-9', teamName: 'Rain Squad', by: 'Ash' });
+    expect(parseShareHash('#x=1&team=25-6')).toEqual({ code: '25-6', teamName: undefined, by: undefined });
+  });
+
+  it('caps a 20 KB name to the share limit and collapses whitespace', () => {
+    const big = encodeURIComponent('Z'.repeat(20_000));
+    const r = parseShareHash(`#team=25-6-9-3-143-149&tn=${big}&by=${big}`)!;
+    expect(r.teamName!.length).toBeLessThanOrEqual(MAX_SHARE_NAME_LENGTH);
+    expect(r.by!.length).toBeLessThanOrEqual(MAX_SHARE_NAME_LENGTH);
+    expect(parseShareHash('#team=25&tn=a%20%20%20%20%20b')!.teamName).toBe('a b');
+    expect(parseShareHash('#team=25&tn=%20%20')!.teamName).toBeUndefined();
+  });
+
+  it('drops a label that is not valid percent-encoding instead of throwing', () => {
+    expect(parseShareHash('#team=25&tn=%E0%A4%A&by=ok')).toEqual({ code: '25', teamName: undefined, by: 'ok' });
   });
 });
