@@ -2,7 +2,9 @@
 // Inject window.TRAINERS_CODEX_CONFIG into bundle.html.
 //
 // Reads bundle.html, finds the <script type="module"> block, and inserts
-// a config <script> immediately before it. Writes deploy/index.html.
+// a config <script> immediately before it. Writes /tmp/tc-deploy/index.html
+// (nothing under deploy/ is a build output — deploy/ holds only the frontend
+// wrangler config, the OG image and the screenshots).
 //
 // Required env vars:
 //   SUPABASE_URL        — https://xxxx.supabase.co

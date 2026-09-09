@@ -6,13 +6,59 @@
 // that the artifact always carries our notice and fingerprint, and that every
 // monetizable path stays behind the Worker where the secrets actually live.
 
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { join, dirname, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { runSuite, assert, closeBrowser } from './harness.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = readFileSync(join(ROOT, 'bundle.html'), 'utf8');
+
+/** Every file under `dir` (recursive) whose name matches `re`. */
+function walk(dir, re, out = []) {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) walk(p, re, out);
+    else if (re.test(name)) out.push(p);
+  }
+  return out;
+}
+
+/** The directives of the CSP shipped in public/_headers, keyed by name. */
+function shippedCsp() {
+  const headers = readFileSync(join(ROOT, 'public/_headers'), 'utf8');
+  const line = headers.split('\n').find(l => /^\s*Content-Security-Policy:/.test(l));
+  assert(line, 'public/_headers carries no Content-Security-Policy');
+  const out = {};
+  for (const d of line.replace(/^\s*Content-Security-Policy:\s*/, '').split(';')) {
+    const [name, ...values] = d.trim().split(/\s+/);
+    if (name) out[name] = values;
+  }
+  return out;
+}
+
+/**
+ * Hosts the client actually fetches: every `https://host` literal in a
+ * non-test src/ module that calls fetch() (directly or through an injected
+ * `fetcher`), comments stripped. src/seo is excluded — those pages make no
+ * request at all, which render.test.ts asserts separately.
+ */
+function fetchedHosts() {
+  const files = walk(join(ROOT, 'src'), /\.(ts|tsx)$/)
+    .filter(f => !/\.test\.tsx?$/.test(f) && !relative(ROOT, f).startsWith('src/seo'));
+  const hosts = new Map();
+  for (const f of files) {
+    const src = readFileSync(f, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    if (!/\b(fetch|fetcher)\(/.test(src)) continue;
+    for (const m of src.matchAll(/https:\/\/([a-z0-9.-]+\.[a-z]{2,})/gi)) {
+      const host = m[1].toLowerCase();
+      if (!hosts.has(host)) hosts.set(host, relative(ROOT, f));
+    }
+  }
+  return hosts;
+}
 
 const tests = [
   {
@@ -117,6 +163,79 @@ const tests = [
       const jwt = readFileSync(join(ROOT, 'worker/src/jwt.ts'), 'utf8');
       assert(/HMAC/.test(jwt) && /verify/i.test(jwt),
         'worker must verify license JWTs with HMAC');
+    },
+  },
+  {
+    name: 'every host the client fetches is allowed by the shipped connect-src',
+    async fn() {
+      // The paste-link import (pokepast.es, pokebin.com, teams.pokemonshowdown.com)
+      // shipped with none of its hosts in connect-src, so "Fetch & import" was
+      // CSP-blocked on the live origin while working from file://. This keeps
+      // the header and the code in step.
+      const csp = shippedCsp();
+      const allowed = new Set(csp['connect-src'] ?? []);
+      const hosts = fetchedHosts();
+      assert(hosts.size >= 4, `expected the fetch-host scan to find several hosts, found ${hosts.size}`);
+      for (const known of ['pokepast.es', 'pokebin.com', 'teams.pokemonshowdown.com', 'api.pokemontcg.io']) {
+        assert(hosts.has(known), `fetch-host scan no longer sees ${known} — did the scan break?`);
+      }
+      const missing = [...hosts].filter(([h]) => !allowed.has(`https://${h}`)).map(([h, f]) => `${h} (${f})`);
+      assert(missing.length === 0, `hosts fetched by the client but absent from connect-src: ${missing.join(', ')}`);
+    },
+  },
+
+  {
+    name: 'the Cloudflare Web Analytics beacon is allowed rather than red in the console',
+    async fn() {
+      // Cloudflare auto-injects static.cloudflareinsights.com/beacon.min.js
+      // for the zone; the owner may disable it there instead, in which case
+      // the header comment says both hosts can be dropped together.
+      const csp = shippedCsp();
+      assert(csp['script-src'].includes('https://static.cloudflareinsights.com'),
+        'script-src must allow the Cloudflare insights beacon (or the zone must have it disabled)');
+      assert(csp['connect-src'].includes('https://cloudflareinsights.com'),
+        'connect-src must allow the beacon to post');
+    },
+  },
+
+  {
+    name: 'public/_headers is the only headers file in the repo',
+    async fn() {
+      // deploy/_headers was a stale second copy (older CSP, no reference-page
+      // cache rules) that never shipped but invited the wrong file being
+      // deployed. It is allowed to exist only as a byte-identical copy.
+      const stale = join(ROOT, 'deploy/_headers');
+      if (existsSync(stale)) {
+        assert(readFileSync(stale, 'utf8') === readFileSync(join(ROOT, 'public/_headers'), 'utf8'),
+          'deploy/_headers differs from public/_headers — delete it');
+      }
+      assert(!existsSync(join(ROOT, 'deploy/index.html')),
+        'deploy/index.html is a stale pre-built bundle — the deploy is staged from bundle.html by scripts/inject-config.mjs');
+    },
+  },
+
+  {
+    name: 'launch copy matches the shipped product (merch dark, licence proprietary)',
+    async fn() {
+      const flags = readFileSync(join(ROOT, 'src/lib/flags.ts'), 'utf8');
+      const merchOn = /MERCH_CHECKOUT:\s*true/.test(flags);
+      const copy = readFileSync(join(ROOT, 'docs/social-copy.md'), 'utf8');
+      // Only the fenced blocks are copy someone would paste; the prose around
+      // them is allowed to explain why merch is absent.
+      const posts = [...copy.matchAll(/```\n([\s\S]*?)```/g)].map(m => m[1]);
+      assert(posts.length >= 10, `expected the launch drafts to be fenced blocks, found ${posts.length}`);
+      if (!merchOn) {
+        const offenders = posts.filter(p => /merch|printful|print-on-demand/i.test(p));
+        assert(offenders.length === 0,
+          `${offenders.length} launch post(s) pitch merch while MERCH_CHECKOUT is off: ${(offenders[0] ?? '').slice(0, 80)}…`);
+      }
+      assert(!/4-7x/.test(copy), 'social-copy.md repeats the unsourced 4-7x merch stat');
+      const license = readFileSync(join(ROOT, 'LICENSE'), 'utf8');
+      if (!/\bMIT\b/.test(license)) {
+        assert(!/\bMIT\b/.test(copy), 'social-copy.md calls the repo MIT-licensed but LICENSE is not MIT');
+        const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+        assert(!/\bMIT\b/.test(readme), 'README.md calls the source MIT but LICENSE is not MIT');
+      }
     },
   },
 ];

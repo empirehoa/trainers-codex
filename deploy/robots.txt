@@ -1,6 +1,0 @@
-User-agent: *
-Allow: /
-
-# We don't have private routes — single static HTML.
-# But we do want crawlers to know where the canonical lives.
-Sitemap: https://trainerscodex.com/sitemap.xml

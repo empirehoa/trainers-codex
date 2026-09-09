@@ -19,10 +19,20 @@
   #   - https://api.stripe.com / checkout.stripe.com — Stripe Checkout redirects
   #   - https://js.stripe.com         — Stripe.js (only if loaded — currently unused, redirect-based)
   #   - https://plausible.io          — analytics (optional)
+#   - https://pokepast.es / pokebin.com / teams.pokemonshowdown.com — Showdown paste-link
+#       import ("Fetch & import" in the import dialog, src/lib/paste-url.ts). Without
+#       these in connect-src the fetch is CSP-blocked on the live origin and the
+#       feature silently degrades to "open the link and copy the text".
+#   - https://static.cloudflareinsights.com / https://cloudflareinsights.com —
+#       Cloudflare Web Analytics beacon. Cloudflare auto-injects it at the edge
+#       for the zone; it is cookieless and stores no per-user identifier. Listing
+#       it stops the console error on every page load. The owner may instead
+#       disable Web Analytics for the zone in the Cloudflare dashboard, in which
+#       case both hosts can be dropped again.
   #   - https://trainers-codex-api.jrriestra.workers.dev — API Worker (Stripe Checkout session,
   #       license verify, Printful submit). REQUIRED in connect-src or the browser blocks the
   #       checkout fetch and no purchase can complete. api.trainerscodex.com is the future alias.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://raw.githubusercontent.com https://images.pokemontcg.io https://*.supabase.co https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.discordapp.com https://platform-lookaside.fbsbx.com; connect-src 'self' https://esm.sh https://*.supabase.co https://api.pokemontcg.io https://raw.githubusercontent.com https://api.stripe.com https://checkout.stripe.com https://plausible.io https://trainers-codex-api.jrriestra.workers.dev https://api.trainerscodex.com; frame-src https://checkout.stripe.com https://js.stripe.com; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://js.stripe.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://raw.githubusercontent.com https://images.pokemontcg.io https://*.supabase.co https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.discordapp.com https://platform-lookaside.fbsbx.com; connect-src 'self' https://esm.sh https://*.supabase.co https://api.pokemontcg.io https://raw.githubusercontent.com https://api.stripe.com https://checkout.stripe.com https://plausible.io https://trainers-codex-api.jrriestra.workers.dev https://api.trainerscodex.com https://pokepast.es https://pokebin.com https://teams.pokemonshowdown.com https://cloudflareinsights.com; frame-src https://checkout.stripe.com https://js.stripe.com; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'; upgrade-insecure-requests
   # Click-jacking protection (belt + suspenders with frame-ancestors above).
   X-Frame-Options: DENY
   # Block MIME-sniffing so a .png can't be served as text/html.
