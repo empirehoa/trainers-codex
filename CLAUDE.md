@@ -145,7 +145,7 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 21 suites, 224 tests
+  test-*.mjs                       ← 24 suites, 290 tests (a11y, robustness, premium-gate added 2026-09-09)
 ```
 
 ## Build + bundle workflow
@@ -222,12 +222,14 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 365 tests · engine, battles/badges/shinies/events, level economy,
+pnpm test:unit     # vitest · 458 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
-                   #            content health, i18n, deeplink, streak, analytics, prepare
-pnpm test:browser  # puppeteer · 21 suites / 224 tests (incl. 44 Journey Mode, 16 responsive,
-                   #            10 SEO pages — the last needs `pnpm build` for dist/)
-(cd worker && node --test test/*.test.ts)   # 19 worker tests
+                   #            content health, i18n, deeplink, streak, analytics, prepare,
+                   #            license/auth gating, storage sanitising, SEO contrast, manifest
+pnpm test:browser  # puppeteer · 24 suites / 290 tests (incl. 49 Journey Mode, 17 responsive,
+                   #            24 a11y/axe, 15 premium-gate, 13 SEO pages — the last needs
+                   #            `pnpm build` for dist/). ~12 min on a 2-core box.
+(cd worker && node --test test/*.test.ts)   # 79 worker tests (end-to-end via test/_harness.ts)
 ```
 
 Prefer a **vitest** test for anything that doesn't need a DOM — it runs in
@@ -554,22 +556,30 @@ It's CORS-friendly and rate-limit-free.
 
 ## Premium gating
 
-The `premium` boolean lives in `localStorage` and is controlled by a
-"preview unlock" toggle in PosterStudioDialog and MerchStudioDialog. Premium-
-gated content:
+Production entitlement is a **verified license only**: the Worker mints a JWT
+on `/stripe/verify` for a paid `trainerscodex_premium_pack` subscription
+session (and nothing else — a credits or merch session is 422), the client
+stores it as `trainerscodex.license` and re-verifies it. When a worker is
+configured (`isWorkerConfigured()`), the `?unlock=` URL directive and the
+`trainerscodex.premium` preview flag are ignored and purged on boot
+(`src/lib/license.ts`, `tests/test-premium-gate.mjs`). The preview toggle only
+exists for the no-worker static/offline build. Premium gates SURFACES, never
+outcomes — `simulate()` is pure and a fixed seed + choices scores identically
+free or premium. Premium-gated content:
 
 - **Poster styles** (4 of 12): `manifest` (Editorial), `arcade-cabinet`,
   `tcg-card` (Trading Card 6-up), `sticker-sheet`, `holo-foil`, `grainy-cinema`
   (mixed — see `ART_STYLES` in `constants.ts`)
-- **Merch designs** (2 of 4): `id-card` (Trainer ID Card), `banner` (Gym Banner)
+- **Merch designs**: none — all 5 designs render for everyone; ordering/buying is
+  behind `MERCH_CHECKOUT` (client flag AND worker `[vars]`, both off until counsel)
 - **Sprite variants**: `home-default` and `home-shiny` in the per-member
   config dialog (the 3D HOME sprites)
 
-**To wire the real Stripe flow:** replace the toggle in `PosterStudioDialog`
-and `MerchStudioDialog` with a Stripe Checkout redirect, mint a license JWT
-on the webhook, store in `localStorage` as `trainerscodex.license`, validate
-on load. The toggle approach was a deliberate "ready to flip the switch"
-pattern.
+- **Journey**: past daily archive issues, career saves beyond the first, Hall
+  of Fame, Legend Card finishes (cosmetic)
+
+Stripe Checkout is live in TEST mode until the owner sets `sk_live_` keys —
+see `LAUNCH_READINESS.md` owner blockers.
 
 ## When something breaks: ordered debugging
 

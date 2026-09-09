@@ -86,7 +86,7 @@ writeFileSync('/tmp/tc-deploy/index.html', injected);
 // advertised a manifest that 404'd.
 const staticAssets = [
   '_headers', 'robots.txt', 'favicon.svg', 'legal.html', 'dmca.html',
-  'sw.js', 'manifest.webmanifest', 'og-journey.jpg', 'icons.svg',
+  'sw.js', 'manifest.webmanifest', 'og-journey.jpg', 'og-home.jpg', 'icons.svg',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
 ];
 for (const asset of staticAssets) {

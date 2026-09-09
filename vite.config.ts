@@ -28,17 +28,14 @@ export default defineConfig({
     // original TypeScript, which defeats the point of minifying at all.
     sourcemap: false,
   },
-  // ~700 KB of Pokémon data ships inlined. Emitting it as JSON.parse("…")
-  // instead of a JS object literal parses ~2x faster in V8 (string scan vs.
-  // full AST), which directly cuts bundle.html boot time.
-  //
-  // `namedExports: false` is load-bearing under Vite 8 (rolldown's native JSON
-  // plugin): with named exports on — the default — `stringify` is silently
-  // ignored and every JSON module ships as an object literal, which is how the
-  // data shipped for a while with nobody noticing. No module imports a named
-  // export from a .json file (they are all keyed by dex number anyway);
-  // tests/test-security.mjs asserts the built bundle carries the JSON.parse form.
-  json: { stringify: true, namedExports: false },
+  // ~700 KB of Pokémon data ships inlined as object literals. `json.stringify`
+  // (JSON.parse("…") emission) was tried on 2026-09-09 (needs
+  // `namedExports: false` under Vite 8 / rolldown or it is silently ignored):
+  // it added ~26 KB of quoted keys and moved the file:// boot median by
+  // 704 → 714 ms (noise) on tests/bench-boot.mjs, so it is intentionally
+  // off. The real boot lever is moving @smogon/calc (463 KB, matchup preview
+  // only) out of the critical script — see LAUNCH_READINESS.md.
+  json: { stringify: false },
   plugins: [react()],
   resolve: {
     alias: {

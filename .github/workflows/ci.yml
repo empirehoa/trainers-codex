@@ -65,18 +65,15 @@ jobs:
         run: node inline.mjs
 
       # Size gate. The single-file identity only holds while the file stays
-      # small enough to drop on any host and boot on a phone; growth has been
-      # invisible because nothing measured it. 2,252,800 bytes (2,200 KiB) leaves
-      # ~75 KB of headroom over the 2026-09-09 build (2,176,730 B). That build
-      # is ~54 KB over the 2.1 MB mark the audit first proposed because the
-      # Pokémon data now ships as JSON.parse strings (vite.config.ts) — quoted
-      # keys cost bytes, V8 parses them ~2x faster, and the gzip delta is 6 KB.
-      # If @smogon/calc (463 KB, matchup preview only) moves out of the
-      # critical script, tighten this to 1.8 MB.
+      # small enough to drop on any host and boot on a phone; growth had been
+      # invisible because nothing measured it. 2,150,400 bytes (2,100 KiB) is
+      # the launch cap; the 2026-09-09 v1.0-launch build is 2,137,758 B (~2,088 KB), gzip-able
+      # to ~530 KB. If @smogon/calc (463 KB, matchup preview only) moves out of
+      # the critical script, tighten this to 1.8 MB.
       - name: Bundle size gate
         run: |
           size=$(stat -c %s bundle.html)
-          limit=2252800
+          limit=2150400
           echo "bundle.html: $size bytes (limit $limit)"
           if [ "$size" -gt "$limit" ]; then
             echo "::error::bundle.html is $size bytes, over the $limit-byte cap — see the comment above this step"

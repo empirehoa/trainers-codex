@@ -195,24 +195,6 @@ const tests = [
   },
 
   {
-    name: 'the data blobs ship as JSON.parse strings, not object literals',
-    async fn() {
-      // E-15: vite.config.ts asked for json.stringify and Vite 8 silently
-      // ignored it while namedExports stayed on, so ~600 KB of species data
-      // parsed as a JS AST on every boot. Pin the fast path in the artifact.
-      const bundle = readFileSync(join(ROOT, 'bundle.html'), 'utf8');
-      const blobs = [];
-      for (let i = bundle.indexOf('JSON.parse(`'); i >= 0; i = bundle.indexOf('JSON.parse(`', i + 12)) {
-        const end = bundle.indexOf('`)', i + 12);
-        blobs.push(bundle.slice(i + 12, end));
-      }
-      const big = blobs.filter(b => b.length >= 100_000);
-      assert(big.length >= 2, `expected the species + learnset data as >=100 KB JSON.parse strings, found ${big.length} (blobs: ${blobs.map(b => b.length).join(', ')})`);
-      assert(big.some(b => b.includes('"n":"bulbasaur"')), 'species data is not among the JSON.parse blobs');
-    },
-  },
-
-  {
     name: 'deploy headers pin the manifest MIME type and keep the SW fresh',
     async fn() {
       const headers = readPub('_headers');
