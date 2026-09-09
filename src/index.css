@@ -23,6 +23,13 @@
     --accent-foreground: 30 17% 4%;
     --destructive: 0 70% 45%;
     --destructive-foreground: 0 0% 98%;
+    /* --destructive is a FILL colour (buttons, borders, badges with white
+       text). As 10px body text on --card it measures 3.03:1, well under AA's
+       4.5:1. This is the same red lifted to read as text: 4.9:1 on --card,
+       5.4:1 on --background. Use `text-destructive-text` for small status copy
+       ("2 weak / 0 resist", "you are outmatched here"); keep `text-destructive`
+       for icons and for 14px+ text. */
+    --destructive-text: 0 75% 62%;
     --border: 30 15% 19%;
     --input: 28 18% 9%;
     --ring: 36 89% 60%;
@@ -48,6 +55,7 @@
     --accent-foreground: 40 35% 96%;
     --destructive: 0 65% 45%;
     --destructive-foreground: 40 35% 98%;
+    --destructive-text: 0 65% 38%;
     --border: 38 20% 80%;
     --input: 38 20% 90%;
     --ring: 28 80% 45%;
@@ -135,6 +143,33 @@
      overflow and a legible wordmark at 768/820/1024 so it cannot regress. */
   @media (pointer: coarse) {
     header button.w-8.h-8 { width: 2.25rem; height: 2.25rem; }
+  }
+
+  /* ---- Type pills -------------------------------------------------------
+     TYPE_COLORS are brand data (the fill of every pill, sprite glow and poster
+     accent) and several — ghost, dark, poison, dragon, fighting — sit around
+     3:1 as text on the dark card. `TypePill` writes both the raw colour and a
+     per-theme readable variant as custom properties; the theme, not the
+     component, picks which one is the text colour. */
+  .type-pill { color: var(--pill-text-dark); }
+  html.light .type-pill { color: var(--pill-text-light); }
+
+  /* ---- Reduced motion ---------------------------------------------------
+     The shell's ambient loops (the wordmark flicker, the status pulse-dots, the
+     shimmer placeholders) and the entrance animations are decoration. Under
+     `prefers-reduced-motion: reduce` they stop; Radix dialog / sheet / menu
+     transitions are cut to a frame so state still changes instantly rather
+     than sliding in. `!important` because tailwindcss-animate sets the
+     animation shorthand inline in its own utilities. */
+  @media (prefers-reduced-motion: reduce) {
+    .flicker, .pulse-dot, .shimmer, .fade-up {
+      animation: none !important;
+    }
+    [data-state="open"], [data-state="closed"], [data-state="open"] *, [data-state="closed"] * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 
   .scroll-x::-webkit-scrollbar, .scroll-y::-webkit-scrollbar { height: 6px; width: 6px; }

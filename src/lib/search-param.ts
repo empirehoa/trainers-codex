@@ -41,3 +41,53 @@ export function initialSearchQuery(): string {
   if (typeof window === 'undefined') return '';
   return parseSearchParam(window.location.search);
 }
+
+// ---------------------------------------------------------------------------
+// `#team=…&tn=…&by=…` — an INCOMING share link.
+// ---------------------------------------------------------------------------
+
+/**
+ * Longest team name / sender name a share link may carry. The team-name input
+ * enforces the same cap (AnalysisSheet `maxLength`), so a link can never hand
+ * the recipient a name they could not have typed. Anything longer is a
+ * payload, not a name — a 20 KB `tn=` used to render verbatim on the landing
+ * and become the recipient's team name on "load this team".
+ */
+export const MAX_SHARE_NAME_LENGTH = 40;
+
+export interface ShareHash {
+  /** The raw share code (`[0-9a-z,-]+`), still to be parsed by `parseShareCode`. */
+  code: string;
+  teamName?: string;
+  by?: string;
+}
+
+function decodeShareText(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  let s: string;
+  try {
+    s = decodeURIComponent(raw);
+  } catch {
+    return undefined;
+  }
+  // Collapse whitespace (a name is one line) before capping, so a run of
+  // spaces cannot be used to push the visible text off the landing card.
+  s = s.replace(/\s+/g, ' ').trim().slice(0, MAX_SHARE_NAME_LENGTH).trim();
+  return s || undefined;
+}
+
+/**
+ * Pull the share code and its optional labels out of a location hash.
+ * Returns `null` when the hash carries no `team=` segment.
+ */
+export function parseShareHash(hash: string): ShareHash | null {
+  const shared = hash.match(/(?:^#|&)team=([0-9a-z,-]+)/);
+  if (!shared) return null;
+  const tn = hash.match(/(?:^#|&)tn=([^&]+)/);
+  const by = hash.match(/(?:^#|&)by=([^&]+)/);
+  return {
+    code: shared[1],
+    teamName: decodeShareText(tn?.[1]),
+    by: decodeShareText(by?.[1]),
+  };
+}

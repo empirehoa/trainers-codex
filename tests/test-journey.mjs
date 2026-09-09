@@ -977,6 +977,63 @@ const tests = [
   },
 
   {
+    // Sprites are blocked here, so the opponent's four 22px <img>s render their
+    // alt text — which used to widen the dialog to 400px on a 388px box. Same
+    // measurement as the card screen (gotcha 39), on the decision screen.
+    name: 'the decision screen fits its dialog at 390px even with sprite alt text showing',
+    pageOpts: { viewport: { width: 390, height: 844 }, query: 'seed=8843' },
+    async fn(page) {
+      await page.evaluate(() => document.querySelector('[data-testid="journey-open-hero"]').click());
+      await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-opponent"]', { timeout: 8000 });
+      await sleep(300);
+      const o = await page.evaluate(() => {
+        const d = document.querySelector('[data-testid="journey-dialog"]');
+        const imgs = [...document.querySelectorAll('[data-testid="journey-opponent"] img')].map(i => Math.round(i.getBoundingClientRect().width));
+        return { s: d.scrollWidth, c: d.clientWidth, imgs };
+      });
+      assert(o.s <= o.c + 1, `decision screen overflows its dialog sideways: scrollWidth ${o.s} vs clientWidth ${o.c}`);
+      for (const w of o.imgs) assert(w <= 22, `an opponent sprite box grew to ${w}px`);
+    },
+  },
+
+  {
+    // The gym-badge numerals on the route map were 7 SVG user units — ≈7.8px
+    // rendered on a phone, the only text in the app under the 10px floor. SVG
+    // text is measured at its RENDERED size (font-size × viewport/viewBox).
+    name: 'the retired screen has no text below the 10px floor, route map included',
+    pageOpts: { viewport: { width: 390, height: 844 }, query: 'seed=8843' },
+    async fn(page) {
+      await page.evaluate(() => document.querySelector('[data-testid="journey-open-hero"]').click());
+      await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await page.waitForSelector('[data-testid^="journey-map-node-"]', { timeout: 8000 });
+      const tiny = await page.evaluate(() => {
+        const out = [];
+        for (const el of document.querySelectorAll('[data-testid="journey-dialog"] *')) {
+          if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+          const cs = getComputedStyle(el);
+          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+          let px = parseFloat(cs.fontSize);
+          if (el instanceof SVGElement && el.ownerSVGElement) {
+            const svg = el.ownerSVGElement;
+            px = px * svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+          }
+          if (px < 10) out.push(`${el.tagName}@${px.toFixed(1)}px "${el.textContent.trim().slice(0, 12)}"`);
+        }
+        return out;
+      });
+      const nodes = await page.evaluate(() => document.querySelectorAll('[data-testid="journey-dialog"] svg text').length);
+      assertGte(nodes, 1, 'the route map rendered no labels — nothing was measured');
+      assert(tiny.length === 0, `text below 10px on the retired screen: ${[...new Set(tiny)].join(', ')}`);
+    },
+  },
+
+  {
     name: 'a decision and the Legend Card both fit a 360px viewport',
     pageOpts: { viewport: { width: 360, height: 720 } },
     async fn(page) {

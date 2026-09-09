@@ -30,6 +30,8 @@ const SUITES = [
   'test-favorites.mjs',
   'test-security.mjs',
   'test-seo-pages.mjs',
+  'test-a11y.mjs',
+  'test-robustness.mjs',
 ];
 
 let totalPassed = 0;

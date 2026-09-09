@@ -306,7 +306,7 @@ export function JourneyResult({
           <div className="font-mono text-[10px] text-muted-foreground" data-testid="journey-luck-range">
             {t('journey.luck.range', { worst: luck.worst, best: luck.best, pct: luck.withinSeedPct })}
           </div>
-          <div className="font-mono text-[10px] text-muted-foreground/70">{t('journey.luck.note')}</div>
+          <div className="font-mono text-[10px] text-muted-foreground">{t('journey.luck.note')}</div>
         </div>
 
         {/* The road walked. Open by default here — mid-run the map is a

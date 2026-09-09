@@ -11,7 +11,7 @@ interface TypeChartDialogProps {
 export function TypeChartDialog({ open, onClose }: TypeChartDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-3xl p-0 gap-0 max-h-[90dvh] overflow-y-auto scroll-y bg-card">
+      <DialogContent className="max-w-3xl min-w-0 p-0 gap-0 max-h-[90dvh] overflow-y-auto scroll-y bg-card">
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
           <DialogTitle className="font-display text-lg text-primary lowercase">type chart</DialogTitle>
           <DialogDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
@@ -19,8 +19,10 @@ export function TypeChartDialog({ open, onClose }: TypeChartDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="p-4">
-          <div className="overflow-x-auto scroll-x">
+        <div className="p-4 min-w-0">
+          {/* min-w-0: the 18-column table must scroll inside this box, not
+              size it — at 390px it used to push the dialog to 608px wide. */}
+          <div className="overflow-x-auto scroll-x min-w-0">
             <table className="font-mono text-[10px] border-separate" style={{ borderSpacing: '1px' }}>
               <thead>
                 <tr>

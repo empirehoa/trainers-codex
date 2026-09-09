@@ -191,22 +191,27 @@ export function PosterStudioDialog({
                   <button
                     key={s.id}
                     onClick={() => setStyle(s.id)}
+                    // Locked styles dim the frame (dashed border), not the
+                    // copy: `opacity-60` on the whole card took the 10px
+                    // description to 2.7:1.
                     className={cn(
                       'w-full text-left rounded border p-2.5 transition',
                       isPicked ? 'border-primary' : 'border-border hover:border-primary/50',
-                      locked && 'opacity-60'
+                      locked && 'border-dashed'
                     )}
                     style={{ background: isPicked ? 'hsl(var(--primary)/0.1)' : 'transparent' }}
                   >
                     <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="font-mono text-xs font-semibold">{s.label}</span>
+                      <span className={cn('font-mono text-xs font-semibold', locked && !isPicked && 'text-muted-foreground')}>{s.label}</span>
                       {locked && <Lock size={10} className="text-primary shrink-0" />}
                       {!locked && s.premium && (
                         <span className="text-[10px] font-mono uppercase tracking-wider text-primary">PRO</span>
                       )}
                       {isPicked && !locked && <Check size={11} className="text-primary shrink-0" />}
                     </div>
-                    <div className="font-mono text-[10px] text-muted-foreground">{s.desc}</div>
+                    {/* The picked card sits on an amber tint that costs the
+                        muted token its AA margin; it reads in foreground there. */}
+                    <div className={cn('font-mono text-[10px]', isPicked ? 'text-foreground/90' : 'text-muted-foreground')}>{s.desc}</div>
                   </button>
                 );
               })}
