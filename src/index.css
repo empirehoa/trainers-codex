@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* Web fonts are loaded by index.html (<link rel=preload as=style>, non-blocking)
+   rather than an @import here — an @import at the top of the inlined stylesheet
+   blocked first paint on a cross-origin request. */
 
 @tailwind base;
 @tailwind components;

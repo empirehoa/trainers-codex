@@ -59,7 +59,7 @@ icon set), so deploying the `public/` folder alongside the bundle is all it take
   target game. Form-aware (Megas excluded from Switch-era, Gigantamax SwSh-
   only, Hisuian PLA/SV/PLZA-only, etc.).
 
-### Poster generator (4 free + 8 premium styles)
+### Poster generator (6 free + 6 premium styles)
 
 - 12 art styles, all canvas-rendered, all 1080×1350 PNG (Instagram-ready):
   - Free: **Pixel CRT**, **Pixel Grid**, **Game Boy DMG**, **Polaroid Stack**,
@@ -88,14 +88,17 @@ icon set), so deploying the `public/` folder alongside the bundle is all it take
 
 Full design notes: [`docs/JOURNEY_MODE.md`](docs/JOURNEY_MODE.md).
 
-### Print-on-demand merch (Merch Studio) — 12 products × 4 designs
+### Print-on-demand merch (Merch Studio) — 12 products × 5 designs
+
+> Checkout is dark until the owner flips `MERCH_CHECKOUT` (see
+> `src/lib/flags.ts`); the studio renders print files today, it does not sell.
 
 - **Products**: Bella+Canvas tee · Gildan heavy cotton tee · Gildan heavy
   blend hoodie · Gildan crewneck · 11oz ceramic mug · small gaming mousepad ·
   XL 36"×16" desk mat · 4" die-cut sticker · 11×14 matte poster · 18×24 matte
   poster · canvas tote · iPhone snap case.
-- **Designs**: Trainer Crest (free) · Champion Roster (free) · Trainer ID
-  Card (premium) · Gym Banner (premium).
+- **Designs**: Team Crest · Champion Roster · Trainer ID Card · Gym Banner ·
+  Trainer Card. None is premium-gated — printing is open to everyone.
 - **Customization**: gym name, region, title/slogan (8 preset chips + custom),
   year.
 - **Output**: 300 DPI print-ready PNG at the product's exact print dimensions
@@ -110,7 +113,6 @@ Full design notes: [`docs/JOURNEY_MODE.md`](docs/JOURNEY_MODE.md).
 
 - 6 premium poster styles (Editorial, Arcade Cabinet, Trading Card Sheet,
   Sticker Sheet, Holographic Foil, Grainy Cinema)
-- 2 premium merch designs (Trainer ID Card, Gym Banner)
 - 3D HOME sprites in the per-member sprite picker
 - Custom palette overrides on every poster style
 
@@ -234,7 +236,7 @@ src/
     compatibility.ts               ← form-aware game compat
     constants.ts                   ← TYPES, TYPE_COLORS, TYPE_CHART, ART_STYLES, GAMES, GENERATIONS
     license.ts                     ← Stripe Checkout client + JWT verify + Printful API client
-    merch-renderers.ts             ← 300 DPI print PNG generators (4 designs)
+    merch-renderers.ts             ← 300 DPI print PNG generators (5 designs)
     merch.ts                       ← 12-product POD catalog + URL-deeplink fallback
     pokemon.ts                     ← POKEMON_BY_ID lookup, sprite + learnset helpers
     posters.ts                     ← 12 canvas-based poster renderers (1080×1350)
@@ -343,8 +345,11 @@ graceful fallback in the poster studio.
 
 ## License
 
-Source: MIT. Commercial use, fork, sell — go. The bundle, however, ships
-with no warranty as fan art tooling. Pokémon, the Pokéball, all character
+Proprietary — see [`LICENSE`](LICENSE). This is not open source: the code is
+Copyright (c) 2026 Empire Management Group, LLC, all rights reserved, and
+redeploying, rehosting or creating derivative works requires written
+permission. The bundle ships with no warranty as fan art tooling. Pokémon,
+the Pokéball, all character
 designs, and TCG card art are property of Nintendo / Game Freak / The
 Pokémon Company. This project uses them under nominative-fair-use as a
 descriptive fan tool — see `docs/SECURITY.md` § "Copyright / IP surface"

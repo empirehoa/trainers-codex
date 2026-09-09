@@ -1,7 +1,7 @@
 {
-  "name": "Trainer's Codex — Pokémon Team Builder",
+  "name": "Trainer's Codex",
   "short_name": "Trainer's Codex",
-  "description": "Build, analyze, and ship a Pokémon team across 1,300+ entries. Type coverage, threat detection, AI trainer cards, and print-on-demand merch.",
+  "description": "Build, analyse and share a team of six. Type coverage, threat detection, Journey Mode daily runs. Works offline.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
