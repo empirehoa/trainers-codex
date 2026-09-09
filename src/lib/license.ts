@@ -386,22 +386,26 @@ export async function maybeReverifyLicense(jwt: string): Promise<'ok' | 'revoked
 }
 
 /**
- * Owner/dev quick-unlock. Reads a `unlock=` directive from either the query
- * string (`?unlock=premium`) or the hash (`#unlock=premium`) and flips the
- * local preview-premium flag accordingly — independent of whether a Stripe
- * Worker is configured. This lets the owner exercise every premium-gated
- * surface (poster styles, merch designs, HOME sprites) without a purchase, and
- * `unlock=off` locks back down to compare the free experience.
+ * Preview unlock for the NO-WORKER build only. Reads a `unlock=` directive
+ * from either the query string (`?unlock=premium`) or the hash
+ * (`#unlock=premium`) and flips the local preview-premium flag accordingly, so
+ * the static/offline bundle (no Stripe, no Worker) can still demo every
+ * premium-gated surface; `unlock=off` locks back down to compare the free
+ * experience. The browser test suite drives the gating UI through this path.
+ *
+ * On a Worker-backed deploy the directive is INERT: the only premium
+ * entitlement in production is a verified license. `?unlock=premium` shipped
+ * live as a one-line shareable bypass (audit A-1/C-4) — so when a worker is
+ * configured the param is stripped silently, nothing is toasted, and any
+ * preview flag left in storage is cleared on boot.
  *
  * Returns 'unlocked' | 'locked' when a directive was applied (so the caller can
- * toast + flip React state), or null when no directive was present. The token
- * is stripped from the URL either way so a refresh doesn't re-trigger it.
- *
- * This is a deliberate soft backdoor for pre-launch testing. It only grants the
- * *client-side* preview flag — it cannot mint a server-signed license, so it
- * never unlocks Worker-gated AI generation (that still needs real credits).
+ * toast + flip React state), or null when none was present or the deploy has a
+ * worker. The token is stripped from the URL either way so a refresh doesn't
+ * re-trigger it.
  */
 export function hasOwnerUnlock(): boolean {
+  if (isWorkerConfigured()) return false;
   try { return localStorage.getItem(PREVIEW_PREMIUM_KEY) === 'true'; } catch { return false; }
 }
 
@@ -411,7 +415,6 @@ export function applyOwnerUnlock(): 'unlocked' | 'locked' | null {
     const hash = window.location.hash || '';
     const hashMatch = hash.match(/(?:^#|[#&])unlock=([a-z0-9]+)/i);
     const directive = (search.get('unlock') || hashMatch?.[1] || '').toLowerCase();
-    if (!directive) return null;
 
     const strip = () => {
       search.delete('unlock');
@@ -421,6 +424,14 @@ export function applyOwnerUnlock(): 'unlocked' | 'locked' | null {
       const url = window.location.pathname + (qs ? `?${qs}` : '') + (newHash && newHash !== '#' ? newHash : '');
       window.history.replaceState(null, '', url);
     };
+
+    if (isWorkerConfigured()) {
+      // Production: a stale preview flag is not an entitlement either.
+      try { localStorage.removeItem(PREVIEW_PREMIUM_KEY); } catch { /* ignore */ }
+      if (directive) strip();
+      return null;
+    }
+    if (!directive) return null;
 
     if (directive === 'off' || directive === 'lock' || directive === 'free') {
       try {
@@ -543,11 +554,34 @@ export async function startMerchCheckout(opts: {
  * carry `session_id` but no `checkout`/`credits` flag).
  */
 export function consumeMerchReturn(): 'success' | 'cancel' | null {
+  return consumeReturnFlag('merch', ['success', 'cancel']);
+}
+
+/**
+ * Consume a cancelled premium / credit-pack checkout (`?checkout=cancel`,
+ * `?credits=cancel` — the shapes the Worker sets as `cancel_url`). Stripe
+ * bounces the buyer back with the one-time params and nothing to verify; this
+ * strips them and reports which flow was abandoned so the shell can say "no
+ * charge was made". The `success` shapes are left alone for
+ * `bootstrapFromCheckoutReturn`.
+ *
+ * No commerce event fires here on purpose: `checkout_abandoned` is not in the
+ * live `commerce_events` CHECK vocabulary and a row the DB rejects is worse
+ * than none — the funnel already infers abandonment from a checkout_started
+ * without a matching purchase_completed.
+ */
+export function consumeCheckoutCancel(): 'premium' | 'credits' | null {
+  if (consumeReturnFlag('checkout', ['cancel'])) return 'premium';
+  if (consumeReturnFlag('credits', ['cancel'])) return 'credits';
+  return null;
+}
+
+function consumeReturnFlag<T extends 'success' | 'cancel'>(name: 'merch' | 'checkout' | 'credits', accept: readonly T[]): T | null {
   try {
     const params = new URLSearchParams(window.location.search);
-    const flag = params.get('merch');
-    if (flag !== 'success' && flag !== 'cancel') return null;
-    params.delete('merch');
+    const flag = params.get(name) as T | null;
+    if (!flag || !accept.includes(flag)) return null;
+    params.delete(name);
     params.delete('session_id');
     const cleanUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '') + window.location.hash;
     window.history.replaceState(null, '', cleanUrl);

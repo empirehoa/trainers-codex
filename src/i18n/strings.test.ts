@@ -59,6 +59,9 @@ function contentKeys(): string[] {
   }
   // The area map's chrome.
   for (const k of ['title', 'here', 'legend', 'badges', 'alt']) keys.push(`journey.map.${k}`);
+  // Career saves / Hall of Fame rows, including the singular pitch form that
+  // saves.ts hofLockedKey() selects by count.
+  for (const k of ['heading', 'chapter', 'resume', 'locked', 'hof', 'hofLocked', 'hofLockedOne']) keys.push(`journey.saves.${k}`);
 
   return keys;
 }

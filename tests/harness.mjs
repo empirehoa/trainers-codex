@@ -79,6 +79,15 @@ async function getBrowser() {
  *                                  exercised without a server.
  * @param {{width:number,height:number}} [opts.viewport] Viewport override, for
  *                                  the 360px mobile-layout assertions.
+ * @param {object} [opts.config]    window.TRAINERS_CODEX_CONFIG to install
+ *                                  BEFORE the bundle runs (evaluateOnNewDocument),
+ *                                  e.g. `{ worker: { url: 'https://api.example.test' } }`
+ *                                  — the only way to exercise boot-time code
+ *                                  paths (license bootstrap, unlock gating) as a
+ *                                  Worker-backed deploy. Setting the global after
+ *                                  boot only reaches render-time reads.
+ * @param {Record<string,string>} [opts.storage] localStorage entries seeded
+ *                                  before boot (saves, flags, licenses).
  * @param {number} [opts.timezone]  Unused placeholder kept out on purpose —
  *                                  timezone shifts are emulated per-test via
  *                                  page.emulateTimezone.
@@ -107,7 +116,14 @@ export async function newPage(opts = {}) {
     }
   });
 
-const url = opts.query ? `${BUNDLE_URL}?${opts.query}` : BUNDLE_URL;
+  if (opts.config || opts.storage) {
+    await page.evaluateOnNewDocument((config, storage) => {
+      if (config) window.TRAINERS_CODEX_CONFIG = config;
+      for (const [k, v] of Object.entries(storage || {})) localStorage.setItem(k, v);
+    }, opts.config ?? null, opts.storage ?? null);
+  }
+
+  const url = opts.query ? `${BUNDLE_URL}?${opts.query}` : BUNDLE_URL;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   // The inlined bundle is ~1.7MB of JS; under CPU contention (the full runner
   // launches a fresh context per test across 15 suites) the React mount can

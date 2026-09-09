@@ -10,6 +10,9 @@ import {
 import { trackCommerce, type CommerceSurface } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
 
+/** Terms, privacy and the refund policy — one page, linked beside every buy button. */
+const LEGAL_URL = '/legal.html';
+
 interface PremiumControlProps {
   /** Whether the user currently has premium unlocked. */
   premium: boolean;
@@ -28,11 +31,15 @@ interface PremiumControlProps {
  *
  * Behavior matrix:
  *   premium === true                     → "Premium · active" pill
- *   worker NOT configured + !premium     → Switch (dev/test preview path)
- *   worker configured + !premium         → term picker (annual pre-selected —
+ *   worker configured + compact          → monthly checkout button + restore /
+ *                                          terms links (dialog headers)
+ *   worker configured + full             → term picker (annual pre-selected —
  *                                          it's two free months, and annual mix
  *                                          is the churn lever) + checkout button
- *                                          + a restore-purchase affordance.
+ *                                          + restore-purchase + terms link. Mounted
+ *                                          in the locked-style pitch panels.
+ *   worker NOT configured + compact      → Switch (dev/test preview path)
+ *   worker NOT configured + full         → "preview unlock" button
  *
  * The dev switch survives in production builds when no worker is configured,
  * so a static-hosted bundle (no API, no Stripe) still has a way to demo the
@@ -62,9 +69,9 @@ export function PremiumControl({ premium, onTogglePremium, compact, email, surfa
   };
 
   // "Restore purchase": re-validate whatever license this browser already
-  // holds. True cross-device restore needs an account (cloud sync sign-in);
-  // this covers the common case — same browser, cleared UI state, or a user
-  // double-checking their subscription is still recognised.
+  // holds against /license/verify. True cross-device restore needs an account
+  // (cloud sync sign-in); this covers the common case — same browser, cleared
+  // UI state, or a user double-checking their subscription is still recognised.
   const handleRestore = async () => {
     setRestoring(true);
     try {
@@ -99,18 +106,33 @@ export function PremiumControl({ premium, onTogglePremium, compact, email, surfa
   if (workerOn) {
     if (compact) {
       // Dialog headers have no room for the term picker; monthly is the
-      // low-friction default there and the full picker lives one click away.
+      // low-friction default there and the full picker sits in the locked
+      // style's pitch panel. Restore + terms stay one tap away regardless.
       return (
-        <Button
-          onClick={() => void handleCheckout('monthly')}
-          disabled={busy}
-          size="sm"
-          className="font-mono text-xs"
-          data-testid="premium-checkout"
-        >
-          {busy ? <Loader2 size={11} className="mr-1.5 animate-spin" /> : <Sparkles size={11} className="mr-1.5" />}
-          get premium · $4.99/mo
-        </Button>
+        <div className="flex flex-col items-end gap-1" data-testid="premium-control-compact">
+          <Button
+            onClick={() => void handleCheckout('monthly')}
+            disabled={busy}
+            size="sm"
+            className="font-mono text-xs"
+            data-testid="premium-checkout"
+          >
+            {busy ? <Loader2 size={11} className="mr-1.5 animate-spin" /> : <Sparkles size={11} className="mr-1.5" />}
+            get premium · $4.99/mo
+          </Button>
+          <div className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5">
+            <button
+              onClick={() => void handleRestore()}
+              disabled={restoring}
+              data-testid="premium-restore-compact"
+              className="hover:text-primary"
+            >
+              {restoring ? 'checking…' : 'restore purchase'}
+            </button>
+            <span aria-hidden="true">·</span>
+            <LegalLink />
+          </div>
+        </div>
       );
     }
     return (
@@ -151,21 +173,47 @@ export function PremiumControl({ premium, onTogglePremium, compact, email, surfa
           data-testid="premium-restore"
           className="w-full font-mono text-[10px] text-muted-foreground hover:text-primary flex items-center justify-center gap-1"
         >
-          <RotateCcw size={10} /> {restoring ? 'checking…' : 'restore purchase'}
+          <RotateCcw size={10} /> {restoring ? 'checking…' : 'restore purchase (this browser)'}
         </button>
+        <div className="font-mono text-[10px] text-muted-foreground text-center">
+          cancel anytime · <LegalLink />
+        </div>
       </div>
     );
   }
 
-  // No worker configured — fall back to the preview toggle so the bundle is
-  // still demoable on a static host.
+  // No worker configured — fall back to the preview affordances so the bundle
+  // is still demoable on a static host: a switch in headers, a button in the
+  // pitch panels (a second switch there would duplicate the header's id).
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2">
+        <Label htmlFor="premium-toggle" className="font-mono text-[10px] text-muted-foreground cursor-pointer">
+          premium preview
+        </Label>
+        <Switch id="premium-toggle" checked={premium} onCheckedChange={onTogglePremium} />
+      </div>
+    );
+  }
+  return <PreviewUnlockButton onTogglePremium={onTogglePremium} />;
+}
+
+/** "terms & refund policy" — the same link beside every buy button (D-8). */
+export function LegalLink({ label = 'terms & refund policy' }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <Label htmlFor="premium-toggle" className="font-mono text-[10px] text-muted-foreground cursor-pointer">
-        premium preview
-      </Label>
-      <Switch id="premium-toggle" checked={premium} onCheckedChange={onTogglePremium} />
-    </div>
+    <a href={LEGAL_URL} target="_blank" rel="noopener noreferrer"
+       className="underline underline-offset-2 hover:text-primary"
+       data-testid="premium-legal-link">
+      {label}
+    </a>
+  );
+}
+
+function PreviewUnlockButton({ onTogglePremium }: { onTogglePremium?: () => void }) {
+  return (
+    <Button onClick={onTogglePremium} size="sm" className="font-mono text-xs">
+      <Check size={11} className="mr-1.5" /> preview unlock
+    </Button>
   );
 }
 
@@ -206,9 +254,5 @@ export function PremiumUnlockCTA({ onTogglePremium, label = 'unlock with premium
     );
   }
 
-  return (
-    <Button onClick={onTogglePremium} size="sm" className="font-mono text-xs">
-      <Check size={11} className="mr-1.5" /> preview unlock
-    </Button>
-  );
+  return <PreviewUnlockButton onTogglePremium={onTogglePremium} />;
 }
