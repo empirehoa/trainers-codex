@@ -11,6 +11,7 @@
 // asserts the two tables agree so they cannot drift apart silently.
 
 import type { Env } from './index';
+import { SPECIES_NAMES } from './species-names.ts';
 
 const PRINTFUL_API = 'https://api.printful.com';
 
@@ -44,6 +45,42 @@ export const BASE_COST_USD: Record<string, number> = {
   'phone-case-iphone':     11.95,
 };
 
+/**
+ * Server-side merch kill switch. Every path that can reach Printful or create
+ * a physical-goods Checkout session checks this FIRST. Exactly '1' enables;
+ * absent / '0' / anything else disables. Default "0" in wrangler.toml; flipping
+ * it is owner-only (counsel gate) — see docs/SECURITY.md.
+ */
+export function merchEnabled(env: Env): boolean {
+  return env.MERCH_CHECKOUT === '1';
+}
+
+/**
+ * Prototype-safe catalog lookups. `PRINTFUL_VARIANT_MAP['__proto__']` is
+ * Object.prototype — truthy — so a client-supplied product id of `__proto__`,
+ * `constructor` or `toString` used to pass validation and price to NaN (audit
+ * finding B-2). Every catalog read goes through these.
+ */
+export function catalogVariant(productId: string): { productId: string; variantId: string } | undefined {
+  return Object.hasOwn(PRINTFUL_VARIANT_MAP, productId) ? PRINTFUL_VARIANT_MAP[productId] : undefined;
+}
+
+export function catalogBaseCost(productId: string): number | undefined {
+  const cost = Object.hasOwn(BASE_COST_USD, productId) ? BASE_COST_USD[productId] : undefined;
+  return typeof cost === 'number' && Number.isFinite(cost) ? cost : undefined;
+}
+
+/** Human label for a design layout id; unknown ids collapse to a neutral label. */
+export function designLabel(design: string): string {
+  const map: Record<string, string> = {
+    'crest':    'Trainer Crest',
+    'roster':   'Champion Roster',
+    'id-card':  'Trainer ID Card',
+    'banner':   'Gym Banner',
+  };
+  return Object.hasOwn(map, design) ? map[design] : 'Trainer Codex';
+}
+
 export function publicPrintUrl(env: Env, fileKey: string): string {
   const printsBase = (env as unknown as { PRINTS_PUBLIC_BASE?: string }).PRINTS_PUBLIC_BASE
     || 'https://cdn.trainerscodex.com';
@@ -71,14 +108,72 @@ export async function pfFetch<T>(env: Env, method: string, path: string, qs?: Re
   return await resp.json() as T;
 }
 
-const TRADEMARK_RE: RegExp[] = [
-  /\bpok[ée]mons?\b/gi,
-  /\bpok[ée]\s?balls?\b/gi,
-  /\bpok[ée](?![a-z])/gi,
+// ── Listing-name sanitization ──────────────────────────────────────────────
+//
+// Legal bright line: a Stripe line-item name or a Printful product title is a
+// PAID surface and must never carry the franchise trademark, the publisher
+// names, or a species name — even when a stale or modified client skips its
+// own strip (src/lib/merch.ts sanitizeListingTitle is the UX layer; this is
+// the backstop). Matching is done on a normalized token stream so diacritics
+// ("Pokèmon", "Pokémon"), spacing ("Poke mon"), casing and suffixes
+// ("pokemonmasters", "Pokemon GO") cannot slip past a word-boundary regex.
+
+/** NFD, strip combining marks, lowercase, non-alphanumerics → single spaces. */
+export function normalizeListing(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** Single normalized tokens that are always removed (prefix-style: pokemon*, pokeball*, pokedex*). */
+const BLOCKED_TOKEN_RE = /^(poke|pokemon\w*|pokeball\w*|pokedex\w*|pokeballs?|nintendo|gamefreak|tpci)$/;
+
+/** Multi-token phrases (normalized) that are removed as a unit. */
+const BLOCKED_PHRASES = [
+  'poke mon', 'poke ball', 'poke balls', 'poke dex',
+  'game freak', 'creatures inc', 'creatures incorporated',
+  'the pokemon company', 'pokemon company', 'pokemon go', 'pokemon masters',
+  'nintendo switch',
 ];
 
+const MAX_PHRASE_TOKENS = 4; // longest species display name is four words
+
+const BLOCKED_PHRASE_SET: ReadonlySet<string> = new Set([
+  ...BLOCKED_PHRASES,
+  ...SPECIES_NAMES,
+]);
+
+export const GENERIC_LISTING_LABEL = 'Custom team design';
+
+/**
+ * Remove every blocked token/phrase from free text, preserving the casing and
+ * order of what survives. Returns '' when nothing survives — callers decide
+ * whether to omit the fragment or fall back to GENERIC_LISTING_LABEL.
+ */
 export function stripTrademark(raw: string): string {
-  let out = raw;
-  for (const re of TRADEMARK_RE) out = out.replace(re, ' ');
-  return out.replace(/[·|,/]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  // Tokenize the ORIGINAL text on non-letter/digit runs so we can keep the
+  // user's casing, and normalize each token independently for matching.
+  const original = raw.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const norm = original.map(t => normalizeListing(t)).map(t => t.replace(/ /g, ''));
+  const removed = new Array<boolean>(original.length).fill(false);
+
+  for (let n = MAX_PHRASE_TOKENS; n >= 1; n--) {
+    for (let i = 0; i + n <= norm.length; i++) {
+      let free = true;
+      for (let j = i; j < i + n; j++) if (removed[j]) { free = false; break; }
+      if (!free) continue;
+      const phrase = norm.slice(i, i + n).join(' ');
+      const hit = n === 1
+        ? BLOCKED_TOKEN_RE.test(phrase) || BLOCKED_PHRASE_SET.has(phrase)
+        : BLOCKED_PHRASE_SET.has(phrase);
+      if (hit) for (let j = i; j < i + n; j++) removed[j] = true;
+    }
+  }
+  return original.filter((_, i) => !removed[i]).join(' ').trim();
+}
+
+/** stripTrademark, failing closed to the generic label when nothing survives. */
+export function safeListingLabel(raw: string | null | undefined): string {
+  const out = raw ? stripTrademark(raw) : '';
+  return out || GENERIC_LISTING_LABEL;
 }

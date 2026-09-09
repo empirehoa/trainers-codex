@@ -14,6 +14,13 @@ ALLOWED_ORIGINS = "https://trainerscodex.com,https://www.trainerscodex.com,https
 ENVIRONMENT = "production"
 STRIPE_PRICE_ID = "price_1TcX6MF03KhWyMQ7cqs9OT9p"
 PRINTFUL_STORE_ID = "18253803"
+# Server-side merch kill switch. "0" = /merch/checkout and /printful/order
+# answer 503 merch_disabled and the webhook fulfilment branch never contacts
+# Printful (paid sessions are logged for manual review). Only the exact string
+# "1" enables. OWNER-ONLY: flipping this is the counsel gate for selling
+# physical goods — do not change it in a patch branch. The client flag of the
+# same name (src/lib/flags.ts) is UI only and cannot override this.
+MERCH_CHECKOUT = "0"
 
 # KV namespace for per-IP rate limiting.
 # Create with: wrangler kv:namespace create RATELIMIT_KV
