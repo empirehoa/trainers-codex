@@ -21,6 +21,23 @@
 | 10 | INFO | Sprite art loaded as `<img>` from `raw.githubusercontent.com/PokeAPI/sprites` | ✓ clean |
 | 11 | INFO | URL-hash share code regex `/(?:^#|&)t=([0-9a-z,\-]+)/` restricts charset before parsing | ✓ clean |
 
+### 2026-09 launch-hardening audit — Worker findings
+
+| # | Severity | Area | Status |
+|---|---|---|---|
+| B-1 | HIGH | `/stripe/verify` minted a premium license for **any** paid Checkout session (a $1.99 credit pack or sticker order → 31 days of premium) | **Fixed** — requires `metadata.source === 'trainerscodex_premium_pack'`, `mode === 'subscription'` and a subscription id, else `422 not_a_premium_session` (`worker/src/stripe.ts`, `worker/test/stripe-verify.test.ts`) |
+| D-2 / D-3 | HIGH | Merch was dark on the client only; `?ff=MERCH_CHECKOUT:1` or a direct POST reached Stripe/R2/Printful | **Fixed** — server-side `MERCH_CHECKOUT` var (default `"0"`) gates `/merch/checkout`, `/printful/order` and webhook fulfilment before any R2 put or upstream call (`worker/test/merch-guard.test.ts`) |
+| B-2 | MEDIUM | Prototype-key product ids (`__proto__`, `constructor`, …) passed catalog validation and priced to `NaN`; R2 put ran before Stripe validated | **Fixed** — `Object.hasOwn` catalog accessors, non-finite retail → null, R2 put moved after Stripe accepts the session |
+| B-3 | MEDIUM | AI uploads stored in the public bucket with the client-supplied Content-Type (SVG/HTML servable from the CDN origin) | **Fixed** — magic-byte sniff (PNG/JPEG/WebP) before moderation; anything else `400 bad_image`; stored type is the sniffed one (`worker/src/body.ts`, `worker/test/ai-upload.test.ts`) |
+| D-5 | MEDIUM | Server-side listing-name strip covered only the `Pokémon` tokens; species and publisher names reached Stripe line items / Printful titles | **Fixed** — normalized (NFD, diacritics, spacing) token/phrase blocklist incl. all 1,307 species names (generated `worker/src/species-names.ts`), fail-closed generic label (`worker/test/listing-name.test.ts`) |
+| B-5 | LOW | Non-object JSON bodies / non-multipart uploads threw, and the 500 handler echoed raw exception text (incl. upstream Stripe/Printful response bodies) | **Fixed** — `400 bad_json` / `400 multipart_required`; 500 is a generic `{error:'internal'}`, real message logged only |
+| B-6 | LOW | Upload size enforced only after `formData()` buffered the whole body | **Fixed** — Content-Length pre-check (13 MiB; 17 MiB for codex-card's two parts) → `413` before the body is read |
+| B-7 | LOW | `exp` only compared with `<`; missing/string `exp` was perpetual; no `nbf`; no signing-key length check | **Fixed** — finite numeric `exp`/`iat`, `exp ≤ iat + 400d`, `nbf` honoured, `JWT_SIGNING_KEY` < 32 chars throws at mint/verify (`worker/test/jwt.test.ts`) |
+| B-8 | LOW | Missing/failing `RATELIMIT_KV` was an unhandled throw (opaque 1101, no CORS) | **Fixed** — controlled JSON `503 rate_limit_unavailable` with CORS (fail closed); `/health` degrades to allow |
+| B-9 | LOW | `checkout.session.async_payment_succeeded` unhandled → delayed-payment merch orders never fulfilled | **Fixed** — routed through the same source dispatch as `completed`; idempotent via `merchdone:` / credit-grant markers; credits now grant only on a paid session (`worker/test/webhook.test.ts`) |
+| B-10 | LOW | `pnpm audit` in `worker/`: sharp < 0.35.4 via wrangler → miniflare (dev-only) | **Fixed** — `pnpm.overrides.sharp >= 0.35.4` in `worker/package.json`; audit clean |
+| B-11 | INFO | AI quota key was case-sensitive on email while credits lower-cased | **Fixed** — quota key lower-cases the email |
+
 Net: **0 unresolved HIGH/CRITICAL** before merging this branch.
 
 ---
@@ -309,13 +326,31 @@ See `worker/src/index.ts` for the routing surface. The Worker is the *only* plac
 
 All env vars set via `wrangler secret put NAME`, never committed.
 
+| `MERCH_CHECKOUT` (`[vars]`, not a secret) | `worker/wrangler.toml`, default `"0"` | `worker/src/pf-catalog.ts` `merchEnabled()` → `/merch/checkout`, `/printful/order`, webhook fulfilment | **Owner-only.** Flip to `"1"` only after counsel clears merch; the client flag of the same name is UI only |
+
+### Server-side merch kill switch
+
+Every path that can create a physical-goods Checkout session or reach Printful checks `env.MERCH_CHECKOUT === '1'` before touching R2, Stripe or Printful. With it off (the default) `/merch/checkout` and `/printful/order` answer `503 merch_disabled`, and a paid merch webhook is acknowledged (200, so Stripe stops retrying) but logged for manual review instead of fulfilled — nothing is ever sent to Printful. The browser's `MERCH_CHECKOUT` feature flag only shows or hides buttons; it cannot override the server.
+
+### Premium license minting
+
+`/stripe/verify` mints a premium JWT only for a paid, complete Checkout session whose `metadata.source` is `trainerscodex_premium_pack`, whose `mode` is `subscription`, and which carries a subscription id. Any other paid session (credit packs, merch) is `422 not_a_premium_session`. Credits tokens are minted separately by `/credits/verify` with the mirror-image check.
+
 ### Webhook signature verification
 
-`worker/src/stripe.ts` calls `Stripe.constructEvent(body, signature, webhookSecret)` to reject any forged webhook. Without this, an attacker could POST a fake `checkout.session.completed` and mint a license JWT for any email.
+`worker/src/stripe.ts` `verifyStripeSignature` HMAC-SHA256s `${t}.${rawBody}` with the webhook secret, accepts only `v1`, enforces a ±300 s replay window and compares in constant time. Without this, an attacker could POST a fake `checkout.session.completed` and grant credits or trigger fulfilment. `checkout.session.completed` and `checkout.session.async_payment_succeeded` share one idempotent dispatch keyed on `metadata.source`.
 
 ### Rate limit + 429
 
-`worker/src/ratelimit.ts` enforces per-IP limits using Cloudflare KV. Returning a `Retry-After` header lets the browser back off gracefully.
+`worker/src/ratelimit.ts` enforces per-IP limits using Cloudflare KV. Returning a `Retry-After` header lets the browser back off gracefully. If the KV binding is missing or KV errors, every rate-limited route fails **closed** with a JSON `503 rate_limit_unavailable` (with CORS headers); only `/health` degrades to allow so monitors can tell a KV outage from a dead worker.
+
+### Request-body guards
+
+`worker/src/body.ts` is the single place request shapes are policed: JSON routes require a JSON object (`400 bad_json` for `null`, arrays, strings, numbers, malformed input); upload routes require `multipart/form-data` (`400 multipart_required`) and refuse a declared Content-Length above the cap (`413`) before reading the body; AI uploads are sniffed by magic bytes and stored under the sniffed PNG/JPEG/WebP type only. Unhandled exceptions surface as a generic `{"error":"internal"}` — the real message goes to the Worker log.
+
+### Listing-name sanitization (paid surfaces)
+
+`worker/src/pf-catalog.ts` `stripTrademark` normalizes free text (NFD, diacritics stripped, lowercase, punctuation → spaces) and removes franchise/publisher terms plus every species display name from `worker/src/species-names.ts` — a generated file (`node worker/scripts/gen-species-names.mjs`) pinned to `src/data/pokemon-data.json` by `worker/test/listing-name.test.ts`. A label that is nothing but blocked terms falls back to `Custom team design`. Applied to Stripe `product_data.name` and Printful product titles regardless of what the client sent.
 
 ### CORS allow-list
 
@@ -354,8 +389,10 @@ test "$(stat -f%z bundle.html 2>/dev/null || stat -c%s bundle.html)" -lt 1572864
 # CSP / headers verification (on deployed site)
 curl -sI https://trainerscodex.com/ | grep -iE "content-security|strict-transport|x-frame|x-content-type"
 
-# Stripe webhook signature smoke test (replays a real test event)
-cd worker && pnpm test -- stripe-webhook
+# Worker suite: signature table, premium-session check, merch kill switch,
+# body guards, JWT hardening, listing-name sanitizer (drives the real router
+# through worker/test/_harness.ts with in-memory KV/R2 and stubbed upstreams)
+cd worker && pnpm audit --ignore-workspace && node --test test/*.test.ts
 ```
 
-A passing run produces zero findings on the static sweep, the bundle under 1.5 MB, all five security headers present, and a clean Stripe webhook test.
+A passing run produces zero findings on the static sweep, the bundle under 1.5 MB, all five security headers present, and a green worker suite.
