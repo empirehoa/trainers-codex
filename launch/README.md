@@ -20,6 +20,7 @@ is wired to any publishing tool. Rules baked into every draft:
 | `post-product-hunt.md` | Product Hunt listing draft — product + free tools angle, maker comment |
 | `search-console.md` | Google Search Console property + sitemap submission steps (owner action) |
 | `first-week-metrics.md` | The "is the funnel working" plan with the exact SQL over `journey_events` / `commerce_events` |
+| `live-probes.sh` | The 12 read-only worker security probes with expected results (re-run after each worker deploy) |
 
 Sequencing suggestion (owner's call): Search Console first (indexing takes
 days), then r/stunfisk (highest-intent audience for the analysis tools), then
