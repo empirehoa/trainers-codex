@@ -196,6 +196,7 @@ export function JourneySetup({
             onChange={e => onChange({ ...draft, trainerName: e.target.value.slice(0, 24) })}
             className="font-mono text-xs"
             data-testid="journey-name"
+            aria-label={t('journey.setup.name')}
           />
           <Button variant="outline" size="icon" onClick={rollName} className="shrink-0 w-9 h-9"
                   aria-label={t('journey.setup.nameRandom')}>

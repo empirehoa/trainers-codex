@@ -917,7 +917,7 @@ export default function App() {
               {undoStack.length > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden lg:flex">
+                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden lg:flex" aria-label="Undo">
                       <RotateCcw size={13} />
                     </Button>
                   </TooltipTrigger>
@@ -937,6 +937,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setTrainerOpen(true)}
                     className={cn('w-8 h-8', trainer && 'border-primary text-primary')}
+                    aria-label={trainer?.name ? `Profile · ${trainer.name}` : 'Trainer profile'}
                   >
                     <User size={14} />
                   </Button>
@@ -948,6 +949,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setSignInOpen(true)}
                     className={cn('w-8 h-8', session && 'border-emerald-500 text-emerald-500')}
+                    aria-label={session ? `Signed in as ${session.name || session.email}` : 'Sign in for cloud sync'}
                   >
                     {session ? <Cloud size={13} /> : <LogIn size={13} />}
                   </Button>
@@ -971,6 +973,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setLibrary(true)}
                     className={cn('w-8 h-8', savedTeams.length > 0 && 'border-primary text-primary')}
+                    aria-label={savedTeams.length > 0 ? `Library (${savedTeams.length})` : 'Library'}
                   >
                     <FolderOpen size={14} />
                   </Button>
@@ -979,7 +982,7 @@ export default function App() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" onClick={loadRandom} className="w-8 h-8">
+                  <Button variant="outline" size="icon" onClick={loadRandom} className="w-8 h-8" aria-label="Random team">
                     <Dices size={14} />
                   </Button>
                 </TooltipTrigger>
@@ -987,7 +990,7 @@ export default function App() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" onClick={() => setChart(true)} className="w-8 h-8">
+                  <Button variant="outline" size="icon" onClick={() => setChart(true)} className="w-8 h-8" aria-label="Type chart">
                     <Grid3x3 size={14} />
                   </Button>
                 </TooltipTrigger>
@@ -1000,6 +1003,7 @@ export default function App() {
                       variant="outline" size="icon" onClick={() => setJourneyOpen(true)}
                       className="w-8 h-8 border-primary/60 text-primary"
                       data-testid="journey-open"
+                      aria-label={`${t('journey.title')} · ${t('journey.tagline')}`}
                     >
                       <Compass size={14} />
                     </Button>
@@ -1012,6 +1016,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setPosterOpen(true)} disabled={teamCount === 0}
                     className={cn('w-8 h-8', teamCount > 0 && 'border-primary text-primary')}
+                    aria-label="Poster studio"
                   >
                     <Wand2 size={14} />
                   </Button>
@@ -1023,6 +1028,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setMerchOpen(true)} disabled={teamCount === 0}
                     className={cn('w-8 h-8', teamCount > 0 && 'border-primary text-primary')}
+                    aria-label="Merch studio · order shirts, posters, mugs"
                   >
                     <ShoppingBag size={14} />
                   </Button>
@@ -1035,6 +1041,7 @@ export default function App() {
                     variant="outline" size="icon" onClick={() => setAiOpen(true)}
                     data-testid="ai-studio-btn"
                     className={cn('w-8 h-8', premium && 'border-primary text-primary')}
+                    aria-label="AI Studio · trainer card + team art"
                   >
                     <Sparkles size={14} />
                   </Button>
@@ -1046,6 +1053,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setImportOpen(true)}
                     className="w-8 h-8" data-testid="showdown-btn"
+                    aria-label="Import / export · Showdown · PokePaste"
                   >
                     <ClipboardList size={14} />
                   </Button>
@@ -1057,6 +1065,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setShare(true)} disabled={teamCount === 0}
                     className={cn('w-8 h-8', teamCount > 0 && 'border-primary text-primary')}
+                    aria-label="Share team"
                   >
                     <Share2 size={14} />
                   </Button>
@@ -1065,7 +1074,7 @@ export default function App() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" onClick={() => setHelp(true)} className="w-8 h-8">
+                  <Button variant="outline" size="icon" onClick={() => setHelp(true)} className="w-8 h-8" aria-label="Help">
                     <HelpCircle size={14} />
                   </Button>
                 </TooltipTrigger>
@@ -1118,7 +1127,9 @@ export default function App() {
                 className="font-mono text-xs font-bold ml-1"
               >
                 <BarChart3 size={12} className="mr-1.5" />
-                <span className="hidden lg:inline">Analyze</span>
+                {/* sr-only rather than hidden: below lg the icon is the whole
+                    button, and a hidden span is not an accessible name. */}
+                <span className="sr-only lg:not-sr-only">Analyze</span>
               </Button>
             </div>
           </TooltipProvider>
@@ -1239,7 +1250,7 @@ export default function App() {
                     data-testid="toggle-filters"
                     className={cn('font-mono text-xs', showFilters && 'border-primary text-primary')}>
               <FilterIcon size={12} className="mr-1" />
-              <span className="hidden sm:inline">filters</span>
+              <span className="sr-only sm:not-sr-only">filters</span>
               {(filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)) > 0 && (
                 <span className="ml-1 bg-primary text-primary-foreground rounded-full px-1.5 py-0 text-[10px]">
                   {filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)}
@@ -1251,7 +1262,7 @@ export default function App() {
               setSortBy(by as typeof sortBy);
               setSortDir(dir as typeof sortDir);
             }}>
-              <SelectTrigger className="w-auto sm:w-[150px] font-mono text-xs h-9">
+              <SelectTrigger aria-label="Sort order" className="w-auto sm:w-[150px] font-mono text-xs h-9">
                 <ArrowUpDown size={12} className="mr-1 shrink-0" />
                 <SelectValue />
               </SelectTrigger>
@@ -1322,7 +1333,7 @@ export default function App() {
                     ...r, id: 'custom', label: 'Custom',
                     monoType: v === '_any' ? null : (v as PokemonType),
                   }))}>
-                  <SelectTrigger data-testid="format-monotype" className="w-auto h-7 font-mono text-[10px] uppercase tracking-wider">
+                  <SelectTrigger data-testid="format-monotype" aria-label="Monotype restriction" className="w-auto h-7 font-mono text-[10px] uppercase tracking-wider">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1517,7 +1528,7 @@ export default function App() {
           </div>
           <Button onClick={() => setSheet(true)} disabled={teamCount === 0} className="shrink-0 font-mono text-xs font-bold">
             <BarChart3 size={12} className="mr-1.5" />
-            <span className="hidden sm:inline">analyze</span>
+            <span className="sr-only sm:not-sr-only">analyze</span>
             <span className="ml-1">{teamCount}/6</span>
           </Button>
         </div>

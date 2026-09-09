@@ -71,6 +71,8 @@ export function AnalysisSheet({
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               placeholder="// untitled team"
+              aria-label="Team name"
+              maxLength={40}
               className="mt-1 bg-transparent border-none px-0 py-0 h-auto font-mono text-[11px] focus-visible:ring-0"
             />
           </div>
@@ -83,6 +85,7 @@ export function AnalysisSheet({
                     onClick={() => onSaveToLibrary(teamName || 'Untitled')}
                     disabled={filled.length === 0}
                     className="w-8 h-8"
+                    aria-label="Save to library"
                   >
                     <Save size={13} />
                   </Button>
@@ -91,7 +94,7 @@ export function AnalysisSheet({
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button size="icon" variant="outline" onClick={onPoster} disabled={filled.length === 0} className="w-8 h-8">
+                  <Button size="icon" variant="outline" onClick={onPoster} disabled={filled.length === 0} className="w-8 h-8" aria-label="Poster studio">
                     <Wand2 size={13} />
                   </Button>
                 </TooltipTrigger>
@@ -99,7 +102,7 @@ export function AnalysisSheet({
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button size="icon" variant="outline" onClick={onShare} disabled={filled.length === 0} className="w-8 h-8">
+                  <Button size="icon" variant="outline" onClick={onShare} disabled={filled.length === 0} className="w-8 h-8" aria-label="Share team">
                     <Share2 size={13} />
                   </Button>
                 </TooltipTrigger>
@@ -112,7 +115,7 @@ export function AnalysisSheet({
                 clear
               </Button>
             )}
-            <Button variant="outline" size="icon" onClick={onClose} className="w-8 h-8">
+            <Button variant="outline" size="icon" onClick={onClose} className="w-8 h-8" aria-label="Close analysis">
               <X size={14} />
             </Button>
           </div>
@@ -228,7 +231,7 @@ export function AnalysisSheet({
                       <div key={t.type} className="border rounded px-2 py-1 flex items-center gap-1.5"
                            style={{ borderColor: 'hsl(var(--destructive)/0.5)', background: 'hsl(var(--destructive)/0.1)' }}>
                         <TypePill type={t.type} />
-                        <span className="font-mono text-[10px] text-destructive">
+                        <span className="font-mono text-[10px] text-destructive-text">
                           {t.weak4Count > 0 && `${t.weak4Count}×4 `}{t.weakCount} weak / {t.resistCount} resist
                         </span>
                       </div>

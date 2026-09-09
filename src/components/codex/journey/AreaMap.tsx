@@ -190,7 +190,11 @@ export function AreaMap({ seed, region, defaultOpen = false }: {
                           'font-mono',
                           state === 'future' ? 'fill-muted-foreground' : 'fill-foreground',
                         )}
-                        style={{ fontSize: 7, opacity: state === 'future' ? 0.6 : 1 }}
+                        // 11 user units on a 320-wide viewBox is ≈10.8px when
+                        // the map renders 314px wide inside a 390px phone's
+                        // dialog — the app's 10px text floor. 7 measured 7.8px,
+                        // the only sub-10px text in the app.
+                        style={{ fontSize: 11, opacity: state === 'future' ? 0.6 : 1 }}
                       >
                         {n.kind === 'gym' ? `${n.badgeIndex}` : n.name}
                       </text>

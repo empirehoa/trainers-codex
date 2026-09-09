@@ -184,7 +184,7 @@ export function SharedTeamLanding({
                   <span className="flex items-center gap-1"><Swords size={10} className="text-red-400" /> threatened by</span>
                   <span className="flex items-center gap-1"><Gauge size={10} /> speed {matchup.mySpeedScore}–{matchup.theirSpeedScore}</span>
                 </div>
-                <p className="text-[10px] font-mono text-muted-foreground/70 mt-2 text-center">
+                <p className="text-[10px] font-mono text-muted-foreground mt-2 text-center">
                   type-coverage + base-speed preview · open the analysis panel after loading for full damage calc
                 </p>
               </div>
