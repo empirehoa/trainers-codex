@@ -373,12 +373,17 @@ export function JourneyResult({
                         setFinish(f.id);
                       }}
                       aria-pressed={active}
+                      aria-disabled={locked}
                       className={`font-mono text-[10px] px-2 py-1 rounded border transition flex items-center gap-1
-                        ${active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:text-foreground'}
-                        ${locked ? 'opacity-70' : ''}`}
+                        ${active ? 'border-primary text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'}
+                        ${locked ? 'border-dashed border-primary/40' : active ? '' : 'border-border'}`}
                       data-testid={`journey-finish-${f.id}`}>
+                {/* Locked = dashed border + lock glyph, never dimmed text: the
+                    label has to stay ≥4.5:1, and the name has to SAY premium
+                    for anyone who can't see the glyph (E-6). */}
                 {locked && <Lock size={9} className="text-primary" />}
                 {t(`journey.finish.${f.id}`)}
+                {locked && <span className="sr-only"> · {t('journey.saves.locked')}</span>}
               </button>
             );
           })}

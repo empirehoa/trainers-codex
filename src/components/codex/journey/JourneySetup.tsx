@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dices, Play, Sparkles, Wrench, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import {
 } from '@/journey/content';
 import { CAMPAIGNS } from '@/journey/campaign';
 import { listArchive } from '@/journey/archive';
-import { listFinished, listInProgress, type SavedRun } from '@/journey/saves';
+import { hofLockedKey, hofVerdictLabel, listFinished, listInProgress, type SavedRun } from '@/journey/saves';
 import { PremiumUnlockCTA } from '@/components/codex/PremiumControl';
 import { trackCommerce } from '@/lib/commerce-analytics';
 import { Lock, Play as PlayIcon, Trophy } from 'lucide-react';
@@ -130,8 +130,8 @@ export function JourneySetup({
                         onResume(save);
                       }}
                       aria-disabled={locked}
-                      className={`w-full flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-left transition ${locked ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary/60'}`}
-                      style={{ borderColor: 'hsl(var(--border))' }}
+                      className={`w-full flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-left transition ${locked ? 'border-dashed cursor-not-allowed' : 'hover:border-primary/60'}`}
+                      style={{ borderColor: locked ? 'hsl(var(--primary)/0.4)' : 'hsl(var(--border))' }}
                       data-testid={`journey-resume-${save.id}`}>
                 <span className="font-mono text-[10px] flex items-center gap-1.5 min-w-0">
                   {locked ? <Lock size={9} className="text-primary shrink-0" /> : <PlayIcon size={9} className="text-primary shrink-0" />}
@@ -158,26 +158,30 @@ export function JourneySetup({
                           style={{ borderColor: 'hsl(var(--border))' }}
                           data-testid={`journey-hof-${save.id}`}>
                     <span className="font-mono text-[10px] truncate">
-                      {save.setup.trainerName}{save.verdictKey ? ` · ${t(save.verdictKey, { region: '' }).trim()}` : ''}
+                      {save.setup.trainerName}{save.verdictKey ? ` · ${hofVerdictLabel(save, t)}` : ''}
                     </span>
                     <span className="font-mono text-[10px] text-primary shrink-0">{save.score ?? '—'}</span>
                   </button>
                 ))}
               </div>
             ) : (
-              <button
-                onClick={() => trackCommerce({ event: 'paywall_shown', surface: 'journey-saves' })}
-                className="w-full flex items-center justify-between gap-2 rounded border border-dashed px-2 py-1.5"
-                style={{ borderColor: 'hsl(var(--primary)/0.4)' }}
-                data-testid="journey-hof-paywall">
-                <span className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5">
-                  <Trophy size={9} className="text-primary" />
-                  {t('journey.saves.hofLocked', { n: finished.length })}
-                </span>
-                <PremiumUnlockCTA onTogglePremium={onTogglePremium}
-                                  label={t('journey.archive.unlock')}
-                                  surface="journey-saves" />
-              </button>
+              /* A <div>, like the archive/finish paywalls: the CTA inside is the
+                 one interactive control, so wrapping it in a second <button>
+                 was invalid nesting (E-7). paywall_shown fires when the row
+                 mounts — the pitch being on screen is the event. */
+              <PaywallRow surface="journey-saves">
+                <div className="w-full flex items-center justify-between gap-2 rounded border border-dashed px-2 py-1.5"
+                     style={{ borderColor: 'hsl(var(--primary)/0.4)' }}
+                     data-testid="journey-hof-paywall">
+                  <span className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5">
+                    <Trophy size={9} className="text-primary" />
+                    {t(hofLockedKey(finished.length), { n: finished.length })}
+                  </span>
+                  <PremiumUnlockCTA onTogglePremium={onTogglePremium}
+                                    label={t('journey.archive.unlock')}
+                                    surface="journey-saves" />
+                </div>
+              </PaywallRow>
             )
           )}
         </div>
@@ -189,9 +193,10 @@ export function JourneySetup({
       </div>
 
       {/* ---- name ---- */}
-      <Field label={t('journey.setup.name')}>
+      <Field label={t('journey.setup.name')} htmlFor="journey-name">
         <div className="flex gap-2">
           <Input
+            id="journey-name"
             value={draft.trainerName}
             onChange={e => onChange({ ...draft, trainerName: e.target.value.slice(0, 24) })}
             className="font-mono text-xs"
@@ -424,11 +429,12 @@ export function JourneySetup({
                               }}
                               aria-disabled={locked}
                               className={`w-full flex items-center justify-between gap-2 rounded border px-2 py-1
-                                         text-left transition ${locked ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary/60'}`}
-                              style={{ borderColor: 'hsl(var(--border))' }}
+                                         text-left transition ${locked ? 'border-dashed cursor-not-allowed' : 'hover:border-primary/60'}`}
+                              style={{ borderColor: locked ? 'hsl(var(--primary)/0.4)' : 'hsl(var(--border))' }}
                               data-testid={`journey-archive-${e.issue}`}>
                         <span className="font-mono text-[10px] flex items-center gap-1.5">
                           {locked && <Lock size={9} className="text-primary shrink-0" data-testid={`journey-archive-lock-${e.issue}`} />}
+                          {locked && <span className="sr-only">{t('journey.saves.locked')} · </span>}
                           {t('journey.archive.issue', { n: e.issue })}
                           <span className="text-muted-foreground">{e.date}</span>
                         </span>
@@ -449,15 +455,24 @@ export function JourneySetup({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
+  // A real <label htmlFor> when the field wraps a single input (the name and
+  // seed boxes); chip groups keep the caption as plain text.
+  const cls = 'block text-[10px] font-mono uppercase tracking-widest mb-1.5 text-muted-foreground';
   return (
     <div>
-      <div className="text-[10px] font-mono uppercase tracking-widest mb-1.5 text-muted-foreground">
-        // {label}
-      </div>
+      {htmlFor
+        ? <label htmlFor={htmlFor} className={cls}>// {label}</label>
+        : <div className={cls}>// {label}</div>}
       {children}
     </div>
   );
+}
+
+/** Fires paywall_shown once when a locked pitch row actually renders. */
+function PaywallRow({ surface, children }: { surface: 'journey-saves' | 'journey-archive'; children: React.ReactNode }) {
+  useEffect(() => { trackCommerce({ event: 'paywall_shown', surface }); }, [surface]);
+  return <>{children}</>;
 }
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {

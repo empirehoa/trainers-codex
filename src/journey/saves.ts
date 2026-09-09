@@ -10,6 +10,7 @@
 // into the game.
 
 import type { JourneySetup, PrepareAction, RecordedChoice } from './types';
+import { getRegion } from './content';
 
 const KEY = 'trainerscodex.journey.saves';
 const MAX_SAVES = 8;
@@ -108,4 +109,24 @@ export function deleteSave(id: string): void {
 
 export function clearSaves(): void {
   try { localStorage.removeItem(KEY); } catch { /* best effort */ }
+}
+
+/**
+ * Hall of Fame row label for a finished save: the verdict title with its
+ * `{region}` resolved from the save's own setup. Verdicts like CULT HERO OF
+ * {region} were rendering as "CULT HERO OF" because the save stores no region
+ * name — and it shouldn't (gotcha 29: one source), `setup.regionId` already
+ * names it. `tr` is the app's translate function.
+ */
+export function hofVerdictLabel(
+  save: Pick<SavedRun, 'setup' | 'verdictKey'>,
+  tr: (key: string, vars?: Record<string, string | number | undefined>) => string,
+): string {
+  if (!save.verdictKey) return '';
+  return tr(save.verdictKey, { region: getRegion(save.setup.regionId).label }).trim();
+}
+
+/** Singular/plural key for the free tier's "{n} finished careers" pitch. */
+export function hofLockedKey(n: number): 'journey.saves.hofLockedOne' | 'journey.saves.hofLocked' {
+  return n === 1 ? 'journey.saves.hofLockedOne' : 'journey.saves.hofLocked';
 }
