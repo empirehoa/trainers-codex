@@ -134,6 +134,49 @@ const tests = [
   },
 
   {
+    name: 'no text on a species or type page renders below the 10px floor at 390px',
+    async fn(page) {
+      // `.cell .t` shipped at .6rem = 9.6px on every one of the 1,307 species
+      // pages — under the floor test-responsive.mjs holds the app to. Same
+      // sweep, same viewport, over the two page templates that carry the
+      // smallest type.
+      await page.setViewport({ width: 390, height: 844 });
+      for (const rel of ['pokemon/gengar/index.html', 'type/ghost/index.html']) {
+        await openStatic(page, rel);
+        const tiny = await page.evaluate(() => {
+          const out = new Set();
+          for (const el of document.querySelectorAll('body *')) {
+            if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+            const fs = parseFloat(getComputedStyle(el).fontSize);
+            if (fs && fs < 10) out.add(`${el.tagName}.${el.className}@${fs}px`);
+          }
+          return [...out];
+        });
+        assert(tiny.length === 0, `${rel}: text below 10px: ${tiny.join(', ')}`);
+      }
+    },
+  },
+
+  {
+    name: 'type pills render with the AA ink chosen for their colour',
+    async fn(page) {
+      // Ghost/Poison: both type colours are too dark for the fixed dark ink the
+      // pills used to carry, so both must now render with light text.
+      await openStatic(page, 'pokemon/gengar/index.html');
+      const pills = await page.evaluate(() => [...document.querySelectorAll('.pill:not(.ghost)')]
+        .map(el => ({ text: el.textContent, color: getComputedStyle(el).color })));
+      const dark = pills.filter(p => p.text === 'Ghost' || p.text === 'Poison');
+      assert(dark.length >= 2, `expected Ghost + Poison pills, found ${dark.length}`);
+      for (const p of dark) {
+        assert(p.color === 'rgb(255, 255, 255)', `${p.text} pill ink is ${p.color}, expected white on a dark type colour`);
+      }
+      // Normal (#9fa19f) is bright enough for the dark ink and must keep it.
+      const normal = pills.find(p => p.text === 'Normal');
+      assert(normal && normal.color === 'rgb(12, 10, 8)', `Normal pill ink is ${normal && normal.color}, expected the dark ink`);
+    },
+  },
+
+  {
     name: '?q= seeds the builder search box',
     async fn(page) {
       // `page` here is already the bundle; reload it with the param the

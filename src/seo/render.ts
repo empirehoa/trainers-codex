@@ -38,12 +38,22 @@ export function jsonLd(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+// Two invariants render.test.ts enforces on this stylesheet: every font-size
+// resolves to >= 10px (0.625rem — the same floor the app's test-responsive.mjs
+// holds the bundle to) and every foreground/background pair meets WCAG AA
+// 4.5:1. The type pills get their text colour from pillColors() below for the
+// same reason — a fixed dark ink fails on the darker type colours.
 const CSS = `
-:root{color-scheme:dark;--bg:#0c0a08;--ink:#f5ead2;--dim:#cdc4ad;--faint:#7f7361;--gold:#f4ae3c;--line:#2a241b;--panel:#141009}
+:root{color-scheme:dark;--bg:#0c0a08;--ink:#f5ead2;--dim:#cdc4ad;--faint:#948673;--gold:#f4ae3c;--line:#2a241b;--panel:#141009}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:ui-monospace,'JetBrains Mono',SFMono-Regular,Menlo,monospace;line-height:1.6;-webkit-text-size-adjust:100%}
 a{color:var(--gold);text-decoration:none}
 a:hover{text-decoration:underline}
+/* Links inside running text are underlined so they are not distinguished by
+   colour alone (WCAG 1.4.1). Boxed chips, pills, the nav and the CTA are
+   their own affordance and stay clean. */
+p a,td a,th a,summary a,li a{text-decoration:underline}
+.chips a,a.tp,a.cta,header.bar a{text-decoration:none}
 main{max-width:900px;margin:0 auto;padding:1.5rem 1.1rem 5rem}
 header.bar{border-bottom:1px solid var(--line);padding:.75rem 1.1rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
 header.bar .brand{color:var(--gold);font-weight:700;letter-spacing:.06em;font-size:.8rem}
@@ -56,11 +66,11 @@ h2{font-size:.95rem;color:var(--gold);letter-spacing:.06em;text-transform:upperc
 h3{font-size:.82rem;color:var(--dim);margin:1.1rem 0 .4rem;letter-spacing:.04em}
 p{font-size:.85rem;color:var(--dim)}
 .lede{font-size:.92rem;color:var(--ink)}
-.pill{display:inline-block;padding:.12rem .5rem;border-radius:999px;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:#0c0a08;font-weight:700;margin-right:.3rem}
+.pill{display:inline-block;padding:.12rem .5rem;border-radius:999px;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;font-weight:700;margin-right:.3rem}
 .pill.ghost{background:transparent;color:var(--faint);border:1px solid var(--line);font-weight:400}
 .grid18{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:.35rem;margin:.6rem 0}
 .cell{border:1px solid var(--line);border-radius:5px;padding:.35rem .4rem;background:var(--panel)}
-.cell .t{font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);display:block}
+.cell .t{font-size:.625rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);display:block}
 .cell .m{font-size:.82rem;font-weight:700}
 .m4{color:#ff6b57}.m2{color:#ffa05a}.m1{color:#8e8676}.mh{color:#7fd18a}.mq{color:#4fc4ff}.m0{color:#b07cff}
 table{width:100%;border-collapse:collapse;font-size:.76rem;margin:.5rem 0}
@@ -83,7 +93,7 @@ details p{margin:.45rem 0 0}
 footer{border-top:1px solid var(--line);margin-top:3rem;padding:1.25rem 0 0;font-size:.7rem;color:var(--faint)}
 footer a{color:var(--faint)}
 .chart{overflow-x:auto}
-.chart table{min-width:640px;font-size:.62rem}
+.chart table{min-width:640px;font-size:.625rem}
 .chart td,.chart th{padding:.2rem .25rem;text-align:center;border:1px solid var(--line)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media(max-width:520px){h1{font-size:1.35rem}main{padding:1.1rem .85rem 4rem}}
@@ -105,9 +115,51 @@ function multLabel(m: number): string {
   return `${m}×`;
 }
 
+const PILL_INK_DARK = '#0c0a08';
+const PILL_INK_LIGHT = '#ffffff';
+const AA_CONTRAST = 4.5;
+
+/** WCAG 2.x relative luminance of a #rrggbb colour. */
+export function relativeLuminance(hex: string): number {
+  const n = parseInt(hex.slice(1), 16);
+  const chan = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * chan(n >> 16) + 0.7152 * chan((n >> 8) & 255) + 0.0722 * chan(n & 255);
+}
+
+/** WCAG contrast ratio between two #rrggbb colours (>= 1). */
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+function darken(hex: string, factor: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v: number) => Math.round(v * factor).toString(16).padStart(2, '0');
+  return `#${f(n >> 16)}${f((n >> 8) & 255)}${f(n & 255)}`;
+}
+
+/**
+ * Background + text colour for a type pill, chosen so the pair meets AA.
+ * Dark ink is preferred (it matches the app's pills); light ink when the type
+ * colour is too dark for it; and for the few colours where neither reaches
+ * 4.5:1 (Fire is 4.42 either way) the background is stepped darker until
+ * white does. Pure and deterministic, so the test can sweep all 18 types.
+ */
+export function pillColors(t: PokemonType): { bg: string; fg: string } {
+  let bg = typeColor(t);
+  if (contrastRatio(bg, PILL_INK_DARK) >= AA_CONTRAST) return { bg, fg: PILL_INK_DARK };
+  while (contrastRatio(bg, PILL_INK_LIGHT) < AA_CONTRAST) bg = darken(bg, 0.94);
+  return { bg, fg: PILL_INK_LIGHT };
+}
+
 function typePill(t: PokemonType, link = true): string {
-  const inner = `<span class="pill" style="background:${typeColor(t)}">${escapeHtml(titleCase(t))}</span>`;
-  return link ? `<a href="${typePath(t)}">${inner}</a>` : inner;
+  const { bg, fg } = pillColors(t);
+  const inner = `<span class="pill" style="background:${bg};color:${fg}">${escapeHtml(titleCase(t))}</span>`;
+  return link ? `<a class="tp" href="${typePath(t)}">${inner}</a>` : inner;
 }
 
 function matchupGrid(rows: { type: PokemonType; mult: number }[]): string {
