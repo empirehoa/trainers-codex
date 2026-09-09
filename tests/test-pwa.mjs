@@ -13,8 +13,9 @@
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join, resolve } from 'path';
+import puppeteer from 'puppeteer';
 import {
-  runSuite, assert, exists, closeBrowser,
+  runSuite, assert, exists, closeBrowser, chromiumPath,
 } from './harness.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -115,6 +116,102 @@ const tests = [
       assert(/https:|localhost/.test(bundle), 'SW registration is not guarded to a secure origin');
     },
   },
+  {
+    name: 'the shell paints before the script: static markup in #root, fonts off the critical path',
+    async fn() {
+      // E-1/E-10: #root shipped empty and the stylesheet opened with a Google
+      // Fonts @import, so nothing painted until 2 MB of HTML had downloaded and
+      // a cross-origin CSS request had settled. Both the Vite output and the
+      // inlined bundle must now carry the first-paint markup, and the head's
+      // inline styles must not import anything.
+      for (const file of ['dist/index.html', 'bundle.html']) {
+        const html = readFileSync(join(ROOT, file), 'utf8');
+        const m = html.match(/<div id="root">([\s\S]*?)<\/div>\s*<script>/);
+        assert(m && m[1].trim().length > 500, `${file}: #root has no static first-paint markup`);
+        assert(/<header[\s>]/.test(m[1]) && /build your six/.test(m[1]),
+          `${file}: the placeholder is missing the header or the empty-state hero`);
+        const head = html.slice(0, html.indexOf('<body>')).replace(/<!--[\s\S]*?-->/g, '');
+        for (const style of head.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)) {
+          assert(!/@import/.test(style[1]), `${file}: a <style> in <head> still carries an @import`);
+        }
+        assert(/<link rel="preload" as="style" href="https:\/\/fonts\.googleapis\.com[^"]*display=swap"/.test(head),
+          `${file}: fonts are not preloaded non-blocking`);
+      }
+      const bundle = readFileSync(join(ROOT, 'bundle.html'), 'utf8');
+      // The module script must sit after the markup or the markup waits on it.
+      assert(bundle.indexOf('<div id="root">') < bundle.indexOf('<script type="module">'),
+        'the inlined module script precedes #root — first paint waits on the whole script');
+    },
+  },
+
+  {
+    name: 'the static placeholder matches what React renders first (no visual jump)',
+    ownPage: true,
+    async fn() {
+      // Load the bundle twice per viewport — once with scripts disabled (what
+      // the visitor sees while the JS downloads) and once normally — and compare
+      // the boxes of the header, wordmark and hero heading. A drift here means
+      // the placeholder in index.html has fallen out of step with App.tsx.
+      const browser = await puppeteer.launch({
+        headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+        ...(chromiumPath() ? { executablePath: chromiumPath() } : {}),
+      });
+      const url = `file://${join(ROOT, 'bundle.html')}`;
+      const measure = () => [...document.querySelectorAll('header, header h1, main section h2, main section .grid')]
+        .map(el => { const r = el.getBoundingClientRect(); return [el.tagName, Math.round(r.top), Math.round(r.height), Math.round(r.width)]; });
+      try {
+        for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
+          const boxes = [];
+          for (const js of [false, true]) {
+            const page = await browser.newPage();
+            await page.setViewport(vp);
+            await page.setJavaScriptEnabled(js);
+            await page.setRequestInterception(true);
+            page.on('request', r => (/^(file|data|blob):/.test(r.url()) ? r.continue() : r.abort('failed')));
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
+            if (js) {
+              await page.waitForFunction(() => document.querySelectorAll('main .grid > div').length > 10, { timeout: 60_000 });
+              // The hero mounts with a 350ms fade-up (translateY) — let the
+              // finite animations settle so we measure the resting layout.
+              await page.evaluate(() => Promise.all(document.getAnimations()
+                .filter(a => a.effect.getTiming().iterations !== Infinity).map(a => a.finished)));
+            }
+            boxes.push(await page.evaluate(measure));
+            await page.close();
+          }
+          const [staticBoxes, reactBoxes] = boxes;
+          assert(staticBoxes.length === 4, `placeholder at ${vp.width}px is missing an element: ${JSON.stringify(staticBoxes)}`);
+          for (let i = 0; i < staticBoxes.length; i++) {
+            const [tag, top, h, w] = staticBoxes[i];
+            const [, rTop, rH, rW] = reactBoxes[i];
+            assert(Math.abs(top - rTop) <= 1 && Math.abs(h - rH) <= 1 && Math.abs(w - rW) <= 1,
+              `${tag} at ${vp.width}px moves on mount: static top/h/w ${top}/${h}/${w} vs React ${rTop}/${rH}/${rW}`);
+          }
+        }
+      } finally {
+        await browser.close();
+      }
+    },
+  },
+
+  {
+    name: 'the data blobs ship as JSON.parse strings, not object literals',
+    async fn() {
+      // E-15: vite.config.ts asked for json.stringify and Vite 8 silently
+      // ignored it while namedExports stayed on, so ~600 KB of species data
+      // parsed as a JS AST on every boot. Pin the fast path in the artifact.
+      const bundle = readFileSync(join(ROOT, 'bundle.html'), 'utf8');
+      const blobs = [];
+      for (let i = bundle.indexOf('JSON.parse(`'); i >= 0; i = bundle.indexOf('JSON.parse(`', i + 12)) {
+        const end = bundle.indexOf('`)', i + 12);
+        blobs.push(bundle.slice(i + 12, end));
+      }
+      const big = blobs.filter(b => b.length >= 100_000);
+      assert(big.length >= 2, `expected the species + learnset data as >=100 KB JSON.parse strings, found ${big.length} (blobs: ${blobs.map(b => b.length).join(', ')})`);
+      assert(big.some(b => b.includes('"n":"bulbasaur"')), 'species data is not among the JSON.parse blobs');
+    },
+  },
+
   {
     name: 'deploy headers pin the manifest MIME type and keep the SW fresh',
     async fn() {

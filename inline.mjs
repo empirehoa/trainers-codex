@@ -27,20 +27,34 @@ const dist = join(__dirname, 'dist');
 
 let html = readFileSync(join(dist, 'index.html'), 'utf8');
 
-// Inline all <script src="..."> tags
+// Inline all <script src="..."> tags — and move them to the end of <body>.
+//
+// Vite emits the module script in <head>. Left there, the ~2 MB of inlined
+// JS sits between the stylesheet and the static first-paint markup inside
+// #root (index.html), so the browser cannot paint anything until every byte
+// of script has arrived. A module script is deferred regardless of position,
+// so moving it after the markup changes nothing about when it runs — only
+// what the visitor sees while it downloads.
+const moduleScripts = [];
 html = html.replace(
   /<script[^>]*src="([^"]+)"[^>]*><\/script>/g,
   (_, src) => {
     const file = src.startsWith('/') ? src.slice(1) : src;
     const content = readFileSync(join(dist, file), 'utf8');
-    return `<script type="module">${content}</script>`;
+    moduleScripts.push(`<script type="module">${content}</script>`);
+    return '';
   }
 );
+// Function form: a string replacement would expand `$'`/`$&` sequences that
+// occur naturally in minified JS, splicing copies of the page into itself.
+html = html.replace('</body>', () => `${moduleScripts.join('\n')}\n  </body>`);
 
-// Inline all <link rel="stylesheet" href="..."> tags
+// Inline all <link rel="stylesheet" href="..."> tags. External sheets (the
+// <noscript> Google Fonts fallback in index.html) are left as they are.
 html = html.replace(
   /<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"[^>]*\/?>/g,
-  (_, href) => {
+  (tag, href) => {
+    if (/^https?:/.test(href)) return tag;
     const file = href.startsWith('/') ? href.slice(1) : href;
     const content = readFileSync(join(dist, file), 'utf8');
     return `<style>${content}</style>`;

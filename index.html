@@ -47,6 +47,18 @@
     <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Web fonts load off the critical path. This used to be an @import at the
+      top of src/index.css, which the inliner shipped as the first line of the
+      page's <style> — a render-blocking, chained cross-origin request before
+      anything could paint. Preload-as-style + swap to a stylesheet on load
+      paints immediately in the fallback stack (display=swap) and upgrades when
+      the CSS arrives; <noscript> keeps the fonts for script-off readers.
+      Offline, from file://, or with the request blocked (the test harness)
+      the fallback stack simply stays — exactly what the @import degraded to.
+    -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" /></noscript>
     <link rel="dns-prefetch" href="https://obcrhdmpkvwntwqyixls.supabase.co" />
     <link rel="dns-prefetch" href="https://trainers-codex-api.jrriestra.workers.dev" />
     <link rel="dns-prefetch" href="https://checkout.stripe.com" />
@@ -132,20 +144,122 @@
 
     <style>
       html, body { margin: 0; padding: 0; background: #0c0a08; color: #f5ead2; font-family: ui-monospace, 'JetBrains Mono', monospace; }
-      #root:empty::before {
-        content: '// initializing trainer\27s codex...';
-        display: block;
-        padding: 2rem;
-        font-size: 11px;
-        color: #f4ae3c;
-        letter-spacing: 0.05em;
-        animation: pulse 1.5s ease-in-out infinite;
-      }
-      @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      Static first paint. The single-file bundle is ~2 MB and nothing used to
+      paint until all of it had downloaded and executed (mobile Lighthouse:
+      FCP = LCP ≈ 4 s). The markup below is what App.tsx renders first for a
+      new visitor — the header wordmark and the empty-state hero, same Tailwind
+      classes (index.html is in tailwind.config.js `content`, so they are all
+      emitted) — and createRoot().render() replaces it wholesale on mount, so
+      there is no visual jump. The one-line script keeps the placeholder honest
+      for returning visitors: it applies the stored theme before first paint
+      and hides the hero when a saved team means App will not render it.
+      inline.mjs moves the module script to the end of <body> so this paints
+      while the script bytes are still arriving. Keep this in step with the
+      header + empty state in src/App.tsx; tests/test-pwa.mjs guards it.
+
+      Deliberately NOT animated: the wordmark's `flicker` and the status dots'
+      `pulse-dot` are left off here. With them on, every animation frame
+      repainted the fixed full-viewport overlays (crt-scan's mix-blend-mode,
+      the grain SVG filter) while the main thread was compiling 2 MB of script,
+      and boot-to-first-card went from ~1.0 s to ~2.1-3.1 s (tests/bench-boot.mjs,
+      interleaved runs). React adds the animations when it mounts.
+    -->
+    <div id="root">
+      <div class="min-h-screen w-full text-foreground relative bg-background crt-scan crt-vignette grain">
+        <header class="border-b sticky top-0 z-30 backdrop-blur-md bg-background/92 pt-[env(safe-area-inset-top)]" style="border-color: hsl(var(--border))">
+          <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400" style="animation-delay: 0.4s"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-red-400" style="animation-delay: 0.8s"></span>
+              </div>
+              <div class="min-w-0">
+                <h1 class="font-display text-base sm:text-lg leading-none truncate text-primary">trainer<span class="text-foreground/40">'</span>s codex</h1>
+                <p class="font-mono text-[10px] text-muted-foreground mt-0.5 hidden lg:block">v5.0 · team analyzer</p>
+              </div>
+            </div>
+            <!-- Same height as the toolbar that mounts here (44px overflow controls below lg, 36px icon row from lg), so the header does not grow. -->
+            <div class="h-11 lg:h-9 shrink-0" aria-hidden="true"></div>
+          </div>
+        </header>
+        <main class="max-w-6xl mx-auto px-4 pt-4 pb-32">
+          <section class="mb-6" id="tc-static-hero">
+            <div class="border rounded-lg p-4 sm:p-6 corner-bracket relative" style="border-color: hsl(var(--border)); background: linear-gradient(180deg, hsl(var(--primary)/0.06), transparent 70%)">
+              <div class="font-mono text-[10px] uppercase tracking-wider mb-2 text-primary">// status: awaiting team selection</div>
+              <h2 class="font-display text-2xl sm:text-3xl mb-2 leading-tight">build your six</h2>
+              <p class="text-sm text-muted-foreground mb-4 max-w-xl leading-relaxed">
+                All 1307 Pokémon — every form, shiny and Tera type. Build a six,
+                watch its coverage score live, then turn it into a poster or a shirt.
+              </p>
+              <div class="w-full mb-2 flex items-center gap-3 rounded-md border border-primary/60 bg-primary/10 px-3 py-2.5 text-left">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/></svg>
+                <span class="min-w-0">
+                  <span class="block font-mono text-xs uppercase tracking-wider text-primary">Journey Mode</span>
+                  <span class="block font-mono text-[10px] text-muted-foreground truncate">// a whole career in 3 minutes</span>
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-auto shrink-0 -rotate-90 text-primary/70" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                <div class="text-left rounded-md border p-3 border-primary bg-primary/8">
+                  <div class="flex items-center gap-2 mb-1 text-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="12" height="12" x="2" y="10" rx="2" ry="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6"/><path d="M6 18h.01"/><path d="M10 14h.01"/><path d="M15 6h.01"/><path d="M18 9h.01"/></svg>
+                    <span class="font-mono text-xs font-semibold uppercase tracking-wider">Random</span>
+                  </div>
+                  <div class="font-mono text-[10px] text-muted-foreground">// diverse roll</div>
+                </div>
+                <div class="text-left rounded-md border p-3 border-border bg-card">
+                  <div class="flex items-center gap-2 mb-1 text-foreground">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+                    <span class="font-mono text-xs font-semibold uppercase tracking-wider">Search</span>
+                  </div>
+                  <div class="font-mono text-[10px] text-muted-foreground">// press /</div>
+                </div>
+                <div class="text-left rounded-md border p-3 border-border bg-card">
+                  <div class="flex items-center gap-2 mb-1 text-foreground">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span class="font-mono text-xs font-semibold uppercase tracking-wider">Create trainer</span>
+                  </div>
+                  <div class="font-mono text-[10px] text-muted-foreground">// optional</div>
+                </div>
+                <div class="text-left rounded-md border p-3 border-border bg-card">
+                  <div class="flex items-center gap-2 mb-1 text-foreground">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+                    <span class="font-mono text-xs font-semibold uppercase tracking-wider">How it works</span>
+                  </div>
+                  <div class="font-mono text-[10px] text-muted-foreground">// quick tour</div>
+                </div>
+              </div>
+              <div class="sm:hidden w-full min-h-11 flex items-center justify-between gap-2 rounded-md border px-3 font-mono text-xs uppercase tracking-widest text-muted-foreground">
+                <span>// 21 preset teams</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+              <div class="hidden sm:block">
+                <div class="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// themed presets</div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script>
+      // Returning visitors: apply the stored theme before first paint and hide
+      // the hero when a saved team means App.tsx renders the team instead.
+      // Mirrors the reads in App.tsx (trainerscodex.theme) and lib/storage.ts
+      // (trainerscodex.v2). localStorage throws in some private modes — that
+      // boundary is the only reason for the try.
+      try {
+        if (localStorage.getItem('trainerscodex.theme') === 'light') document.documentElement.classList.add('light');
+        var tcSaved = JSON.parse(localStorage.getItem('trainerscodex.v2') || 'null');
+        if (tcSaved && tcSaved.current && Array.isArray(tcSaved.current.members) && tcSaved.current.members.some(Boolean)) {
+          document.getElementById('tc-static-hero').hidden = true;
+        }
+      } catch (e) { /* no storage: keep the new-visitor placeholder */ }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

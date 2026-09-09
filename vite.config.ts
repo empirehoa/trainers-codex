@@ -31,7 +31,14 @@ export default defineConfig({
   // ~700 KB of Pokémon data ships inlined. Emitting it as JSON.parse("…")
   // instead of a JS object literal parses ~2x faster in V8 (string scan vs.
   // full AST), which directly cuts bundle.html boot time.
-  json: { stringify: true },
+  //
+  // `namedExports: false` is load-bearing under Vite 8 (rolldown's native JSON
+  // plugin): with named exports on — the default — `stringify` is silently
+  // ignored and every JSON module ships as an object literal, which is how the
+  // data shipped for a while with nobody noticing. No module imports a named
+  // export from a .json file (they are all keyed by dex number anyway);
+  // tests/test-security.mjs asserts the built bundle carries the JSON.parse form.
+  json: { stringify: true, namedExports: false },
   plugins: [react()],
   resolve: {
     alias: {
