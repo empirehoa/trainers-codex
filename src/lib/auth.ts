@@ -34,6 +34,19 @@ export interface AuthSession {
   provider: AuthProvider | 'email';
 }
 
+/** Supabase auth event names we branch on; anything else passes through as a string. */
+export type AuthEvent = 'INITIAL_SESSION' | 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED' | 'USER_UPDATED' | 'PASSWORD_RECOVERY' | (string & {});
+
+/**
+ * Should a "signed out" notice show for this auth event? Only a real
+ * SIGNED_OUT transition from a session that existed qualifies. Supabase fires
+ * `INITIAL_SESSION` with a null session on every anonymous boot, and that used
+ * to toast "signed out" to every first-time visitor of the live site (A-2).
+ */
+export function isSignOutTransition(prev: AuthSession | null, event: AuthEvent, next: AuthSession | null): boolean {
+  return event === 'SIGNED_OUT' && prev !== null && next === null;
+}
+
 export interface CloudData {
   trainer: TrainerProfile | null;
   teams: SavedTeam[];
@@ -48,8 +61,13 @@ export interface AuthAdapter {
   signInWith(provider: AuthProvider): Promise<void>;
   /** Sign out. */
   signOut(): Promise<void>;
-  /** Subscribe to session changes. Returns unsubscribe. */
-  onAuthChange(cb: (session: AuthSession | null) => void): () => void;
+  /**
+   * Subscribe to session changes. Returns unsubscribe. `event` is the raw
+   * Supabase auth event (`INITIAL_SESSION`, `SIGNED_IN`, `SIGNED_OUT`,
+   * `TOKEN_REFRESHED`, …) — callers that toast must key off it, see
+   * `isSignOutTransition`.
+   */
+  onAuthChange(cb: (session: AuthSession | null, event: AuthEvent) => void): () => void;
   /** Fetch the current user's cloud-stored trainer + teams. */
   fetchCloudData(): Promise<CloudData | null>;
   /** Push a complete snapshot of trainer + teams. */
@@ -256,8 +274,8 @@ export const auth: AuthAdapter = {
     void (async () => {
       const client = await getClient();
       if (!client) return;
-      const { data } = client.auth.onAuthStateChange((_event, session) => {
-        cb(session ? mapUser(session.user) : null);
+      const { data } = client.auth.onAuthStateChange((event, session) => {
+        cb(session ? mapUser(session.user) : null, event);
       });
       unsub = () => data.subscription.unsubscribe();
     })();

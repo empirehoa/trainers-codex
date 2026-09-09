@@ -47,7 +47,7 @@ import {
 import {
   getStoredLicense, bootstrapFromCheckoutReturn, isWorkerConfigured,
   applyOwnerUnlock, hasOwnerUnlock, clearLicense, maybeReverifyLicense,
-  consumeMerchReturn } from '@/lib/license';
+  consumeMerchReturn, consumeCheckoutCancel } from '@/lib/license';
 
 import { PokemonCard } from '@/components/codex/PokemonCard';
 import { TeamSlot } from '@/components/codex/TeamSlot';
@@ -80,7 +80,7 @@ import { getProfileClient } from '@/lib/profiles-client';
 import { sanitizeListingTitle } from '@/lib/merch';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
 import { JourneyModeDialog } from '@/components/codex/journey/JourneyModeDialog';
-import { auth, type AuthSession } from '@/lib/auth';
+import { auth, isSignOutTransition, type AuthSession } from '@/lib/auth';
 import { isEnabled } from '@/lib/flags';
 import { parseCurrentJourneyLink } from '@/journey/deeplink';
 import { trackCommerce } from '@/lib/commerce-analytics';
@@ -363,10 +363,11 @@ export default function App() {
     // legacy localStorage `premium` flag (which was the dev-only preview
     // toggle). The license check is structural-only here — server-side
     // verification happens lazily when premium UI opens.
-    // Owner quick-unlock: `?unlock=premium` / `#unlock=premium` flips a
-    // persistent local override (and `unlock=off` clears it). Applied before
-    // the license check so it wins, and persisted under its own key so it
-    // survives reloads even on a Worker-backed deploy.
+    // Preview unlock: `?unlock=premium` / `#unlock=premium` flips a persistent
+    // local override (and `unlock=off` clears it) — on the NO-WORKER build
+    // only. With a worker configured both helpers are inert (the param is
+    // stripped silently, the stored flag is purged) and the only entitlement
+    // is a verified license. See license.ts applyOwnerUnlock.
     const unlockAction = applyOwnerUnlock();
     if (unlockAction === 'locked') clearLicense();
 
@@ -394,7 +395,7 @@ export default function App() {
       setPremium(true);
     }
     if (unlockAction === 'unlocked') {
-      toast.success('premium unlocked · preview mode — every premium surface is open');
+      toast.success('premium preview on · this offline build has no store, so every gated surface is open for testing');
     } else if (unlockAction === 'locked') {
       setPremium(false);
       toast('premium locked · back to the free experience');
@@ -418,6 +419,11 @@ export default function App() {
       toast.success('order placed · it prints and ships to the address you gave at checkout');
     } else if (merchReturn === 'cancel') {
       toast('checkout cancelled · your design is still here whenever you are ready');
+    }
+    // Premium / credit-pack cancel return (?checkout=cancel, ?credits=cancel):
+    // Stripe bounces back with nothing to verify — acknowledge and clean up.
+    if (consumeCheckoutCancel()) {
+      toast('checkout cancelled · no charge was made');
     }
 
     // Stripe Checkout return path — if we landed here with ?session_id=...,
@@ -478,10 +484,14 @@ export default function App() {
   useEffect(() => {
     if (!auth.isConfigured) return;
     void auth.getSession().then(setSession);
-    const unsub = auth.onAuthChange(s => {
+    // Supabase replays INITIAL_SESSION (null for anonymous visitors) on every
+    // boot — only a real SIGNED_OUT from a live session is worth a toast.
+    let prev: AuthSession | null = null;
+    const unsub = auth.onAuthChange((s, event) => {
       setSession(s);
-      if (s) toast.success(`signed in · ${s.name || s.email}`);
-      else toast('signed out');
+      if (s && !prev) toast.success(`signed in · ${s.name || s.email}`);
+      else if (isSignOutTransition(prev, event, s)) toast('signed out');
+      prev = s;
     });
     return unsub;
   }, []);
@@ -1482,6 +1492,7 @@ export default function App() {
           <div className="font-mono text-[10px] text-muted-foreground space-y-1">
             <div>// trainer's codex v5.0 · independent fan tool · not affiliated with nintendo / game freak / the pokémon company</div>
             <div>// sprite art and base data: <a href="https://pokeapi.co" target="_blank" rel="noopener noreferrer" className="hover:text-primary">pokéapi.co</a> · tcg data: <a href="https://pokemontcg.io" target="_blank" rel="noopener noreferrer" className="hover:text-primary">pokemontcg.io</a></div>
+            <div>// <a href="/legal.html" target="_blank" rel="noopener noreferrer" className="hover:text-primary" data-testid="footer-legal">terms · privacy · refunds</a> · <a href="/dmca.html" target="_blank" rel="noopener noreferrer" className="hover:text-primary" data-testid="footer-dmca">dmca</a></div>
           </div>
         </footer>
       </main>

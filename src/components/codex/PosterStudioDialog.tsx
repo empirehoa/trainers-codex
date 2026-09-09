@@ -11,7 +11,7 @@ import type { ArtStyle } from '@/lib/constants';
 import { buildShareCode } from '@/lib/analysis';
 import { renderPoster } from '@/lib/posters';
 import { canShareFiles, shareImage } from '@/lib/share';
-import { PremiumControl, PremiumUnlockCTA } from './PremiumControl';
+import { PremiumControl } from './PremiumControl';
 import { trackCommerce } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
 
@@ -132,9 +132,14 @@ export function PosterStudioDialog({
                   <Lock size={32} className="mx-auto mb-3 text-primary" />
                   <div className="font-mono text-sm text-foreground mb-1">premium style</div>
                   <div className="font-mono text-[10px] text-muted-foreground mb-4 max-w-xs mx-auto">
-                    {currentStyleInfo?.label} · unlock with premium pack ($4.99/mo) for 4 premium styles, 3D HOME sprites, and custom palettes
+                    {currentStyleInfo?.label} · premium pack unlocks the premium poster styles, 3D HOME sprites, Legend Card finishes, the daily archive and extra career saves
                   </div>
-                  <PremiumUnlockCTA onTogglePremium={onTogglePremium} surface="poster-style" />
+                  {/* The FULL control lives here (not compact): the annual term
+                      and same-browser "restore purchase" must be reachable from
+                      the one place a free user actually meets the paywall. */}
+                  <div className="max-w-xs mx-auto text-left" data-testid="poster-premium-pitch">
+                    <PremiumControl premium={premium} onTogglePremium={onTogglePremium} surface="poster-style" />
+                  </div>
                 </div>
               ) : busy ? (
                 <div className="text-center">
