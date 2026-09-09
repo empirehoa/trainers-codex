@@ -21,8 +21,11 @@ import type { Env } from './index';
 import { jsonOk, jsonError } from './index';
 import { mintLicense } from './jwt';
 import { grantCredits } from './credit-store';
-
-const STRIPE_API_BASE = 'https://api.stripe.com/v1';
+import { recordSubscriptionSession, revokeBySubscription } from './revocation';
+import { fulfillMerchOrder } from './merch';
+import { stripeFetch, isAllowedReturnUrl, appendQuery, type StripeSession } from './stripe-client';
+// Re-exported so existing importers (credits.ts, tests) keep working.
+export { stripeFetch, isAllowedReturnUrl, appendQuery, type StripeSession } from './stripe-client';
 
 interface StripeCheckoutBody {
   returnUrl?: string;
@@ -31,38 +34,6 @@ interface StripeCheckoutBody {
   term?: 'monthly' | 'annual';
 }
 
-export interface StripeSession {
-  id: string;
-  payment_status: 'paid' | 'unpaid' | 'no_payment_required';
-  status: 'open' | 'complete' | 'expired';
-  customer: string | null;
-  customer_email: string | null;
-  customer_details?: { email?: string | null };
-  subscription: string | null;
-  metadata?: Record<string, string>;
-  url: string;
-}
-
-export async function stripeFetch<T>(env: Env, method: 'GET' | 'POST', path: string, body?: Record<string, string>): Promise<T> {
-  // No explicit stripe-version header — uses the account's default API
-  // version (set in Stripe Dashboard → Developers → API). This avoids
-  // version-mismatch errors when Stripe rotates supported versions.
-  const headers: HeadersInit = {
-    'authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-  };
-  let init: RequestInit = { method, headers };
-  if (body) {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(body)) params.append(k, v);
-    init = { method, headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' }, body: params.toString() };
-  }
-  const resp = await fetch(`${STRIPE_API_BASE}${path}`, init);
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`stripe_${resp.status}: ${text.slice(0, 200)}`);
-  }
-  return await resp.json() as T;
-}
 
 /**
  * POST /stripe/checkout
@@ -198,17 +169,47 @@ export async function stripeWebhook(req: Request, env: Env): Promise<Response> {
           console.log(`[stripe] granted ${credits} credits to ${email} (balance=${bal})`);
         }
       }
+      // Premium subscriptions: remember which checkout session this
+      // subscription minted, so a later cancellation can revoke the license
+      // that session produced. Without this mapping the JWT (up to 366 days)
+      // outlives the subscription. Best-effort — KV absent means self-host.
+      if (meta.source === 'trainerscodex_premium_pack') {
+        await recordSubscriptionSession(env.AI_QUOTA_KV, obj.subscription as string | null, String(obj.id));
+        if (!env.AI_QUOTA_KV) console.warn('[stripe] AI_QUOTA_KV missing — cancellation revocation disabled');
+      }
+      // Paid merch: the buyer has paid us; place the Printful draft order.
+      // Failures throw → Stripe retries the webhook, which is what we want.
+      if (meta.source === 'trainerscodex_merch') {
+        await fulfillMerchOrder(env, obj);
+      }
       // Premium /verify mints the JWT when the browser comes back; this webhook
-      // is otherwise telemetry + future server-side license storage.
+      // is otherwise telemetry + server-side entitlement bookkeeping.
       break;
     }
-    case 'customer.subscription.deleted':
+    case 'customer.subscription.deleted': {
+      // The subscription has actually ended (period end after a cancel, or a
+      // hard cancellation). Kill the license it minted.
+      const obj = event.data.object as Record<string, unknown>;
+      const revoked = await revokeBySubscription(env.AI_QUOTA_KV, obj.id as string);
+      console.log(`[stripe] subscription deleted customer=${obj.customer} revoked_session=${revoked ?? 'none-mapped'}`);
+      break;
+    }
     case 'customer.subscription.updated': {
       const obj = event.data.object as Record<string, unknown>;
-      console.log(`[stripe] subscription ${event.type} status=${obj.status} customer=${obj.customer}`);
+      // `cancel_at_period_end` flips are NOT revocations — the period is paid
+      // for. Only a status that means "no longer entitled" revokes early.
+      if (obj.status === 'canceled' || obj.status === 'unpaid') {
+        const revoked = await revokeBySubscription(env.AI_QUOTA_KV, obj.id as string);
+        console.log(`[stripe] subscription ${obj.status} customer=${obj.customer} revoked_session=${revoked ?? 'none-mapped'}`);
+      } else {
+        console.log(`[stripe] subscription updated status=${obj.status} customer=${obj.customer}`);
+      }
       break;
     }
     case 'invoice.payment_failed': {
+      // Log only. Stripe's own retry/dunning schedule decides the outcome: if
+      // recovery fails it transitions the subscription to canceled/unpaid and
+      // one of the handlers above performs the actual revocation.
       const obj = event.data.object as Record<string, unknown>;
       console.log(`[stripe] payment failed customer=${obj.customer}`);
       break;
@@ -251,18 +252,3 @@ async function verifyStripeSignature(rawBody: string, sigHeader: string, secret:
   return diff === 0;
 }
 
-export function isAllowedReturnUrl(url: string, env: Env): boolean {
-  try {
-    const u = new URL(url);
-    const allowed = env.ALLOWED_ORIGINS.split(',').map(s => s.trim());
-    return allowed.includes(u.origin);
-  } catch {
-    return false;
-  }
-}
-
-export function appendQuery(url: string, params: Record<string, string>): string {
-  const u = new URL(url);
-  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  return u.toString();
-}

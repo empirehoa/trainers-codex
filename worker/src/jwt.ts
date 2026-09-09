@@ -24,6 +24,7 @@
 
 import type { Env } from './index';
 import { applyCORS } from './cors';
+import { isSessionRevoked } from './revocation';
 
 export type LicensePlan = 'premium' | 'credits';
 
@@ -146,6 +147,14 @@ export async function licenseVerify(req: Request, env: Env): Promise<Response> {
   const claims = await verifyLicense(env, body.jwt);
   if (!claims) {
     return applyCORS(new Response(JSON.stringify({ valid: false }), { status: 200, headers: { 'content-type': 'application/json' } }), req, env);
+  }
+
+  // A signature-valid, unexpired premium license can still have been revoked —
+  // the subscription behind it ended (see revocation.ts). The client calls
+  // this endpoint on a 7-day cadence precisely so this check has a place to
+  // bite before `exp` does.
+  if (claims.plan === 'premium' && await isSessionRevoked(env.AI_QUOTA_KV, claims.stripe_session)) {
+    return applyCORS(new Response(JSON.stringify({ valid: false, revoked: true }), { status: 200, headers: { 'content-type': 'application/json' } }), req, env);
   }
 
   return applyCORS(new Response(JSON.stringify({

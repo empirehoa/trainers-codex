@@ -17,6 +17,7 @@ import { TYPE_COLORS, SPRITE_VARIANT_LABELS, TYPES, HELD_ITEMS } from '@/lib/con
 import { spriteUrl, getLearnset, MOVES_BY_ID, suggestDefaultMoves } from '@/lib/pokemon';
 import { TypePill } from './TypePill';
 import { cn } from '@/lib/utils';
+import { trackCommerce } from '@/lib/commerce-analytics';
 
 const HELD_NONE = '_none';
 
@@ -46,6 +47,11 @@ const SPRITE_VARIANTS: SpriteKind[] = [
 export function TeamMemberConfigDialog({
   open, onClose, pokemon, member, onSave, onOpenTCG, premium
 }: TeamMemberConfigDialogProps) {
+  // The sprite-variant lock is a paywall surface; count the humans who saw it.
+  useEffect(() => {
+    if (open && !premium) trackCommerce({ event: 'paywall_shown', surface: 'sprite-variant' });
+  }, [open, premium]);
+
   const [shiny, setShiny] = useState(false);
   const [nickname, setNickname] = useState('');
   const [ability, setAbility] = useState('');

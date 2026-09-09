@@ -6,6 +6,8 @@
 //   POST /stripe/webhook       → Stripe webhook receiver (handles subscription events)
 //   POST /license/verify       → re-validate an existing JWT server-side
 //   POST /printful/order       → upload PNG, create sync product, return checkout URL
+//   POST /merch/checkout       → buyer checkout: PNG → R2 → Stripe payment session
+//                                (webhook then places the Printful draft order)
 //   GET  /health               → liveness probe
 //
 // All routes go through CORS + rate limit before reaching the handler.
@@ -16,6 +18,7 @@ import { stripeCheckout, stripeVerify, stripeWebhook } from './stripe';
 import { creditsCheckout, creditsVerify, creditsBalance } from './credits';
 import { licenseVerify } from './jwt';
 import { printfulOrder } from './printful';
+import { merchCheckout } from './merch';
 import { aiTrainerCard, aiTeamArt, aiCodexCard } from './ai';
 
 export interface Env {
@@ -61,6 +64,9 @@ const ROUTES: Route[] = [
   { method: 'POST', path: '/credits/balance',  handler: creditsBalance,  ratePerMin: 60 },
   { method: 'POST', path: '/license/verify',   handler: licenseVerify,   ratePerMin: 60 },
   { method: 'POST', path: '/printful/order',   handler: printfulOrder,   ratePerMin: 6  },
+  // Paid merch: buyer-facing Stripe Checkout for a physical product. Ships
+  // dark behind the client MERCH_CHECKOUT flag; see worker/src/merch.ts.
+  { method: 'POST', path: '/merch/checkout',   handler: merchCheckout,   ratePerMin: 6  },
   // v6: AI image generation — premium-gated, stricter rate limit
   { method: 'POST', path: '/ai/trainer-card',  handler: aiTrainerCard,   ratePerMin: 5  },
   { method: 'POST', path: '/ai/team-art',      handler: aiTeamArt,       ratePerMin: 5  },

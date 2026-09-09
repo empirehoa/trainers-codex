@@ -12,6 +12,7 @@ import { buildShareCode } from '@/lib/analysis';
 import { renderPoster } from '@/lib/posters';
 import { canShareFiles, shareImage } from '@/lib/share';
 import { PremiumControl, PremiumUnlockCTA } from './PremiumControl';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
 
 interface PosterStudioDialogProps {
@@ -38,6 +39,9 @@ export function PosterStudioDialog({
   const code = buildShareCode(members);
   const currentStyleInfo = ART_STYLES.find(s => s.id === style);
   const isLocked = currentStyleInfo?.premium && !premium;
+  useEffect(() => {
+    if (open && isLocked) trackCommerce({ event: 'paywall_shown', surface: 'poster-style' });
+  }, [open, isLocked]);
 
   const generate = useCallback(async () => {
     if (filled.length === 0) return;
@@ -130,7 +134,7 @@ export function PosterStudioDialog({
                   <div className="font-mono text-[10px] text-muted-foreground mb-4 max-w-xs mx-auto">
                     {currentStyleInfo?.label} · unlock with premium pack ($4.99/mo) for 4 premium styles, 3D HOME sprites, and custom palettes
                   </div>
-                  <PremiumUnlockCTA onTogglePremium={onTogglePremium} />
+                  <PremiumUnlockCTA onTogglePremium={onTogglePremium} surface="poster-style" />
                 </div>
               ) : busy ? (
                 <div className="text-center">

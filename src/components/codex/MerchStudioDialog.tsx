@@ -22,6 +22,7 @@ import {
 } from '@/lib/merch-renderers';
 import { PremiumControl } from './PremiumControl';
 import { isWorkerConfigured, submitPrintfulOrder } from '@/lib/license';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
 
 interface MerchStudioDialogProps {
@@ -163,6 +164,7 @@ export function MerchStudioDialog({
   const [ordering, setOrdering] = useState(false);
 
   const handleOrder = async () => {
+    trackCommerce({ event: 'merch_render_started', product: selectedProduct.id, design });
     const blob = await generatePrintBlob();
     if (!blob) return;
     const url = URL.createObjectURL(blob);
@@ -194,6 +196,10 @@ export function MerchStudioDialog({
             trainer: cleanListing(trainer?.name),
           },
           pngBlob: blob,
+        });
+        trackCommerce({
+          event: 'merch_order_submitted', product: selectedProduct.id, design,
+          valueUsd: parseFloat(result.retail) || 0,
         });
         toast.success(`Printful listing ready · ${result.productName}`);
         window.open(result.dashboardUrl, '_blank', 'noopener');

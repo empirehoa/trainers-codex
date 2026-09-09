@@ -21,6 +21,7 @@
 import type { Env } from './index';
 import { jsonOk, jsonError } from './index';
 import { verifyLicense } from './jwt';
+import { isSessionRevoked } from './revocation';
 import { sanitizeStylePrompt } from './sanitize';
 import { consumeCredit, refundCredit } from './credit-store';
 export { sanitizeStylePrompt, type SanitizedPrompt } from './sanitize';
@@ -94,7 +95,8 @@ export async function aiTrainerCard(req: Request, env: AIEnv): Promise<Response>
   // burn one of the user's 5 monthly premium credits.
   const quota = await consumeEntitlement(env, license, 'trainer-card');
   if (!quota.ok) {
-    const status = quota.errorCode === 'no_credits' ? 402 : 429;
+    const status = quota.errorCode === 'no_credits' ? 402
+      : quota.errorCode === 'quota_unavailable' ? 503 : 429;
     return jsonError(req, env, status, quota.errorCode || 'quota_exhausted', {
       remaining: quota.remaining,
       resetAt: quota.resetAt,
@@ -170,7 +172,8 @@ export async function aiTeamArt(req: Request, env: AIEnv): Promise<Response> {
   // aiTrainerCard) — failures upstream of this point must not consume a credit.
   const quota = await consumeEntitlement(env, license, 'team-art');
   if (!quota.ok) {
-    const status = quota.errorCode === 'no_credits' ? 402 : 429;
+    const status = quota.errorCode === 'no_credits' ? 402
+      : quota.errorCode === 'quota_unavailable' ? 503 : 429;
     return jsonError(req, env, status, quota.errorCode || 'quota_exhausted', {
       remaining: quota.remaining,
       resetAt: quota.resetAt,
@@ -255,7 +258,8 @@ export async function aiCodexCard(req: Request, env: AIEnv): Promise<Response> {
 
   const quota = await consumeEntitlement(env, license, 'codex-card');
   if (!quota.ok) {
-    const status = quota.errorCode === 'no_credits' ? 402 : 429;
+    const status = quota.errorCode === 'no_credits' ? 402
+      : quota.errorCode === 'quota_unavailable' ? 503 : 429;
     return jsonError(req, env, status, quota.errorCode || 'quota_exhausted', {
       remaining: quota.remaining,
       resetAt: quota.resetAt,
@@ -718,6 +722,11 @@ async function requireAIEntitlement(req: Request, env: AIEnv): Promise<LicenseCh
   if (claims.plan !== 'premium' && claims.plan !== 'credits') {
     return { ok: false, response: jsonError(req, env, 403, 'premium_required') };
   }
+  // A cancelled subscription's license is revoked (revocation.ts). Without
+  // this check the metered AI quota keeps flowing until the JWT expires.
+  if (claims.plan === 'premium' && await isSessionRevoked(env.AI_QUOTA_KV, claims.stripe_session)) {
+    return { ok: false, response: jsonError(req, env, 403, 'license_revoked') };
+  }
   return { ok: true, email: claims.email, sub: claims.sub, mode: claims.plan };
 }
 
@@ -729,7 +738,8 @@ async function consumeEntitlement(
 ): Promise<{ ok: boolean; remaining: number; resetAt: number; errorCode?: string }> {
   if (ent.mode === 'premium') {
     const q = await checkAndIncrementQuota(env, ent.email, kind);
-    return { ok: q.ok, remaining: q.remaining, resetAt: q.resetAt, errorCode: q.ok ? undefined : 'quota_exhausted' };
+    const errorCode = q.ok ? undefined : q.unavailable ? 'quota_unavailable' : 'quota_exhausted';
+    return { ok: q.ok, remaining: q.remaining, resetAt: q.resetAt, errorCode };
   }
   // credits
   if (!env.AI_QUOTA_KV) {
@@ -748,10 +758,15 @@ async function refundEntitlement(env: AIEnv, ent: LicenseCheck, kind: string): P
   }
 }
 
-async function checkAndIncrementQuota(env: AIEnv, email: string, kind: string): Promise<{ ok: boolean; remaining: number; resetAt: number }> {
+async function checkAndIncrementQuota(env: AIEnv, email: string, kind: string): Promise<{ ok: boolean; remaining: number; resetAt: number; unavailable?: boolean }> {
   if (!env.AI_QUOTA_KV) {
-    // Quota tracking optional — if KV not configured, allow but warn.
-    return { ok: true, remaining: PREMIUM_MONTHLY_QUOTA, resetAt: 0 };
+    // FAIL CLOSED. This used to allow unlimited premium generation when the
+    // quota store was missing — a deploy misconfiguration silently became an
+    // unmetered bill from the image provider. Credits already failed closed;
+    // premium now behaves the same, and the route surfaces a 503 so the
+    // operator sees a config problem instead of a quiet cost leak.
+    console.error('[ai] AI_QUOTA_KV missing — refusing premium generation (fail closed)');
+    return { ok: false, remaining: 0, resetAt: 0, unavailable: true };
   }
   const month = new Date().toISOString().slice(0, 7); // YYYY-MM
   const key = `ai:${month}:${email}:${kind}`;

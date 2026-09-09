@@ -18,6 +18,7 @@
 // without a paid worker.
 
 import type { Pokemon } from './types';
+import { trackCommerce } from './commerce-analytics';
 
 export type LicensePlan = 'premium' | 'credits';
 
@@ -45,6 +46,11 @@ export const PREVIEW_PREMIUM_KEY = 'trainerscodex.premium';
 // email-bucket to spend against.
 export const CREDITS_TOKEN_KEY = 'trainerscodex.credits';
 export const CREDITS_BALANCE_KEY = 'trainerscodex.credits.balance';
+// When the stored license last passed a server-side re-verification. The
+// client re-checks weekly so a cancelled subscription (revoked server-side,
+// see worker/src/revocation.ts) loses premium within days, not at JWT expiry.
+export const LICENSE_CHECKED_KEY = 'trainerscodex.license.checkedAt';
+const REVERIFY_INTERVAL_MS = 7 * 24 * 3600 * 1000;
 
 function getWorkerUrl(): string | null {
   const cfg = typeof window !== 'undefined' ? window.TRAINERS_CODEX_CONFIG : undefined;
@@ -279,6 +285,7 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
       const { token, balance } = await resp.json() as { token: string; balance: number };
       const claims = storeCreditsToken(token);
       if (typeof balance === 'number') setCachedCreditBalance(balance);
+      if (claims) trackCommerce({ event: 'credits_purchased', balance: balance ?? 0 });
       cleanReturnUrl();
       return claims;
     }
@@ -297,6 +304,12 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
     }
     const { license } = await resp.json() as { license: string };
     const claims = storeLicense(license);
+    if (claims) {
+      // >90 days of TTL can only be the annual plan (monthly mints 31d).
+      const days = (claims.exp - claims.iat) / 86400;
+      trackCommerce({ event: 'purchase_completed', plan: 'premium', term: days > 90 ? 'annual' : 'monthly' });
+      try { localStorage.setItem(LICENSE_CHECKED_KEY, String(Date.now())); } catch { /* best effort */ }
+    }
     cleanReturnUrl();
     return claims;
   } catch (e) {
@@ -311,8 +324,20 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
  * the worker (the client-side decode only checks shape + expiry).
  */
 export async function verifyServerSide(jwt: string): Promise<boolean> {
+  return (await verifyServerSideDetailed(jwt)) !== 'invalid';
+}
+
+/**
+ * Tri-state server verification. The distinction matters for revocation:
+ * 'invalid' means the Worker examined the token and rejected it (bad
+ * signature, expired, or REVOKED after a cancelled subscription) — the client
+ * must clear it. 'unreachable' means we simply couldn't ask (offline, worker
+ * down) — the client must NOT punish the user for our availability, so the
+ * stored license stands until a definitive answer arrives.
+ */
+export async function verifyServerSideDetailed(jwt: string): Promise<'valid' | 'invalid' | 'unreachable'> {
   const workerUrl = getWorkerUrl();
-  if (!workerUrl) return isLicenseValid(decodeLicense(jwt));
+  if (!workerUrl) return isLicenseValid(decodeLicense(jwt)) ? 'valid' : 'invalid';
 
   try {
     const resp = await fetch(`${workerUrl}/license/verify`, {
@@ -320,12 +345,44 @@ export async function verifyServerSide(jwt: string): Promise<boolean> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jwt }),
     });
-    if (!resp.ok) return false;
+    // Only a 200 with an explicit verdict is a verdict. 5xx/429 are the
+    // worker's problem, not the license's.
+    if (!resp.ok) return 'unreachable';
     const { valid } = await resp.json() as { valid: boolean };
-    return valid;
+    return valid ? 'valid' : 'invalid';
   } catch {
-    return false;
+    return 'unreachable';
   }
+}
+
+/**
+ * Weekly license re-verification, called once on boot when a stored license
+ * exists. Returns 'revoked' when the license was definitively rejected (the
+ * caller flips premium off and clears storage), 'ok' otherwise.
+ *
+ * Cadence, not every boot: the offline single-file bundle is a headline
+ * feature and a boot-blocking network check would break it; weekly keeps the
+ * revocation tail short (a cancelled annual is out within 7 days instead of
+ * 366) at zero cost to the offline path.
+ */
+export async function maybeReverifyLicense(jwt: string): Promise<'ok' | 'revoked'> {
+  let last = 0;
+  try { last = parseInt(localStorage.getItem(LICENSE_CHECKED_KEY) || '0', 10) || 0; } catch { /* unreadable → recheck */ }
+  if (Date.now() - last < REVERIFY_INTERVAL_MS) return 'ok';
+
+  const verdict = await verifyServerSideDetailed(jwt);
+  if (verdict === 'valid') {
+    try { localStorage.setItem(LICENSE_CHECKED_KEY, String(Date.now())); } catch { /* best effort */ }
+    return 'ok';
+  }
+  if (verdict === 'invalid') {
+    clearLicense();
+    trackCommerce({ event: 'license_revoked' });
+    return 'revoked';
+  }
+  // 'unreachable' — leave the license and the timestamp alone; we'll ask again
+  // next boot until we get a real answer.
+  return 'ok';
 }
 
 /**

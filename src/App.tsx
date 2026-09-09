@@ -46,8 +46,7 @@ import {
 } from '@/lib/formats';
 import {
   getStoredLicense, bootstrapFromCheckoutReturn, isWorkerConfigured,
-  applyOwnerUnlock, hasOwnerUnlock, clearLicense,
-} from '@/lib/license';
+  applyOwnerUnlock, hasOwnerUnlock, clearLicense, maybeReverifyLicense } from '@/lib/license';
 
 import { PokemonCard } from '@/components/codex/PokemonCard';
 import { TeamSlot } from '@/components/codex/TeamSlot';
@@ -83,6 +82,7 @@ import { JourneyModeDialog } from '@/components/codex/journey/JourneyModeDialog'
 import { auth, type AuthSession } from '@/lib/auth';
 import { isEnabled } from '@/lib/flags';
 import { parseCurrentJourneyLink } from '@/journey/deeplink';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { renderLegendCardPrint } from '@/journey/legend-card';
 import { downloadBlob, legendCardFilename } from '@/journey/share';
 import { track } from '@/journey/analytics';
@@ -372,6 +372,21 @@ export default function App() {
     const license = getStoredLicense();
     if (license || hasOwnerUnlock()) {
       setPremium(true);
+      if (license) {
+        trackCommerce({
+          event: 'license_restored',
+          daysLeft: Math.max(0, Math.round((license.claims.exp * 1000 - Date.now()) / 86400000)),
+        });
+        // Weekly server re-check: a cancelled subscription is revoked
+        // server-side; this is where a revoked license actually loses premium
+        // (soft-fails to 'ok' when offline — never punishes availability).
+        void maybeReverifyLicense(license.jwt).then(verdict => {
+          if (verdict === 'revoked') {
+            setPremium(false);
+            toast('premium ended · your subscription is no longer active');
+          }
+        });
+      }
     } else if (stored.premium && !isWorkerConfigured()) {
       // Self-host / no-worker deploy: the preview toggle remains the source
       // of truth. This keeps the bundle's offline UX intact for static hosts.
@@ -737,6 +752,7 @@ export default function App() {
     // Reason: premium-revenue lever. Anyone building 4+ teams is a power
     // user and the $4.99/mo conversion threshold is well-justified.
     if (!premium && savedTeams.length >= 3) {
+      trackCommerce({ event: 'paywall_shown', surface: 'saved-teams' });
       toast.error('saved-team limit · upgrade to Premium for unlimited');
       return;
     }

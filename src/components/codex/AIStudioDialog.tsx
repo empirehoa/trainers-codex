@@ -27,6 +27,7 @@ import {
   getStoredCreditsToken, getCachedCreditBalance, fetchCreditBalance,
   redirectToCreditsCheckout,
 } from '@/lib/license';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { canShareFiles, shareImage, urlToBlob } from '@/lib/share';
 import { POKEMON_BY_ID } from '@/lib/pokemon';
 import { cn } from '@/lib/utils';
@@ -103,6 +104,16 @@ export function AIStudioDialog({
   const [creditBalance, setCreditBalance] = useState<number>(() => getCachedCreditBalance());
 
   const workerOn = isWorkerConfigured();
+
+  // Funnel top: the paywall was actually on screen. Deduped per page-load in
+
+  // trackCommerce, so re-renders and dialog re-opens don't inflate the count.
+
+  useEffect(() => {
+
+    if (open && !premium && creditBalance === 0) trackCommerce({ event: 'paywall_shown', surface: 'ai-studio' });
+
+  }, [open, premium, creditBalance]);
   // A user may generate when they have Premium OR at least one credit.
   const entitled = premium || creditBalance > 0;
 
@@ -362,7 +373,10 @@ export function AIStudioDialog({
             </div>
             {workerOn && (
               <Button
-                onClick={() => redirectToCreditsCheckout('five').catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'))}
+                onClick={() => {
+                  trackCommerce({ event: 'checkout_started', surface: 'ai-studio', plan: 'credits', pack: 'five' });
+                  redirectToCreditsCheckout('five').catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'));
+                }}
                 size="sm"
                 variant="outline"
                 className="font-mono text-xs"
@@ -395,7 +409,10 @@ export function AIStudioDialog({
                       key={p.pack}
                       type="button"
                       data-testid={`ai-buy-${p.pack}`}
-                      onClick={() => redirectToCreditsCheckout(p.pack).catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'))}
+                      onClick={() => {
+                        trackCommerce({ event: 'checkout_started', surface: 'ai-studio', plan: 'credits', pack: p.pack });
+                        redirectToCreditsCheckout(p.pack).catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'));
+                      }}
                       className="relative rounded-md border border-border bg-card hover:border-primary hover:bg-primary/5 transition px-2 py-3 flex flex-col items-center gap-0.5"
                     >
                       {p.tag && (
@@ -418,7 +435,10 @@ export function AIStudioDialog({
 
                 <div className="grid grid-cols-2 gap-2">
                   <Button
-                    onClick={() => redirectToCheckout(undefined, 'monthly').catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'))}
+                    onClick={() => {
+                      trackCommerce({ event: 'checkout_started', surface: 'ai-studio', plan: 'premium', term: 'monthly', valueUsd: 4.99 });
+                      redirectToCheckout(undefined, 'monthly').catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'));
+                    }}
                     size="sm"
                     variant="outline"
                     className="font-mono text-xs"
@@ -427,7 +447,10 @@ export function AIStudioDialog({
                     <Sparkles size={11} className="mr-1.5" /> $4.99/mo
                   </Button>
                   <Button
-                    onClick={() => redirectToCheckout(undefined, 'annual').catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'))}
+                    onClick={() => {
+                      trackCommerce({ event: 'checkout_started', surface: 'ai-studio', plan: 'premium', term: 'annual', valueUsd: 39 });
+                      redirectToCheckout(undefined, 'annual').catch(e => toast.error(e instanceof Error ? e.message : 'checkout failed'));
+                    }}
                     size="sm"
                     variant="outline"
                     className="font-mono text-xs"

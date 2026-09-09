@@ -23,12 +23,18 @@ export type FeatureFlag =
   // this OFF degrades every flavor string to type/role descriptors
   // ("your Fire-type ace") without touching the engine. It is the lever for
   // a narrowed counsel opinion — see docs/JOURNEY_MODE.md § IP degradation.
-  | 'JOURNEY_SPECIES_FLAVOR';
+  | 'JOURNEY_SPECIES_FLAVOR'
+  // Buyer-facing paid merch checkout (Stripe payment session → Printful draft
+  // order on the webhook — worker/src/merch.ts). Ships OFF: the worker leg is
+  // built and tested dark, and flipping this is a per-deploy config change
+  // once counsel clears paid merch and live Stripe keys are in place.
+  | 'MERCH_CHECKOUT';
 
 const FLAG_DEFAULTS: Record<FeatureFlag, boolean> = {
   JOURNEY_MODE: true,
   JOURNEY_MERCH_CTA: false,
   JOURNEY_SPECIES_FLAVOR: true,
+  MERCH_CHECKOUT: false,
 };
 
 function readConfigFlags(): Partial<Record<FeatureFlag, boolean>> {
