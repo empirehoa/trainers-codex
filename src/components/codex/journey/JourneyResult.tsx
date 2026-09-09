@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight, Copy, Download, Film, Link2, Loader2, RotateCcw, Share2, ShoppingBag, Sparkles, Wrench,
+  ArrowRight, Copy, Download, Film, Link2, Loader2, Lock, RotateCcw, Share2, ShoppingBag, Sparkles, Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -8,7 +8,9 @@ import { useI18n } from '@/i18n/useI18n';
 import { isEnabled } from '@/lib/flags';
 import { pixelSprite, POKEMON_BY_ID } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
-import { renderLegendCard } from '@/journey/legend-card';
+import { LEGEND_FINISHES, renderLegendCard, type LegendFinish } from '@/journey/legend-card';
+import { PremiumUnlockCTA } from '@/components/codex/PremiumControl';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { buildDailyLink, buildSeedLink } from '@/journey/deeplink';
 import { dailyIssueNumber } from '@/journey/prng';
 import { resolveRank, rosterRarity } from '@/journey/ranks';
@@ -30,11 +32,18 @@ interface Props {
   onNewJourney: () => void;
   onBuilderHandoff: (run: JourneyRun) => void;
   onMerch: (run: JourneyRun, blob: Blob) => void;
+  /** Premium entitlement — gates the cosmetic card finishes. */
+  premium: boolean;
+  onTogglePremium?: () => void;
 }
 
 export function JourneyResult({
   run, stage, onRevealCard, onReplay, onNewJourney, onBuilderHandoff, onMerch,
+  premium, onTogglePremium,
 }: Props) {
+  // Card finish. Cosmetic only — pixels change, the career data never does.
+  const [finish, setFinish] = useState<LegendFinish>('classic');
+  const [finishPitch, setFinishPitch] = useState(false);
   const { t, locale } = useI18n();
   const [blob, setBlob] = useState<Blob | null>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -113,7 +122,7 @@ export function JourneyResult({
     setBusy(true);
     setError(null);
     try {
-      const b = await renderLegendCard({ run, locale });
+      const b = await renderLegendCard({ run, locale, finish });
       if (!alive.current) return;
       setBlob(b);
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
@@ -127,7 +136,7 @@ export function JourneyResult({
     } finally {
       if (alive.current) setBusy(false);
     }
-  }, [run, locale, filename]);
+  }, [run, locale, finish, filename]);
 
   useEffect(() => {
     if (stage !== 'card') return;
@@ -205,7 +214,7 @@ export function JourneyResult({
         locale,
         onProgress: setVideoPct,
       });
-      reportShare('download');
+      reportShare('clip');
       // Same slug as the still, so a clip and its card sort together in a folder.
       const stem = legendCardFilename(run.setup.trainerName, run.setup.seed).replace(/\.png$/, '');
       downloadBlob(result.blob, `${stem}.${result.extension}`);
@@ -341,6 +350,49 @@ export function JourneyResult({
           <img src={url} alt={verdictText} className="w-full h-full object-contain"
                data-testid="journey-card-image" />
         ) : null}
+      </div>
+
+      {/* ---- finish picker ----
+          Classic is free forever; the three premium finishes are cosmetics —
+          the score, verdict and link are pixel-identical claims on every
+          finish, so a premium card is prettier, never better. */}
+      <div className="max-w-sm mx-auto w-full space-y-1.5" data-testid="journey-finish-picker">
+        <div className="flex flex-wrap gap-1.5 justify-center">
+          {LEGEND_FINISHES.map(f => {
+            const locked = f.premium && !premium;
+            const active = finish === f.id;
+            return (
+              <button key={f.id}
+                      onClick={() => {
+                        if (locked) {
+                          trackCommerce({ event: 'paywall_shown', surface: 'legend-finish' });
+                          setFinishPitch(true);
+                          return;
+                        }
+                        setFinishPitch(false);
+                        setFinish(f.id);
+                      }}
+                      aria-pressed={active}
+                      className={`font-mono text-[10px] px-2 py-1 rounded border transition flex items-center gap-1
+                        ${active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:text-foreground'}
+                        ${locked ? 'opacity-70' : ''}`}
+                      data-testid={`journey-finish-${f.id}`}>
+                {locked && <Lock size={9} className="text-primary" />}
+                {t(`journey.finish.${f.id}`)}
+              </button>
+            );
+          })}
+        </div>
+        {finishPitch && !premium && (
+          <div className="flex items-center justify-between gap-2 rounded border border-dashed px-2 py-1.5"
+               style={{ borderColor: 'hsl(var(--primary)/0.4)' }}
+               data-testid="journey-finish-paywall">
+            <span className="font-mono text-[10px] text-muted-foreground">{t('journey.finish.pitch')}</span>
+            <PremiumUnlockCTA onTogglePremium={onTogglePremium}
+                              label={t('journey.archive.unlock')}
+                              surface="legend-finish" />
+          </div>
+        )}
       </div>
 
       {/* ---- share tiers ---- */}

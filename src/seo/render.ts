@@ -251,6 +251,7 @@ It resists ${def.half.length + def.quarter.length + def.immune.length} of the 18
 
 <a class="cta" href="${builderLink(e)}"><strong>Build a team around ${escapeHtml(e.d)} →</strong>
 <span>Open the coverage analyzer and see what ${escapeHtml(e.d)} leaves exposed across a full six.</span></a>
+<p class="cta-alt"><a href="/journey">…or live a whole trainer career in three minutes — Journey Mode →</a></p>
 
 <h2>What ${escapeHtml(e.d)} is weak to</h2>
 <p>Incoming damage multipliers against ${escapeHtml(e.d)}'s ${escapeHtml(typeLine(e))} typing, for all 18 attacking types.</p>

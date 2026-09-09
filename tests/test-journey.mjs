@@ -305,7 +305,28 @@ const tests = [
         [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
           .filter(el => /journey-archive-\d+$/.test(el.getAttribute('data-testid'))).length);
       assertGte(rows, 1, 'archive should list at least one past issue');
-      // Playing a past issue starts a real run on that issue's seed.
+      // FREE tier: past issues are a premium surface. Clicking one must NOT
+      // start a run — the row is a visible lock (defence in depth also guards
+      // the direct call in JourneyModeDialog.playIssue).
+      await page.evaluate(() => {
+        const el = [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
+          .find(e => /journey-archive-\d+$/.test(e.getAttribute('data-testid')));
+        el.click();
+      });
+      await sleep(600);
+      assert(!(await has(page, '[data-testid="journey-decision"]')),
+        'a free user must not be able to start a past issue');
+      assert(await has(page, '[data-testid="journey-archive-paywall"]'),
+        'the archive lock must be visible to free users');
+
+      // PREMIUM: the same row plays a real run on that issue's seed. The
+      // preview-premium key is what ?unlock=premium persists.
+      await page.evaluate(() => localStorage.setItem('trainerscodex.premium', 'true'));
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await openJourney(page);
+      await page.waitForSelector('[data-testid="journey-archive-toggle"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-archive-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-archive"]', { timeout: 8000 });
       await page.evaluate(() => {
         const el = [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
           .find(e => /journey-archive-\d+$/.test(e.getAttribute('data-testid')));
@@ -732,8 +753,11 @@ const tests = [
     name: 'a ?daily= link shows the daily banner and the same seed in two fresh sessions',
     ownPage: true,
     async fn() {
+      // A fixed PAST date pins the seed across sessions — which makes this an
+      // archive open, a premium surface. `unlock=premium` is the owner
+      // preview path (applyOwnerUnlock) and is exactly how QA exercises it.
       const run = async () => {
-        const page = await newPage({ query: 'daily=2026-08-26&pace=express' });
+        const page = await newPage({ query: 'daily=2026-08-26&pace=express&unlock=premium' });
         try {
           await page.waitForSelector('[data-testid="journey-daily-banner"]', { timeout: 8000 });
           await startRun(page);
@@ -746,6 +770,26 @@ const tests = [
       const b = await run();
       assertEq(b.verdict, a.verdict, 'the daily seed must be identical across sessions');
       assertEq(b.score, a.score, 'the daily score must be identical across sessions');
+    },
+  },
+
+  {
+    name: 'a past ?daily= link on the free tier falls back to a fresh setup, not a run',
+    ownPage: true,
+    async fn() {
+      const page = await newPage({ query: 'daily=2026-08-26&pace=express' });
+      try {
+        // The dialog opens on the deep link, but the past-issue gate clears
+        // the daily context: no banner, no auto-run — a clean setup instead.
+        await page.waitForSelector('[data-testid="journey-setup"]', { timeout: 8000 });
+        await sleep(400);
+        assert(!(await has(page, '[data-testid="journey-daily-banner"]')),
+          'a free user must not get a past daily banner from a deep link');
+        assert(!(await has(page, '[data-testid="journey-decision"]')),
+          'a free user must not be dropped into a past-issue run');
+      } finally {
+        await closePage(page);
+      }
     },
   },
 

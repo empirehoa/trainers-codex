@@ -103,7 +103,9 @@ describe('speciesPage — full sweep', () => {
 
   it('links only to paths this generator actually emits', () => {
     const known = new Set<string>([
-      '/', '/pokemon', '/type', '/legal', '/dmca',
+      // /journey is a real SPA route (public/_redirects rewrites it to the
+      // app shell) — the species pages cross-sell Journey Mode into it.
+      '/', '/pokemon', '/type', '/legal', '/dmca', '/journey',
       ...ALL.map(e => `/pokemon/${e.n}`),
       ...TYPES.map(t => `/type/${t}`),
     ]);

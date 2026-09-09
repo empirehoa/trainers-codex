@@ -1623,6 +1623,9 @@ export default function App() {
           link={JOURNEY_LINK}
           onBuilderHandoff={handleJourneyHandoff}
           onMerch={(run) => { void handleJourneyMerch(run); }}
+          premium={premium}
+          premiumResolved={hasLoadedStorage}
+          onTogglePremium={() => setPremium(p => !p)}
         />
       )}
     </div>

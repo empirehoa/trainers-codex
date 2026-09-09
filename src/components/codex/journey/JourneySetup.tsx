@@ -8,6 +8,10 @@ import {
 } from '@/journey/content';
 import { CAMPAIGNS } from '@/journey/campaign';
 import { listArchive } from '@/journey/archive';
+import { listFinished, listInProgress, type SavedRun } from '@/journey/saves';
+import { PremiumUnlockCTA } from '@/components/codex/PremiumControl';
+import { trackCommerce } from '@/lib/commerce-analytics';
+import { Lock, Play as PlayIcon, Trophy } from 'lucide-react';
 import { dailyIssueNumber, localDateString, namedRng, pick, randomSeed } from '@/journey/prng';
 import {
   currentStreak, hasPlayedToday, loadStreak, repairableDate, repairsRemaining, repairStreak,
@@ -28,11 +32,16 @@ interface Props {
   onPlayDaily: () => void;
   /** Play a past archive issue by its date. */
   onPlayIssue: (date: string) => void;
+  /** Premium entitlement — the archive and extra career saves key off it. */
+  premium: boolean;
+  onTogglePremium?: () => void;
+  /** Resume a saved in-progress career. */
+  onResume: (save: SavedRun) => void;
 }
 
 export function JourneySetup({
   draft, onChange, onStart, sharedSeed, dailyDate, invalidLink,
-  onClearShared, onPlayDaily, onPlayIssue,
+  onClearShared, onPlayDaily, onPlayIssue, premium, onTogglePremium, onResume,
 }: Props) {
   const { t } = useI18n();
   const region = getRegion(draft.regionId);
@@ -45,8 +54,16 @@ export function JourneySetup({
   const repairDate = repairableDate(streak, today);
   const repairsLeft = repairsRemaining(streak);
   const [showArchive, setShowArchive] = useState(false);
+  const inProgress = useMemo(() => listInProgress(), []);
+  const finished = useMemo(() => listFinished(), []);
   const archive = useMemo(
-    () => listArchive({ today, playedDates: streak.playedDates, limit: 60 }),
+    () => listArchive({
+      today,
+      // playedDates lights the ✓; archive completions count for the ✓ too,
+      // they just never count toward the streak (streak.ts).
+      playedDates: [...streak.playedDates, ...(streak.archiveDates ?? [])],
+      limit: 60,
+    }),
     [today, streak.playedDates],
   );
 
@@ -88,6 +105,81 @@ export function JourneySetup({
       {invalidLink && (
         <div className="font-mono text-[10px] text-muted-foreground" data-testid="journey-invalid-seed">
           // {t('journey.setup.seedInvalid')}
+        </div>
+      )}
+
+      {/* ---- careers: resume + Hall of Fame ----
+          The engine has serialized saves since v9; this is the surface. Free
+          resumes the most recent career — one thread of continuity for
+          everyone. Premium keeps the whole shelf plus the trophies. */}
+      {(inProgress.length > 0 || finished.length > 0) && (
+        <div className="rounded-md border p-3 space-y-2" style={{ borderColor: 'hsl(var(--border))' }}
+             data-testid="journey-careers">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            {t('journey.saves.heading')}
+          </div>
+          {inProgress.map((save, i) => {
+            const locked = !premium && i > 0;
+            return (
+              <button key={save.id}
+                      onClick={() => {
+                        if (locked) {
+                          trackCommerce({ event: 'paywall_shown', surface: 'journey-saves' });
+                          return;
+                        }
+                        onResume(save);
+                      }}
+                      aria-disabled={locked}
+                      className={`w-full flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-left transition ${locked ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary/60'}`}
+                      style={{ borderColor: 'hsl(var(--border))' }}
+                      data-testid={`journey-resume-${save.id}`}>
+                <span className="font-mono text-[10px] flex items-center gap-1.5 min-w-0">
+                  {locked ? <Lock size={9} className="text-primary shrink-0" /> : <PlayIcon size={9} className="text-primary shrink-0" />}
+                  <span className="truncate">
+                    {save.setup.trainerName} · {t('journey.saves.chapter', { n: save.chapter })}
+                  </span>
+                </span>
+                <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+                  {locked ? t('journey.saves.locked') : t('journey.saves.resume')}
+                </span>
+              </button>
+            );
+          })}
+          {finished.length > 0 && (
+            premium ? (
+              <div className="space-y-1" data-testid="journey-hof">
+                <div className="font-mono text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Trophy size={9} className="text-primary" /> {t('journey.saves.hof')}
+                </div>
+                {finished.slice(0, 8).map(save => (
+                  <button key={save.id}
+                          onClick={() => onResume(save)}
+                          className="w-full flex items-center justify-between gap-2 rounded border px-2 py-1 text-left transition hover:border-primary/60"
+                          style={{ borderColor: 'hsl(var(--border))' }}
+                          data-testid={`journey-hof-${save.id}`}>
+                    <span className="font-mono text-[10px] truncate">
+                      {save.setup.trainerName}{save.verdictKey ? ` · ${t(save.verdictKey, { region: '' }).trim()}` : ''}
+                    </span>
+                    <span className="font-mono text-[10px] text-primary shrink-0">{save.score ?? '—'}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <button
+                onClick={() => trackCommerce({ event: 'paywall_shown', surface: 'journey-saves' })}
+                className="w-full flex items-center justify-between gap-2 rounded border border-dashed px-2 py-1.5"
+                style={{ borderColor: 'hsl(var(--primary)/0.4)' }}
+                data-testid="journey-hof-paywall">
+                <span className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5">
+                  <Trophy size={9} className="text-primary" />
+                  {t('journey.saves.hofLocked', { n: finished.length })}
+                </span>
+                <PremiumUnlockCTA onTogglePremium={onTogglePremium}
+                                  label={t('journey.archive.unlock')}
+                                  surface="journey-saves" />
+              </button>
+            )
+          )}
         </div>
       )}
 
@@ -303,23 +395,50 @@ export function JourneySetup({
               </button>
               {showArchive && (
                 <div className="mt-1.5 max-h-40 overflow-y-auto space-y-1" data-testid="journey-archive">
-                  {archive.filter(e => !e.today).map(e => (
-                    <button key={e.date}
-                            onClick={() => onPlayIssue(e.date)}
-                            className="w-full flex items-center justify-between gap-2 rounded border px-2 py-1
-                                       text-left transition hover:border-primary/60"
-                            style={{ borderColor: 'hsl(var(--border))' }}
-                            data-testid={`journey-archive-${e.issue}`}>
-                      <span className="font-mono text-[10px]">
-                        {t('journey.archive.issue', { n: e.issue })}
-                        <span className="text-muted-foreground ml-1.5">{e.date}</span>
+                  {/* The daily stays free forever; PAST issues are the premium
+                      archive (the NYT model: sell the back catalogue, never
+                      the day). Locked rows stay visible — a lock you can see
+                      is a pitch, a hidden feature is nothing. */}
+                  {!premium && (
+                    <div className="flex items-center justify-between gap-2 rounded border border-dashed px-2 py-1.5"
+                         style={{ borderColor: 'hsl(var(--primary)/0.4)' }}
+                         data-testid="journey-archive-paywall">
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {t('journey.archive.premiumPitch')}
                       </span>
-                      <span className="font-mono text-[10px] shrink-0"
-                            style={{ color: e.played ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}>
-                        {e.played ? t('journey.archive.played') : t('journey.archive.unplayed')}
-                      </span>
-                    </button>
-                  ))}
+                      <PremiumUnlockCTA onTogglePremium={onTogglePremium}
+                                        label={t('journey.archive.unlock')}
+                                        surface="journey-archive" />
+                    </div>
+                  )}
+                  {archive.filter(e => !e.today).map(e => {
+                    const locked = !premium;
+                    return (
+                      <button key={e.date}
+                              onClick={() => {
+                                if (locked) {
+                                  trackCommerce({ event: 'paywall_shown', surface: 'journey-archive' });
+                                  return;
+                                }
+                                onPlayIssue(e.date);
+                              }}
+                              aria-disabled={locked}
+                              className={`w-full flex items-center justify-between gap-2 rounded border px-2 py-1
+                                         text-left transition ${locked ? 'opacity-60 cursor-not-allowed' : 'hover:border-primary/60'}`}
+                              style={{ borderColor: 'hsl(var(--border))' }}
+                              data-testid={`journey-archive-${e.issue}`}>
+                        <span className="font-mono text-[10px] flex items-center gap-1.5">
+                          {locked && <Lock size={9} className="text-primary shrink-0" data-testid={`journey-archive-lock-${e.issue}`} />}
+                          {t('journey.archive.issue', { n: e.issue })}
+                          <span className="text-muted-foreground">{e.date}</span>
+                        </span>
+                        <span className="font-mono text-[10px] shrink-0"
+                              style={{ color: e.played ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}>
+                          {e.played ? t('journey.archive.played') : t('journey.archive.unplayed')}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

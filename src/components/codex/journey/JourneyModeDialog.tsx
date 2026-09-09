@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Compass, Globe } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -15,7 +16,9 @@ import {
   dailySeed, localDateString, namedRng, pick, randomSeed,
 } from '@/journey/prng';
 import { parseCurrentJourneyLink } from '@/journey/deeplink';
-import { recordDailyPlay, currentStreak } from '@/journey/streak';
+import { recordDailyPlay, recordArchivePlay, currentStreak } from '@/journey/streak';
+import { saveRun, type SavedRun } from '@/journey/saves';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { track } from '@/journey/analytics';
 import { fetchGhosts, ghostsToOpponents, submitGhost } from '@/journey/ghosts';
 import { levelFromXp } from '@/journey/levels';
@@ -36,6 +39,18 @@ interface Props {
   onMerch: (run: JourneyRun, blob: Blob) => void;
   /** Deep-link params captured at app boot, before any history rewriting. */
   link?: ReturnType<typeof parseCurrentJourneyLink>;
+  /** Premium entitlement — gates the archive, extra saves, card finishes. */
+  premium: boolean;
+  /**
+   * Whether App has finished resolving the entitlement (license / owner
+   * unlock / stored preview flag). Deep-link gates must wait for this: the
+   * dialog can mount open from a ?daily= link BEFORE App's storage effect
+   * runs, and gating on the transient premium=false would kick an entitled
+   * user out of their own archive link.
+   */
+  premiumResolved?: boolean;
+  /** Preview toggle passthrough for no-worker deploys (see PremiumControl). */
+  onTogglePremium?: () => void;
 }
 
 function defaultSetup(seed: number, source: RunSource = 'fresh'): Setup {
@@ -78,7 +93,7 @@ function setupFromLink(link: Props['link']): Setup {
   };
 }
 
-export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, link }: Props) {
+export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, link, premium, premiumResolved = true, onTogglePremium }: Props) {
   const { t, locale, setLocale } = useI18n();
 
   const [draft, setDraft] = useState<Setup>(() => setupFromLink(link));
@@ -154,16 +169,48 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     // abandoned run must not extend a streak.
     if (setup.source === 'daily' && setup.dailyDate && !dailyRecorded.current) {
       dailyRecorded.current = true;
-      const state = recordDailyPlay(setup.dailyDate);
-      track({
-        event: 'daily_played',
-        streak: currentStreak(state, setup.dailyDate),
-        date: setup.dailyDate,
-        score: run.score,
-        seed: setup.seed,
-      });
+      if (setup.dailyDate === localDateString()) {
+        const state = recordDailyPlay(setup.dailyDate);
+        track({
+          event: 'daily_played',
+          streak: currentStreak(state, setup.dailyDate),
+          date: setup.dailyDate,
+          score: run.score,
+          seed: setup.seed,
+        });
+      } else {
+        // A PAST issue finished from the archive. It lights the ✓ in the
+        // archive list but never touches playedDates — an archive replay must
+        // not manufacture or repair a streak (see streak.ts).
+        recordArchivePlay(setup.dailyDate);
+      }
     }
+
+    // Hall of Fame: a finished career becomes a trophy save. Replay-exact —
+    // the save is (setup, choices, actions); the score shown is display-only.
+    saveRun({
+      setup, choices, actions,
+      chapter: run.chapterCount,
+      today: localDateString(),
+      finished: true,
+      score: run.score,
+      verdictKey: run.verdict.titleKey,
+    });
   }, [setup, snapshot]);
+
+  // ---------- autosave ----------
+  // Every recorded choice checkpoints the career. A save is a few hundred
+  // bytes ((setup, choices, actions) — simulate() rebuilds the rest), so
+  // saving on each decision is cheaper than deciding when to.
+  useEffect(() => {
+    if (!setup || choices.length === 0) return;
+    if (snapshot?.status !== 'awaiting-decision') return;
+    saveRun({
+      setup, choices, actions,
+      chapter: snapshot.chapters.length,
+      today: localDateString(),
+    });
+  }, [setup, choices, actions, snapshot]);
 
   // ---------- lifecycle ----------
   const beginRun = useCallback((next: Setup) => {
@@ -188,11 +235,36 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
   const start = useCallback(() => beginRun(draft), [beginRun, draft]);
 
   /**
+   * Resume a saved career mid-run: identical to beginRun except the recorded
+   * history rides along. simulate() replays it to the exact chapter the save
+   * checkpointed — resuming IS the replay contract.
+   */
+  const resumeSave = useCallback((save: SavedRun) => {
+    startedAt.current = Date.now();
+    completedRef.current = false;
+    dailyRecorded.current = false;
+    setDraft(save.setup);
+    setSetup(save.setup);
+    setChoices(save.choices);
+    setActions(save.actions);
+    setRevealed(save.choices.length > 0 ? Number.MAX_SAFE_INTEGER : 0);
+    setCardStage('retired');
+  }, []);
+
+  /**
    * Play any daily issue by its date. `playDaily` is this with today's date —
    * an archive issue is not a different mode, it is the same daily on an
    * earlier calendar day, which is what makes the seed reproducible.
    */
   const playIssue = useCallback((date: string) => {
+    // The archive is a premium surface (the daily itself stays free). The
+    // setup screen renders past issues locked; this is the defence in depth
+    // for direct calls and stale UI.
+    if (!premium && date !== localDateString()) {
+      trackCommerce({ event: 'paywall_shown', surface: 'journey-archive' });
+      toast(t('journey.archive.premiumPitch'));
+      return;
+    }
     setDailyDate(date);
     const next: Setup = {
       ...draft,
@@ -202,7 +274,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     };
     setDraft(next);
     beginRun(next);
-  }, [draft, beginRun]);
+  }, [draft, beginRun, premium, t]);
 
   const playDaily = useCallback(() => {
     const date = localDateString();
@@ -216,6 +288,20 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
     setDraft(next);
     beginRun(next);
   }, [draft, beginRun]);
+
+  // A ?issue=N deep link to a PAST daily is an archive open — premium. Free
+  // users get a clean fall-back to a fresh setup (with the paywall counted)
+  // instead of a run they weren't entitled to start.
+  useEffect(() => {
+    if (!open || premium || !premiumResolved) return;
+    if (dailyDate && dailyDate !== localDateString()) {
+      trackCommerce({ event: 'paywall_shown', surface: 'journey-archive' });
+      toast(t('journey.archive.premiumPitch'));
+      setDailyDate(null);
+      setDraft(defaultSetup(randomSeed()));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, premium, premiumResolved, dailyDate]);
 
   const clearShared = useCallback(() => {
     setSharedSeed(null);
@@ -386,6 +472,9 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
             onClearShared={clearShared}
             onPlayDaily={playDaily}
             onPlayIssue={playIssue}
+            premium={premium}
+            onTogglePremium={onTogglePremium}
+            onResume={resumeSave}
           />
         )}
 
@@ -437,6 +526,8 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
             onNewJourney={newJourney}
             onBuilderHandoff={onBuilderHandoff}
             onMerch={onMerch}
+            premium={premium}
+            onTogglePremium={onTogglePremium}
           />
         )}
       </DialogContent>

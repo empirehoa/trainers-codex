@@ -26,6 +26,13 @@ export interface SavedRun {
   chapter: number;
   /** Local date string, display only. */
   savedOn: string;
+  // ── Hall of Fame fields (optional, additive — schema stays 2) ──
+  /** True once the career reached retirement. Finished runs are trophies. */
+  finished?: boolean;
+  /** Final score, display only (replay recomputes the truth). */
+  score?: number;
+  /** Verdict title i18n key, display only. */
+  verdictKey?: string;
 }
 
 function read(): SavedRun[] {
@@ -63,6 +70,9 @@ export function saveRun(opts: {
   actions: PrepareAction[];
   chapter: number;
   today: string;
+  finished?: boolean;
+  score?: number;
+  verdictKey?: string;
 }): SavedRun {
   const id = `${opts.setup.seed}-${opts.setup.campaign ?? 'short'}`;
   const entry: SavedRun = {
@@ -73,10 +83,23 @@ export function saveRun(opts: {
     actions: opts.actions,
     chapter: opts.chapter,
     savedOn: opts.today,
+    finished: opts.finished,
+    score: opts.score,
+    verdictKey: opts.verdictKey,
   };
   const rest = read().filter(s => s.id !== id);
   write([entry, ...rest]);
   return entry;
+}
+
+/** In-progress careers, newest first — the "continue" list. */
+export function listInProgress(): SavedRun[] {
+  return read().filter(s => !s.finished);
+}
+
+/** Finished careers — the Hall of Fame. */
+export function listFinished(): SavedRun[] {
+  return read().filter(s => !!s.finished);
 }
 
 export function deleteSave(id: string): void {

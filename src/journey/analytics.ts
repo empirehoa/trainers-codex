@@ -33,7 +33,9 @@ export type JourneyEventName =
   | 'merch_cta_click'
   | 'daily_played';
 
-export type ShareMethod = 'webshare' | 'copy' | 'download' | 'copy-link';
+// 'clip' is the 9:16 video download — kept distinct from a plain image
+// 'download' so the launch report can say WHICH share artifact converts.
+export type ShareMethod = 'webshare' | 'copy' | 'download' | 'copy-link' | 'clip';
 
 /** Event payloads. Deliberately narrow — anything not listed cannot be sent. */
 export type JourneyEventProps =

@@ -27,6 +27,17 @@ export interface StreakState {
   /** Longest run of consecutive days ever achieved. */
   bestStreak: number;
   /**
+   * Archive completions — PAST issues finished via the premium archive.
+   *
+   * Kept apart from `playedDates` on purpose: playedDates is the streak's
+   * evidence, and a streak is "you showed up that day". Letting an archive
+   * replay backfill playedDates would let anyone reconstruct a year-long
+   * streak in an afternoon, which destroys the thing streaks measure (the NYT
+   * archive works the same way — archive puzzles never count toward streaks).
+   * These dates only light up the ✓ in the archive list.
+   */
+  archiveDates?: string[];
+  /**
    * Repairs used, as the local dates they patched.
    *
    * Every daily game loses users permanently at the first broken streak, and
@@ -44,7 +55,7 @@ export interface StreakState {
 /** Free repairs granted, ever. Not per week — one, so it stays a real choice. */
 export const FREE_REPAIRS = 1;
 
-const EMPTY: StreakState = { playedDates: [], bestStreak: 0, repairsUsed: [] };
+const EMPTY: StreakState = { playedDates: [], bestStreak: 0, archiveDates: [], repairsUsed: [] };
 
 export function loadStreak(): StreakState {
   try {
@@ -64,6 +75,9 @@ export function loadStreak(): StreakState {
     // cheap, and it self-heals a corrupted or hand-edited value.
     return {
       playedDates,
+      archiveDates: Array.isArray(parsed.archiveDates)
+        ? [...new Set(parsed.archiveDates.filter(isValidDateString))].sort()
+        : [],
       bestStreak: Math.max(bestStreak, longestRun(playedDates)),
       repairsUsed,
     };
@@ -130,8 +144,24 @@ export function recordDailyPlay(dateStr = localDateString()): StreakState {
   const next: StreakState = {
     playedDates,
     bestStreak: Math.max(state.bestStreak, longestRun(playedDates)),
+    archiveDates: state.archiveDates ?? [],
     repairsUsed: state.repairsUsed ?? [],
   };
+  saveStreak(next);
+  return next;
+}
+
+/**
+ * Record the completion of a PAST issue played from the archive. Never touches
+ * `playedDates` — see the StreakState doc for why archive plays must not count
+ * toward (or reconstruct) streaks.
+ */
+export function recordArchivePlay(dateStr: string): StreakState {
+  const state = loadStreak();
+  if (!isValidDateString(dateStr)) return state;
+  const existing = state.archiveDates ?? [];
+  if (existing.includes(dateStr) || state.playedDates.includes(dateStr)) return state;
+  const next: StreakState = { ...state, archiveDates: [...existing, dateStr].sort() };
   saveStreak(next);
   return next;
 }
