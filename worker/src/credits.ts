@@ -14,6 +14,7 @@ import { jsonOk, jsonError } from './index';
 import { mintLicense, verifyLicense } from './jwt';
 import { stripeFetch, isAllowedReturnUrl, appendQuery, type StripeSession } from './stripe';
 import { CREDIT_PACKS, grantCredits, getCredits } from './credit-store';
+import { readJsonObject } from './body';
 
 /**
  * POST /credits/checkout
@@ -21,18 +22,17 @@ import { CREDIT_PACKS, grantCredits, getCredits } from './credit-store';
  * Returns: { url, sessionId }
  */
 export async function creditsCheckout(req: Request, env: Env): Promise<Response> {
-  let body: { pack?: string; returnUrl?: string; email?: string };
-  try {
-    body = await req.json();
-  } catch {
+  const body = await readJsonObject(req);
+  if (!body) {
     return jsonError(req, env, 400, 'bad_json');
   }
 
-  const pack = body.pack ? CREDIT_PACKS[body.pack] : undefined;
-  if (!pack || !body.pack) {
+  const packId = typeof body.pack === 'string' ? body.pack : '';
+  const pack = Object.hasOwn(CREDIT_PACKS, packId) ? CREDIT_PACKS[packId] : undefined;
+  if (!pack) {
     return jsonError(req, env, 400, 'bad_pack', { packs: Object.keys(CREDIT_PACKS) });
   }
-  if (!body.returnUrl || !isAllowedReturnUrl(body.returnUrl, env)) {
+  if (typeof body.returnUrl !== 'string' || !isAllowedReturnUrl(body.returnUrl, env)) {
     return jsonError(req, env, 400, 'bad_return_url');
   }
 
@@ -53,12 +53,12 @@ export async function creditsCheckout(req: Request, env: Env): Promise<Response>
     allow_promotion_codes: 'true',
     // Session metadata drives the webhook grant + the /verify grant.
     'metadata[source]': 'trainerscodex_credits',
-    'metadata[pack]': body.pack,
+    'metadata[pack]': packId,
     'metadata[credits]': String(pack.credits),
     'payment_intent_data[metadata][source]': 'trainerscodex_credits',
     'payment_intent_data[metadata][credits]': String(pack.credits),
   };
-  if (body.email) params.customer_email = body.email;
+  if (typeof body.email === 'string' && body.email) params.customer_email = body.email;
 
   const session = await stripeFetch<StripeSession>(env, 'POST', '/checkout/sessions', params);
   return jsonOk(req, env, { url: session.url, sessionId: session.id });
@@ -72,17 +72,16 @@ export async function creditsCheckout(req: Request, env: Env): Promise<Response>
  * Returns: { token, balance, creditsGranted, email }
  */
 export async function creditsVerify(req: Request, env: Env): Promise<Response> {
-  let body: { sessionId?: string };
-  try {
-    body = await req.json();
-  } catch {
+  const body = await readJsonObject(req);
+  if (!body) {
     return jsonError(req, env, 400, 'bad_json');
   }
-  if (!body.sessionId || !/^cs_(test|live)_[A-Za-z0-9]{20,}$/.test(body.sessionId)) {
+  const sessionId = body.sessionId;
+  if (typeof sessionId !== 'string' || !/^cs_(test|live)_[A-Za-z0-9]{20,}$/.test(sessionId)) {
     return jsonError(req, env, 400, 'bad_session_id');
   }
 
-  const session = await stripeFetch<StripeSession>(env, 'GET', `/checkout/sessions/${body.sessionId}`);
+  const session = await stripeFetch<StripeSession>(env, 'GET', `/checkout/sessions/${sessionId}`);
 
   const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
   const done = session.status === 'complete';

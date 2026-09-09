@@ -25,6 +25,7 @@
 import type { Env } from './index';
 import { applyCORS } from './cors';
 import { isSessionRevoked } from './revocation';
+import { readJsonObject } from './body';
 
 export type LicensePlan = 'premium' | 'credits';
 
@@ -40,6 +41,26 @@ export interface LicenseClaims {
   stripe_session: string;
   iat: number;
   exp: number;
+  // Optional not-before. Never minted today; honoured on verify so a future
+  // mint path that sets it cannot be bypassed.
+  nbf?: number;
+}
+
+// HMAC-SHA256 wants at least a 256-bit secret; anything shorter is a
+// misconfiguration (an empty or placeholder JWT_SIGNING_KEY would otherwise
+// mint perfectly valid-looking licenses). Checked at mint AND verify.
+const MIN_SIGNING_KEY_CHARS = 32;
+
+// Longest license we ever mint is 366 days (annual). A token claiming more
+// than this is a mint bug or a forgery attempt, not a longer subscription.
+const MAX_LICENSE_SECONDS = 400 * 24 * 3600;
+
+function requireSigningKey(env: Env): string {
+  const key = env.JWT_SIGNING_KEY;
+  if (typeof key !== 'string' || key.length < MIN_SIGNING_KEY_CHARS) {
+    throw new Error(`JWT_SIGNING_KEY must be at least ${MIN_SIGNING_KEY_CHARS} characters (got ${typeof key === 'string' ? key.length : 0})`);
+  }
+  return key;
 }
 
 const TEXT = new TextEncoder();
@@ -86,7 +107,7 @@ export async function mintLicense(env: Env, claims: Omit<LicenseClaims, 'iss' | 
   const bodyB64 = b64urlEncode(TEXT.encode(JSON.stringify(body)));
   const signingInput = `${headerB64}.${bodyB64}`;
 
-  const key = await getHmacKey(env.JWT_SIGNING_KEY);
+  const key = await getHmacKey(requireSigningKey(env));
   const sig = await crypto.subtle.sign('HMAC', key, TEXT.encode(signingInput));
   const sigB64 = b64urlEncode(sig);
 
@@ -112,19 +133,35 @@ export async function verifyLicense(env: Env, jwt: string): Promise<LicenseClaim
 
   const signingInput = `${headerB64}.${bodyB64}`;
 
-  const key = await getHmacKey(env.JWT_SIGNING_KEY);
-  const sig = b64urlDecode(sigB64);
+  const key = await getHmacKey(requireSigningKey(env));
+  let sig: Uint8Array<ArrayBuffer>;
+  try {
+    sig = b64urlDecode(sigB64);
+  } catch {
+    return null;
+  }
   const ok = await crypto.subtle.verify('HMAC', key, sig, TEXT.encode(signingInput));
   if (!ok) return null;
 
   try {
     const claims = JSON.parse(new TextDecoder().decode(b64urlDecode(bodyB64))) as LicenseClaims;
-    if (claims.exp < Math.floor(Date.now() / 1000)) return null;
+    if (typeof claims !== 'object' || claims === null) return null;
     if (claims.iss !== 'trainerscodex.com') return null;
+    const now = Math.floor(Date.now() / 1000);
+    // Temporal claims must be real numbers. A missing / string / NaN `exp`
+    // used to compare as "not less than now" and pass — a perpetual license.
+    if (!isFiniteNumber(claims.exp) || !isFiniteNumber(claims.iat)) return null;
+    if (claims.exp < now) return null;
+    if (claims.exp > claims.iat + MAX_LICENSE_SECONDS) return null;
+    if (claims.nbf !== undefined && (!isFiniteNumber(claims.nbf) || claims.nbf > now)) return null;
     return claims;
   } catch {
     return null;
   }
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v);
 }
 
 /**
@@ -134,10 +171,8 @@ export async function verifyLicense(env: Env, jwt: string): Promise<LicenseClaim
  * (e.g. after a long offline period, or before opening Premium Studio).
  */
 export async function licenseVerify(req: Request, env: Env): Promise<Response> {
-  let body: { jwt?: string };
-  try {
-    body = await req.json();
-  } catch {
+  const body = await readJsonObject(req);
+  if (!body) {
     return applyCORS(new Response(JSON.stringify({ error: 'bad_json' }), { status: 400, headers: { 'content-type': 'application/json' } }), req, env);
   }
   if (!body.jwt || typeof body.jwt !== 'string') {

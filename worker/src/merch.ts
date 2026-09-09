@@ -22,10 +22,14 @@
 // retail only so we can refuse on drift (a tampered client cannot buy a $50
 // hoodie for $0.50, and a stale client cannot silently undercharge).
 //
-// This route ships DARK. The client path is behind the MERCH_CHECKOUT feature
-// flag (default off) and the whole merch surface additionally sits behind the
-// JOURNEY_MERCH_CTA / counsel gate — see docs/JOURNEY_MODE.md. Building the
-// leg now means flipping the flag is a config change, not a build.
+// This route ships DARK, and the server is the authority on that. The
+// MERCH_CHECKOUT var in wrangler.toml (default "0") must be exactly "1" or
+// /merch/checkout, /printful/order and the webhook fulfilment branch refuse
+// before touching R2, Stripe or Printful — a `?ff=MERCH_CHECKOUT:1` client
+// flip cannot reach fulfilment (audit findings D-2 / D-3). The client flag of
+// the same name is UI only. The whole merch surface additionally sits behind
+// the JOURNEY_MERCH_CTA / counsel gate — see docs/JOURNEY_MODE.md. Flipping
+// the server var is OWNER-ONLY.
 
 // Imports use explicit .ts extensions and only LEAF modules (type-only index
 // import aside) so node:test can load this file directly — gotcha 42.
@@ -33,8 +37,9 @@ import type { Env } from './index.ts';
 import { applyCORS } from './cors.ts';
 import { stripeFetch, isAllowedReturnUrl, appendQuery, type StripeSession } from './stripe-client.ts';
 import {
-  BASE_COST_USD, PRINTFUL_VARIANT_MAP, pfFetch, publicPrintUrl, stripTrademark,
+  catalogBaseCost, catalogVariant, designLabel, merchEnabled, pfFetch, publicPrintUrl, stripTrademark,
 } from './pf-catalog.ts';
+import { guardMultipart } from './body.ts';
 
 // Local JSON response helpers. index.ts has identical ones, but importing
 // index.ts here would drag the whole route table (and its non-leaf imports)
@@ -67,13 +72,14 @@ interface MerchSessionMeta extends Record<string, string> {
 
 /** Server-side retail: base cost marked up, rounded to psychological .99. */
 export function computeRetailUsd(productId: string, markupPct: number): number | null {
-  const base = BASE_COST_USD[productId];
+  const base = catalogBaseCost(productId);
   if (base === undefined || !ALLOWED_MARKUPS.has(markupPct)) return null;
   const raw = base * (1 + markupPct / 100);
   // Round UP to the next .99 so margin never dips below the requested markup.
   const dollars = Math.floor(raw);
   const retail = raw <= dollars + 0.99 ? dollars + 0.99 : dollars + 1.99;
-  return Math.round(retail * 100) / 100;
+  const rounded = Math.round(retail * 100) / 100;
+  return Number.isFinite(rounded) && rounded > 0 ? rounded : null;
 }
 
 /**
@@ -83,8 +89,15 @@ export function computeRetailUsd(productId: string, markupPct: number): number |
  * Returns: { url } — the Stripe-hosted Checkout URL.
  */
 export async function merchCheckout(req: Request, env: Env): Promise<Response> {
+  if (!merchEnabled(env)) {
+    return jsonError(req, env, 503, 'merch_disabled');
+  }
   if (!env.PRINTFUL_API_KEY) {
     return jsonError(req, env, 503, 'printful_not_configured');
+  }
+  const guard = guardMultipart(req);
+  if (!guard.ok) {
+    return jsonError(req, env, guard.status, guard.code, guard.status === 413 ? { max_bytes: guard.maxBytes } : undefined);
   }
 
   const form = await req.formData();
@@ -105,7 +118,7 @@ export async function merchCheckout(req: Request, env: Env): Promise<Response> {
   if (file.size > 12 * 1024 * 1024) {
     return jsonError(req, env, 413, 'file_too_large', { max_mb: 12 });
   }
-  if (!PRINTFUL_VARIANT_MAP[productId]) {
+  if (!catalogVariant(productId)) {
     return jsonError(req, env, 400, 'unknown_product', { product: productId });
   }
 
@@ -119,20 +132,23 @@ export async function merchCheckout(req: Request, env: Env): Promise<Response> {
     return jsonError(req, env, 409, 'price_mismatch', { server: retail, client: expectedRetail });
   }
 
-  let metadata: { teamName?: string; trainer?: string; region?: string } = {};
-  try { metadata = JSON.parse(metadataRaw); } catch { /* absent metadata is fine */ }
+  let metadata: { teamName?: unknown; trainer?: unknown; region?: unknown } = {};
+  try {
+    const parsed: unknown = JSON.parse(metadataRaw);
+    if (typeof parsed === 'object' && parsed !== null) metadata = parsed as typeof metadata;
+  } catch { /* absent metadata is fine */ }
 
-  // Stage the print file where fulfillment (and Printful) can reach it. The
-  // key carries no PII; the session metadata is what ties it to the buyer.
+  // The print file is staged in R2 AFTER Stripe accepts the session (below):
+  // the key is decided here so it can ride in the session metadata, but no
+  // bytes are written until Stripe has validated the price. A request that
+  // Stripe rejects therefore leaves nothing behind in the bucket.
   const r2Key = `merch-pending/${crypto.randomUUID()}.png`;
-  await env.PRINTS_BUCKET.put(r2Key, await file.arrayBuffer(), {
-    httpMetadata: { contentType: 'image/png' },
-  });
 
-  const cleanTeam = metadata.teamName ? stripTrademark(metadata.teamName) : '';
-  const productName = stripTrademark(
-    `Trainer's Codex · ${design} · ${productId}${cleanTeam ? ` · ${cleanTeam}` : ''}`,
-  );
+  // Every client-supplied fragment of the line-item name goes through the
+  // listing sanitizer; the design id is mapped to a fixed label rather than
+  // echoed. The fixed prefix guarantees the name is never empty.
+  const cleanTeam = typeof metadata.teamName === 'string' ? stripTrademark(metadata.teamName) : '';
+  const productName = `Trainer's Codex · ${designLabel(design)} · ${productId}${cleanTeam ? ` · ${cleanTeam}` : ''}`;
 
   const meta: MerchSessionMeta = {
     source: 'trainerscodex_merch',
@@ -163,6 +179,16 @@ export async function merchCheckout(req: Request, env: Env): Promise<Response> {
   for (const [k, v] of Object.entries(meta)) params[`metadata[${k}]`] = v;
 
   const session = await stripeFetch<StripeSession>(env, 'POST', '/checkout/sessions', params);
+
+  // Stage the print file where fulfillment (and Printful) can reach it. The
+  // key carries no PII; the session metadata is what ties it to the buyer. If
+  // this put fails the request 500s and the buyer never receives the session
+  // URL, so the (unpaid) session simply expires — a paid order can never point
+  // at a missing file.
+  await env.PRINTS_BUCKET.put(r2Key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: 'image/png' },
+  });
+
   return jsonOk(req, env, { url: session.url, sessionId: session.id, retail: retail.toFixed(2) });
 }
 
@@ -190,6 +216,14 @@ export async function fulfillMerchOrder(env: Env, session: Record<string, unknow
   const meta = (session.metadata as MerchSessionMeta | undefined);
   if (!meta || meta.source !== 'trainerscodex_merch') return;
 
+  // Kill switch. Returning (not throwing) keeps the webhook 200 so Stripe does
+  // not retry forever; the paid session is logged loudly for manual review.
+  // Nothing below this line runs, so Printful is never contacted.
+  if (!merchEnabled(env)) {
+    console.error(`[merch] MERCH_CHECKOUT is off — NOT fulfilling paid session ${session.id} (${meta.product}, $${meta.retail}); review manually`);
+    return;
+  }
+
   const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
   if (!paid) {
     console.warn(`[merch] session ${session.id} completed but not paid (${session.payment_status}) — skipping`);
@@ -205,7 +239,7 @@ export async function fulfillMerchOrder(env: Env, session: Record<string, unknow
     }
   }
 
-  const mapping = PRINTFUL_VARIANT_MAP[meta.product];
+  const mapping = catalogVariant(meta.product);
   if (!mapping) throw new Error(`merch_unknown_product:${meta.product}`);
 
   // checkout.session.completed carries shipping under either key by API era:

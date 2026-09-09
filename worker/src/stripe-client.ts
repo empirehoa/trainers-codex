@@ -13,6 +13,8 @@ const STRIPE_API_BASE = 'https://api.stripe.com/v1';
 
 export interface StripeSession {
   id: string;
+  // 'subscription' for Premium Pack; 'payment' for credit packs and merch.
+  mode: 'payment' | 'subscription' | 'setup';
   payment_status: 'paid' | 'unpaid' | 'no_payment_required';
   status: 'open' | 'complete' | 'expired';
   customer: string | null;

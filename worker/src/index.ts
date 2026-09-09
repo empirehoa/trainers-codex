@@ -36,6 +36,12 @@ export interface Env {
   STRIPE_PRICE_CREDITS_5?: string;    // $6.99 → 5 credits
   STRIPE_PRICE_CREDITS_20?: string;   // $19.99 → 20 credits
   PRINTFUL_STORE_ID: string;
+  // Server-side merch kill switch. Anything that can reach Printful or create a
+  // paid physical-goods Checkout session (/merch/checkout, /printful/order, the
+  // webhook fulfilment branch) refuses unless this is exactly '1'. Default "0"
+  // in wrangler.toml. OWNER-ONLY: flipping it is the counsel gate, not a
+  // config tweak — the client MERCH_CHECKOUT flag is UI only.
+  MERCH_CHECKOUT?: string;
   // Secrets
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;
@@ -65,7 +71,8 @@ const ROUTES: Route[] = [
   { method: 'POST', path: '/license/verify',   handler: licenseVerify,   ratePerMin: 60 },
   { method: 'POST', path: '/printful/order',   handler: printfulOrder,   ratePerMin: 6  },
   // Paid merch: buyer-facing Stripe Checkout for a physical product. Ships
-  // dark behind the client MERCH_CHECKOUT flag; see worker/src/merch.ts.
+  // dark behind the SERVER MERCH_CHECKOUT var (default "0") as well as the
+  // client flag of the same name; see worker/src/merch.ts.
   { method: 'POST', path: '/merch/checkout',   handler: merchCheckout,   ratePerMin: 6  },
   // v6: AI image generation — premium-gated, stricter rate limit
   { method: 'POST', path: '/ai/trainer-card',  handler: aiTrainerCard,   ratePerMin: 5  },
@@ -101,7 +108,22 @@ export default {
         return jsonError(req, env, 403, 'origin_not_allowed');
       }
       if (route.ratePerMin > 0) {
-        const limited = await rateLimit(req, env, route.path, route.ratePerMin);
+        // KV is a network dependency. If the limiter itself fails (binding
+        // missing, KV outage) every money route FAILS CLOSED with a controlled
+        // JSON 503 — not an unhandled throw that surfaces as an opaque
+        // Cloudflare error page without CORS. /health alone degrades to
+        // "allow" so uptime monitors can still distinguish a KV outage from
+        // a dead worker.
+        let limited: Response | null;
+        try {
+          limited = await rateLimit(req, env, route.path, route.ratePerMin);
+        } catch (e) {
+          console.error(`[${route.path}] rate limiter unavailable`, e);
+          if (route.path !== '/health') {
+            return jsonError(req, env, 503, 'rate_limit_unavailable');
+          }
+          limited = null;
+        }
         if (limited) return limited;
       }
     }
@@ -110,9 +132,10 @@ export default {
       const resp = await route.handler(req, env, ctx);
       return applyCORS(resp, req, env);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'internal';
+      // The real message (which may contain upstream Stripe/Printful/fal
+      // response text) goes to the log only; the client gets a generic code.
       console.error(`[${route.path}]`, e);
-      return jsonError(req, env, 500, msg);
+      return jsonError(req, env, 500, 'internal');
     }
   },
 };

@@ -53,6 +53,9 @@ function memKV(): KVish & { store: Map<string, string> } {
 
 function envWith(kv: KVish | undefined, onFetch: (url: string, init?: RequestInit) => unknown) {
   return {
+    // Fulfilment is behind the server kill switch; these tests exercise the
+    // enabled path. merch-guard.test.ts covers the disabled default.
+    MERCH_CHECKOUT: '1',
     PRINTFUL_API_KEY: 'pf_test',
     PRINTFUL_STORE_ID: '18253803',
     AI_QUOTA_KV: kv,
