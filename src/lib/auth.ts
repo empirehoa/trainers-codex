@@ -59,6 +59,13 @@ export interface AuthAdapter {
 interface SupabaseConfig {
   url: string;
   anonKey: string;
+  /**
+   * Base64 SHA-384 of the esm.sh supabase-js shim, injected per deploy by
+   * scripts/inject-config.mjs from SUPABASE_SHA384 (docs/SECURITY.md runbook).
+   * Overrides the compiled-in SUPABASE_BUNDLE_SHA384 so a hash rotation needs
+   * no rebuild. Absent/empty → falls back to the constant.
+   */
+  sha384?: string;
 }
 
 export interface WorkerEndpointConfig {
@@ -152,7 +159,10 @@ interface CloudRow {
 // recommended for production, but allowed for staging).
 const SUPABASE_BUNDLE_VERSION = '2.45.4';
 const SUPABASE_BUNDLE_URL = 'https://esm.sh/@supabase/supabase-js@' + SUPABASE_BUNDLE_VERSION;
-const SUPABASE_BUNDLE_SHA384 = ''; // Populated post-deploy via docs/SECURITY.md runbook.
+// Empty until the owner computes it (docs/SECURITY.md runbook) — either here
+// or, preferably, as SUPABASE_SHA384 in the deploy env, which inject-config.mjs
+// places in config.supabase.sha384 and wins over this constant.
+const SUPABASE_BUNDLE_SHA384 = '';
 
 async function verifyAndImport(url: string, expectedSha384: string): Promise<unknown> {
   // The esm.sh response is a small re-export shim with internal relative
@@ -184,7 +194,7 @@ async function getClient(): Promise<SupabaseClientLike | null> {
 
   loadingPromise = (async () => {
     try {
-      const mod = await verifyAndImport(SUPABASE_BUNDLE_URL, SUPABASE_BUNDLE_SHA384);
+      const mod = await verifyAndImport(SUPABASE_BUNDLE_URL, cfg.sha384 || SUPABASE_BUNDLE_SHA384);
       const createClient = (mod as { createClient: (url: string, key: string) => SupabaseClientLike }).createClient;
       cachedClient = createClient(cfg.url, cfg.anonKey);
       return cachedClient;

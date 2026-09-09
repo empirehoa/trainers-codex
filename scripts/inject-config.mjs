@@ -12,7 +12,12 @@
 //   WORKER_URL          — https://api.trainerscodex.com (or workers.dev)
 //
 // Optional:
-//   SUPABASE_SHA384     — populated by docs/SECURITY.md runbook
+//   SUPABASE_SHA384     — base64 SHA-384 of the esm.sh supabase-js shim
+//                         (docs/SECURITY.md runbook). Injected as
+//                         config.supabase.sha384; src/lib/auth.ts prefers it
+//                         over its compiled-in constant, so rotating the hash
+//                         needs no rebuild. Unset → the integrity check stays
+//                         off, and the deploy log says so.
 //
 // Outputs:
 //   /tmp/tc-deploy/index.html  — bundle with config injected
@@ -38,10 +43,17 @@ if (missing.length) {
   process.exit(1);
 }
 
+const sha384 = (process.env.SUPABASE_SHA384 || '').trim();
+if (sha384 && !/^[A-Za-z0-9+/]{64}$/.test(sha384)) {
+  console.error('SUPABASE_SHA384 must be the base64 SHA-384 digest (64 chars, no "sha384-" prefix)');
+  process.exit(1);
+}
+
 const cfg = {
   supabase: {
     url: process.env.SUPABASE_URL,
     anonKey: process.env.SUPABASE_ANON_KEY,
+    ...(sha384 ? { sha384 } : {}),
   },
   worker: {
     url: process.env.WORKER_URL.replace(/\/+$/, ''),
@@ -106,3 +118,6 @@ execFileSync('node', [join(PROJECT_ROOT, 'scripts/gen-seo-pages.ts'), '--out', '
 console.log(`✓ Wrote /tmp/tc-deploy/index.html (${(injected.length / 1024).toFixed(1)} KB)`);
 console.log(`  Supabase: ${cfg.supabase.url}`);
 console.log(`  Worker:   ${cfg.worker.url}`);
+console.log(sha384
+  ? `  Supabase SDK integrity: sha384-${sha384}`
+  : '  Supabase SDK integrity: OFF (SUPABASE_SHA384 not set — see docs/SECURITY.md)');

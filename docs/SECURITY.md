@@ -99,7 +99,11 @@ const sri = btoa(String.fromCharCode(...new Uint8Array(h)));
 console.log('SHA-384 base64:', sri);
 ```
 
-Paste the result into `SUPABASE_BUNDLE_SHA384` in `src/lib/auth.ts`, rebuild, redeploy. The empty default disables the check (intended for development only); the deploy runbook in `docs/DEPLOYMENT.md` requires the hash to be set.
+Set the result as `SUPABASE_SHA384` in the deploy environment: `scripts/inject-config.mjs` injects it as `config.supabase.sha384` and `src/lib/auth.ts` prefers it over the compiled-in `SUPABASE_BUNDLE_SHA384`, so a rotation needs no rebuild (pasting it into the constant still works as a fallback). The deploy log prints `Supabase SDK integrity: OFF` while the variable is unset.
+
+**Status 2026-09-09: the hash is still empty on the live deploy.** The wiring exists (`tests/test-security.mjs` proves the env var reaches the staged config), but the value has to be computed by the owner from a network that can reach `esm.sh` — this sandbox cannot. Until then the integrity check is off and the CDN is trusted.
+
+**Known limitation:** the `esm.sh` URL returns a small shim that `export … from` a second, versioned module URL. The hash pins the shim only; the module it re-exports is fetched by the browser afterwards and is not hashed. This still catches version drift and a tampered entry point, but a compromise that keeps the shim byte-identical and swaps the target would pass. Vendoring `@supabase/supabase-js` into the bundle (it is already an npm dependency) is the fix that removes runtime CDN code altogether.
 
 ### Rotation
 
@@ -256,7 +260,7 @@ The regex restricts the captured group to `[0-9a-z,\-]+`, so the parsed share co
 | Schema.org JSON-LD | `"description": "Pokemon team builder..."` | ✓ clean |
 | Merch slogan catalog | One slogan with `POKÉDEX` | **Fixed** (finding #3) |
 | Pokémon sprites on prints | User-generated configuration of their team, transformative canvas output | Gray area; transformative-use defense (same as Etsy / Redbubble fan art) |
-| Pokémon names in printed designs | User-typed via gym-name / badge-text inputs; no auto-population from species names | ✓ clean (user-content boundary) |
+| Pokémon names in printed designs | Nickname or type/role label only (species display names removed 2026-09-09); gym-name / badge-text remain user-typed | ✓ clean (user-content boundary) |
 | TCG card images | Loaded via pokemontcg.io's documented public API, displayed in-app only, never printed | ✓ clean |
 | Footer disclaimer | "// trainer's codex v5.0 · independent fan tool · not affiliated with nintendo / game freak / the pokémon company" | ✓ in place at `src/App.tsx:783` |
 
@@ -332,7 +336,7 @@ These were not addressed in this session and are flagged for the v5.1 milestone:
 3. **Subresource Integrity migration if `esm.sh` adds native dynamic-import SRI support.** Once the HTML spec lands `import("url", { integrity: "sha384-..." })`, swap the verify-then-import shim for the native form. (Issue WHATWG/HTML#3014 — track via WPT.)
 4. **A `report-uri` for CSP violations.** Right now the policy is silent on violation; wiring `report-uri https://csp.trainerscodex.com/violations` and a Worker route to log them would surface XSS attempts early.
 5. **Supabase RLS audit.** The schema in `docs/DEPLOYMENT.md` § "Supabase setup" includes RLS policies. Once the project is up, verify against [supabase-audit](https://github.com/supabase/supabase-audit) before opening sign-up.
-6. **Automated dependency scanning.** Add `pnpm audit --prod` to CI when CI exists; today the repo has zero runtime dependencies with known CVEs (verified at audit time).
+6. **Automated dependency scanning.** Done 2026-09-09: `.github/workflows/ci.yml` runs `pnpm audit --prod` at the root on every push (the worker audit is separate). Zero runtime dependencies with known CVEs at the time of wiring.
 
 ---
 

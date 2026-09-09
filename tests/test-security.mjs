@@ -7,6 +7,7 @@
 // monetizable path stays behind the Worker where the secrets actually live.
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join, dirname, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { runSuite, assert, closeBrowser } from './harness.mjs';
@@ -166,6 +167,34 @@ const tests = [
     },
   },
   {
+    name: 'the Supabase SDK integrity hash is wired from the deploy env into the bundle',
+    async fn() {
+      // SUPABASE_BUNDLE_SHA384 shipped as '' and the SUPABASE_SHA384 env var
+      // was documented but never read, so the integrity check was dead with
+      // no way to turn it on short of a rebuild. The client now prefers
+      // config.supabase.sha384; the staging script must carry it through.
+      assert(/\.sha384\|\|/.test(bundle), 'auth.ts no longer prefers config.supabase.sha384 over the compiled constant');
+      const fake = 'A'.repeat(64);
+      execFileSync('node', [join(ROOT, 'scripts/inject-config.mjs')], {
+        env: {
+          ...process.env,
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_ANON_KEY: 'sb_publishable_test',
+          WORKER_URL: 'https://api.example.test/',
+          SUPABASE_SHA384: fake,
+        },
+        stdio: 'pipe',
+      });
+      const staged = readFileSync('/tmp/tc-deploy/index.html', 'utf8');
+      const m = staged.match(/window\.TRAINERS_CODEX_CONFIG = (\{[\s\S]*?\});\s*<\/script>/);
+      assert(m, 'staged index.html carries no TRAINERS_CODEX_CONFIG block');
+      const cfg = JSON.parse(m[1]);
+      assert(cfg.supabase.sha384 === fake, `config.supabase.sha384 = ${JSON.stringify(cfg.supabase.sha384)}`);
+      assert(cfg.worker.url === 'https://api.example.test', 'worker URL must be normalised without a trailing slash');
+    },
+  },
+
+  {
     name: 'every host the client fetches is allowed by the shipped connect-src',
     async fn() {
       // The paste-link import (pokepast.es, pokebin.com, teams.pokemonshowdown.com)
@@ -211,6 +240,27 @@ const tests = [
       }
       assert(!existsSync(join(ROOT, 'deploy/index.html')),
         'deploy/index.html is a stale pre-built bundle — the deploy is staged from bundle.html by scripts/inject-config.mjs');
+    },
+  },
+
+  {
+    name: 'legal.html discloses what the client actually sends and every price it charges',
+    async fn() {
+      // D-10 (DRAFT wording, pending counsel — the markers are greppable):
+      // the privacy policy listed accounts, teams, photos, payment, shipping
+      // and logs, but not the anonymous event analytics or that Journey ghost
+      // submissions (typed trainer name, score, roster, seed) are shown to
+      // other players; the ToS quoted the monthly price only.
+      const legal = readFileSync(join(ROOT, 'public/legal.html'), 'utf8');
+      const privacy = legal.slice(legal.indexOf('<h2>Privacy Policy</h2>'));
+      assert(/anonymous usage events/i.test(privacy), 'privacy policy does not disclose the anonymous usage events');
+      assert(/random identifier stored in your browser/i.test(privacy), 'privacy policy does not describe the per-browser id');
+      assert(/ghost/i.test(privacy) && /shown to other players/i.test(privacy), 'privacy policy does not disclose that Journey ghosts are visible to other players');
+      const control = readFileSync(join(ROOT, 'src/components/codex/PremiumControl.tsx'), 'utf8');
+      const prices = new Set([...control.matchAll(/\$(\d+(?:\.\d{2})?)\/(mo|yr)/g)].map(m => `${m[1]}/${m[2]}`));
+      assert(prices.has('4.99/mo') && prices.has('39/yr'), `PremiumControl prices changed: ${[...prices].join(', ')} — update legal.html and this test`);
+      const tos = legal.slice(legal.indexOf('<h3>3. Premium subscriptions</h3>'), legal.indexOf('<h3>4.'));
+      assert(/\$4\.99\/month/.test(tos) && /\$39\/year/.test(tos), 'ToS §3 does not list both the monthly and the annual price');
     },
   },
 
