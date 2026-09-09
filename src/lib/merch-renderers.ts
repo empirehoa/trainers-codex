@@ -4,11 +4,24 @@
 // directly onto the garment.
 //
 // Mug + mousepad + poster designs are produced full-bleed (with backgrounds).
+//
+// ── The bright line: NO OFFICIAL ART ON A PRINT ─────────────────────────────
+// Everything this module outputs can reach Printful fulfilment, so it is built
+// from our own vector work (badges, rings, type blocks, typography) plus DERIVED
+// silhouettes: the pixel sprite is drawn to an offscreen canvas and reduced to
+// an alpha mask recoloured in the type colour (src/lib/silhouette.ts — the same
+// pipeline the Journey Legend Card uses). No 'artwork-*' (official Sugimori
+// art) or 'home-*' (3D render) variant is ever requested, no fetched image is
+// ever drawn onto the print canvas directly, and a sprite that fails or hangs
+// degrades to a type-coloured glyph (gotcha 11). Species names are not printed
+// unless the user typed them as a nickname — every other caption is a type,
+// role or slot label. Sprite-mirror art is for in-app reference only.
 
 import type { Pokemon, TeamMember, TrainerProfile } from './types';
 import { TYPE_COLORS } from './constants';
-import { spriteUrl, padId, POKEMON_BY_ID } from './pokemon';
+import { padId, POKEMON_BY_ID } from './pokemon';
 import type { MerchProduct } from './merch';
+import { fitText, loadSilhouette } from './silhouette';
 
 export type MerchDesign =
   | 'crest'           // Circular team crest with central trainer mark
@@ -187,33 +200,62 @@ export function badgesForRegion(region: string): GymBadgeInfo[] {
 // references GYM_BADGES without a region.
 export const GYM_BADGES: GymBadgeInfo[] = badgesForRegion('kanto');
 
-function loadImg(src: string): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => res(img);
-    img.onerror = () => rej(new Error('img failed: ' + src));
-    img.src = src;
-  });
+/** Resolution of every silhouette mask. Pixel sprites are 96×96; the mask is
+ *  upscaled with smoothing so edges soften rather than reveal sprite pixels,
+ *  and 1024 keeps a 300 DPI figure crisp at every product size in the catalog. */
+const SILHOUETTE_PX = 1024;
+
+interface TeamFigure {
+  pokemon: Pokemon;
+  member: TeamMember;
+  /** Alpha-mask silhouette in the caller's colours — never the sprite itself. */
+  figure: HTMLCanvasElement;
 }
 
-async function loadTeam(team: (TeamMember | null)[]): Promise<Array<{ pokemon: Pokemon; member: TeamMember; img: HTMLImageElement }>> {
+/** Type colours for a mon: primary fill + secondary-type accent. */
+function typeColors(pokemon: Pokemon): { color: string; accent: string } {
+  const primary = pokemon.types[0];
+  const color = TYPE_COLORS[primary] ?? '#9fa19f';
+  const accent = TYPE_COLORS[pokemon.types[1] ?? primary] ?? color;
+  return { color, accent };
+}
+
+/**
+ * Load every filled slot as a silhouette. `palette` picks the ink: by default
+ * the mon's own type colours; a design that places figures on a type-coloured
+ * backing passes a contrasting ink instead so the shape stays legible.
+ */
+async function loadTeam(
+  team: (TeamMember | null)[],
+  palette: (pokemon: Pokemon) => { color: string; accent: string } = typeColors,
+): Promise<TeamFigure[]> {
   const filled = team.filter((m): m is TeamMember => m !== null);
   const results = await Promise.all(filled.map(async m => {
     const pokemon = POKEMON_BY_ID[m.id];
     if (!pokemon) return null;
-    try {
-      const variant = m.shiny ? 'artwork-shiny' : 'artwork-default';
-      const img = await loadImg(spriteUrl(m.id, variant));
-      return { pokemon, member: m, img };
-    } catch {
-      try {
-        const img = await loadImg(spriteUrl(m.id, 'pixel-default'));
-        return { pokemon, member: m, img };
-      } catch { return null; }
-    }
+    const { color, accent } = palette(pokemon);
+    const figure = await loadSilhouette(m.id, m.shiny, SILHOUETTE_PX, color, accent);
+    return { pokemon, member: m, figure };
   }));
-  return results.filter((x): x is { pokemon: Pokemon; member: TeamMember; img: HTMLImageElement } => x !== null);
+  return results.filter((x): x is TeamFigure => x !== null);
+}
+
+/** Single-figure variant for avatars and signature mons. */
+function loadFigure(id: number, color: string, accent: string): Promise<HTMLCanvasElement> {
+  return loadSilhouette(id, false, SILHOUETTE_PX, color, accent);
+}
+
+/**
+ * The caption under a figure. A nickname is the user's own text and prints
+ * verbatim; without one we print the type pairing ("FIRE · FLYING") — never
+ * the species name.
+ */
+function figureLabel(entry: { pokemon: Pokemon; member: TeamMember }): string {
+  return (entry.member.nickname || roleLabel(entry.pokemon)).toUpperCase();
+}
+
+function roleLabel(pokemon: Pokemon): string {
+  return pokemon.types.join(' · ').toUpperCase();
 }
 
 function setupCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
@@ -284,8 +326,9 @@ async function renderCrest(c: CanvasRenderingContext2D, region: { x: number; y: 
   c.arc(cx, cy, radius * 0.93, 0, Math.PI * 2);
   c.fill();
 
-  // Sub-ring of sprites — 6 positions around the center
-  const imgs = await loadTeam(ctx.team);
+  // Sub-ring of silhouettes — 6 positions around the center. Gold-to-cream ink
+  // on the dark disc, with the mon's type colour as the halo behind it.
+  const imgs = await loadTeam(ctx.team, () => ({ color: '#f5ead2', accent: '#fde047' }));
   const subRadius = radius * 0.66;
   const spriteSize = radius * 0.36;
   imgs.forEach((entry, i) => {
@@ -304,9 +347,9 @@ async function renderCrest(c: CanvasRenderingContext2D, region: { x: number; y: 
     c.arc(sx, sy, spriteSize * 0.85, 0, Math.PI * 2);
     c.fill();
 
-    // Sprite
+    // Silhouette
     c.imageSmoothingEnabled = true;
-    c.drawImage(entry.img, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
+    c.drawImage(entry.figure, sx - spriteSize / 2, sy - spriteSize / 2, spriteSize, spriteSize);
   });
 
   // Central monogram/badge text — trainer initials or "TC"
@@ -388,7 +431,8 @@ function drawArchedText(
 // Best for: tees back-print, mugs, mousepad, posters
 // ============================================================
 async function renderRoster(c: CanvasRenderingContext2D, region: { x: number; y: number; w: number; h: number }, ctx: MerchRenderContext) {
-  const imgs = await loadTeam(ctx.team);
+  // Ink silhouettes stamped on type-coloured pills.
+  const imgs = await loadTeam(ctx.team, () => ({ color: '#0c0a08', accent: '#2a2418' }));
 
   // Top: trainer name banner with serif type
   c.fillStyle = '#0c0a08';
@@ -406,7 +450,7 @@ async function renderRoster(c: CanvasRenderingContext2D, region: { x: number; y:
     );
   }
 
-  // Horizontal sprite line
+  // Horizontal silhouette line
   const lineY = region.y + region.h * 0.50;
   const spriteSize = Math.min(region.w / 7, region.h * 0.55);
   const totalWidth = spriteSize * imgs.length + spriteSize * 0.2 * (imgs.length - 1);
@@ -416,7 +460,7 @@ async function renderRoster(c: CanvasRenderingContext2D, region: { x: number; y:
     const sx = startX + i * (spriteSize * 1.2) + spriteSize / 2;
     const primary = TYPE_COLORS[entry.pokemon.types[0]];
 
-    // Inverse-bordered pill behind sprite
+    // Inverse-bordered pill behind the silhouette
     c.fillStyle = primary;
     c.beginPath();
     const hasRoundRect = typeof (c as { roundRect?: unknown }).roundRect === 'function';
@@ -429,18 +473,18 @@ async function renderRoster(c: CanvasRenderingContext2D, region: { x: number; y:
     c.fill();
 
     c.imageSmoothingEnabled = true;
-    c.drawImage(entry.img, sx - spriteSize * 0.45, lineY - spriteSize * 0.45, spriteSize * 0.9, spriteSize * 0.9);
+    c.drawImage(entry.figure, sx - spriteSize * 0.45, lineY - spriteSize * 0.45, spriteSize * 0.9, spriteSize * 0.9);
   });
 
-  // Names underneath
+  // Captions underneath — nickname or type pairing, shrunk to the pill width.
   c.fillStyle = '#0c0a08';
-  c.font = `bold ${region.w * 0.022}px "JetBrains Mono", monospace`;
   c.textAlign = 'center';
+  const capPx = region.w * 0.022;
   imgs.forEach((entry, i) => {
     const sx = startX + i * (spriteSize * 1.2) + spriteSize / 2;
-    const name = (entry.member.nickname || entry.pokemon.display).toUpperCase();
-    const short = name.length > 12 ? name.slice(0, 11) + '…' : name;
-    c.fillText(short, sx, lineY + spriteSize / 2 + region.w * 0.030);
+    const label = figureLabel(entry);
+    fitText(c, label, spriteSize * 1.1, capPx, px => `bold ${px}px "JetBrains Mono", monospace`, capPx * 0.6);
+    c.fillText(label, sx, lineY + spriteSize / 2 + region.w * 0.030);
   });
 
   // Foot: dex codes
@@ -489,31 +533,25 @@ async function renderIdCard(c: CanvasRenderingContext2D, region: { x: number; y:
   c.textAlign = 'center';
   c.fillText('// AVATAR', avatarX + avatarSize / 2, avatarY + avatarSize / 2);
 
-  // Try to load avatar Pokémon sprite if defined
+  // Avatar: the trainer's chosen mon as a silhouette in its own type colours.
   if (ctx.trainer?.avatarId) {
     const av = ctx.trainer.avatarId;
-    const avId = parseInt(av, 10);
-    if (!Number.isNaN(avId)) {
-      try {
-        const img = await loadImg(spriteUrl(avId, 'artwork-default'));
-        c.imageSmoothingEnabled = true;
-        c.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
-      } catch { /* leave placeholder */ }
-    } else {
-      // Look up well-known names
-      const knownAvatars: Record<string, number> = {
-        pikachu: 25, eevee: 133, charmander: 4, bulbasaur: 1, squirtle: 7,
-        mimikyu: 778, gengar: 94, snorlax: 143, lucario: 448, umbreon: 197,
-        sylveon: 700, sprigatito: 906,
-      };
-      const id = knownAvatars[av];
-      if (id) {
-        try {
-          const img = await loadImg(spriteUrl(id, 'artwork-default'));
-          c.imageSmoothingEnabled = true;
-          c.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
-        } catch { /* skip */ }
-      }
+    // Well-known avatar handles from the profile picker map to dex ids.
+    const knownAvatars: Record<string, number> = {
+      pikachu: 25, eevee: 133, charmander: 4, bulbasaur: 1, squirtle: 7,
+      mimikyu: 778, gengar: 94, snorlax: 143, lucario: 448, umbreon: 197,
+      sylveon: 700, sprigatito: 906,
+    };
+    const parsed = parseInt(av, 10);
+    const avId = Number.isNaN(parsed) ? knownAvatars[av] : parsed;
+    const avMon = avId ? POKEMON_BY_ID[avId] : undefined;
+    if (avMon) {
+      const { color, accent } = typeColors(avMon);
+      const figure = await loadFigure(avMon.id, color, accent);
+      c.fillStyle = '#fffbf0';
+      c.fillRect(avatarX, avatarY, avatarSize, avatarSize);
+      c.imageSmoothingEnabled = true;
+      c.drawImage(figure, avatarX + avatarSize * 0.06, avatarY + avatarSize * 0.06, avatarSize * 0.88, avatarSize * 0.88);
     }
   }
 
@@ -568,7 +606,7 @@ async function renderIdCard(c: CanvasRenderingContext2D, region: { x: number; y:
     c.strokeRect(sx, sy, slotSize, slotSize);
 
     c.imageSmoothingEnabled = true;
-    c.drawImage(entry.img, sx + slotSize * 0.05, sy + slotSize * 0.05, slotSize * 0.90, slotSize * 0.90);
+    c.drawImage(entry.figure, sx + slotSize * 0.05, sy + slotSize * 0.05, slotSize * 0.90, slotSize * 0.90);
 
     // Dex number
     c.fillStyle = '#0c0a08';
@@ -638,8 +676,8 @@ async function renderBanner(c: CanvasRenderingContext2D, region: { x: number; y:
     region.x + region.w / 2, region.y + region.h * 0.20
   );
 
-  // Six sprite blocks stacked
-  const imgs = await loadTeam(ctx.team);
+  // Six blocks stacked — cream silhouettes on type-coloured backing.
+  const imgs = await loadTeam(ctx.team, () => ({ color: '#f5ead2', accent: '#fffbf0' }));
   const blockY = region.y + region.h * 0.26;
   const blockH = region.h * 0.10;
   const blockW = stripeW * 0.86;
@@ -653,19 +691,21 @@ async function renderBanner(c: CanvasRenderingContext2D, region: { x: number; y:
     c.fillStyle = primary2 + 'd0';
     c.fillRect(blockX, y, blockW, blockH);
 
-    // Sprite (left)
+    // Silhouette (left)
     c.imageSmoothingEnabled = true;
-    c.drawImage(entry.img, blockX + blockH * 0.05, y + blockH * 0.05, blockH * 0.9, blockH * 0.9);
+    c.drawImage(entry.figure, blockX + blockH * 0.05, y + blockH * 0.05, blockH * 0.9, blockH * 0.9);
 
-    // Text (right)
+    // Text (right): nickname or type pairing on the headline; the detail line
+    // repeats the types only when a nickname took the headline.
     c.fillStyle = '#fff';
     c.textAlign = 'left';
     const tx = blockX + blockH + region.w * 0.02;
     c.font = `bold ${blockH * 0.35}px "Sora", system-ui`;
-    const name = (entry.member.nickname || entry.pokemon.display).toUpperCase();
+    const name = figureLabel(entry);
     c.fillText(name.length > 18 ? name.slice(0, 17) + '…' : name, tx, y + blockH * 0.45);
     c.font = `${blockH * 0.20}px "JetBrains Mono", monospace`;
-    c.fillText(entry.pokemon.types.join(' · ').toUpperCase() + `   BST ${entry.pokemon.bst}`, tx, y + blockH * 0.75);
+    const detail = entry.member.nickname ? roleLabel(entry.pokemon) : `SLOT ${String(i + 1).padStart(2, '0')}`;
+    c.fillText(`${detail}   BST ${entry.pokemon.bst}`, tx, y + blockH * 0.75);
 
     // Dex on far right
     c.textAlign = 'right';
@@ -686,9 +726,9 @@ async function renderBanner(c: CanvasRenderingContext2D, region: { x: number; y:
 // ============================================================
 // Layout (3:4 aspect, top-to-bottom):
 //   header band      — trainer name + region/title + year
-//   signature mon    — large hero artwork on the left, stats on the right
+//   signature mon    — large hero silhouette on the left, stats on the right
 //   gym badge row    — 8 slots, claimed badges colored, unclaimed dimmed
-//   6-mon team strip — sprites + nicknames + tera gems
+//   6-mon team strip — silhouettes + captions + tera gems
 //   footer band      — motto or share code
 
 async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: number; y: number; w: number; h: number }, ctx: MerchRenderContext): Promise<void> {
@@ -742,27 +782,29 @@ async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: numbe
     c.fillStyle = sigPrimary + '20';
     c.fillRect(rx + rw * 0.04, sigY, rw * 0.92, sigH);
 
-    // Try to load + draw the signature artwork
-    try {
-      const sigImg = await loadImg(spriteUrl(sigMon.id, 'artwork-default'));
-      const imgSize = sigH * 0.92;
-      c.drawImage(sigImg, rx + rw * 0.06, sigY + (sigH - imgSize) / 2, imgSize, imgSize);
-    } catch { /* a signature sprite is decorative — a failed load must not lose the print */ }
+    // Signature silhouette in the mon's own type gradient.
+    const { color: sigColor, accent: sigAccent } = typeColors(sigMon);
+    const sigFigure = await loadFigure(sigMon.id, sigColor, sigAccent);
+    const imgSize = sigH * 0.92;
+    c.imageSmoothingEnabled = true;
+    c.drawImage(sigFigure, rx + rw * 0.06, sigY + (sigH - imgSize) / 2, imgSize, imgSize);
 
-    // Signature info (right side)
+    // Signature info (right side) — the type pairing is the headline; the
+    // species name is not printed.
     const infoX = rx + rw * 0.06 + sigH * 1.0;
     c.fillStyle = '#1b1a17';
     c.textAlign = 'left';
     c.font = `bold ${sigH * 0.16}px "Sora", system-ui`;
     c.fillText('SIGNATURE', infoX, sigY + sigH * 0.22);
 
-    c.font = `bold ${sigH * 0.30}px "Major Mono Display", monospace`;
     c.fillStyle = sigPrimary;
-    c.fillText(sigMon.display.toUpperCase(), infoX, sigY + sigH * 0.50);
+    const sigLabel = roleLabel(sigMon);
+    fitText(c, sigLabel, rx + rw * 0.96 - infoX, sigH * 0.30, px => `bold ${px}px "Major Mono Display", monospace`, sigH * 0.16);
+    c.fillText(sigLabel, infoX, sigY + sigH * 0.50);
 
     c.fillStyle = '#3a342a';
     c.font = `${sigH * 0.13}px "JetBrains Mono", monospace`;
-    c.fillText(`${sigMon.types.join(' · ').toUpperCase()}   BST ${sigMon.bst}`, infoX, sigY + sigH * 0.68);
+    c.fillText(`BST ${sigMon.bst}`, infoX, sigY + sigH * 0.68);
     c.fillText(padId(sigMon.id), infoX, sigY + sigH * 0.84);
   }
 
@@ -813,9 +855,10 @@ async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: numbe
     c.fillStyle = primary + '15';
     c.fillRect(sx + slotW * 0.05, teamY, slotW * 0.90, teamH);
 
-    // Sprite
+    // Silhouette
     const spriteSize = teamH * 0.70;
-    c.drawImage(entry.img, sx + (slotW - spriteSize) / 2, teamY + teamH * 0.05, spriteSize, spriteSize);
+    c.imageSmoothingEnabled = true;
+    c.drawImage(entry.figure, sx + (slotW - spriteSize) / 2, teamY + teamH * 0.05, spriteSize, spriteSize);
 
     // Shiny + Tera indicators (top-right corner)
     if (entry.member.shiny) {
@@ -835,12 +878,12 @@ async function renderTrainerCard(c: CanvasRenderingContext2D, region: { x: numbe
       c.stroke();
     }
 
-    // Nickname (bottom)
+    // Caption (bottom) — nickname or type pairing, shrunk to the slot.
     c.fillStyle = '#1b1a17';
     c.textAlign = 'center';
-    c.font = `bold ${teamH * 0.10}px "JetBrains Mono", monospace`;
-    const label = (entry.member.nickname || entry.pokemon.display).toUpperCase();
-    c.fillText(label.length > 10 ? label.slice(0, 9) + '…' : label, sx + slotW / 2, teamY + teamH * 0.86);
+    const label = figureLabel(entry);
+    fitText(c, label, slotW * 0.86, teamH * 0.10, px => `bold ${px}px "JetBrains Mono", monospace`, teamH * 0.06);
+    c.fillText(label, sx + slotW / 2, teamY + teamH * 0.86);
 
     c.fillStyle = primary;
     c.font = `${teamH * 0.08}px "JetBrains Mono", monospace`;
@@ -970,6 +1013,13 @@ function drawBadge(c: CanvasRenderingContext2D, x: number, y: number, w: number,
 /**
  * Render a print-ready merchandise design at the product's full print dimensions.
  * Returns a PNG Blob suitable for direct upload to Printful/Printify/etc.
+ *
+ * Bright line: the output is the USER'S design. It is composed of our vector
+ * work, the user's own text, and derived silhouettes (alpha masks of the pixel
+ * sprite recoloured in type colours — see src/lib/silhouette.ts). No official
+ * artwork ('artwork-*') or HOME render ('home-*') is fetched, and no fetched
+ * image is drawn to this canvas directly. Species names print only when the
+ * user typed them as a nickname. src/lib/merch-renderers.test.ts pins both.
  */
 export async function renderMerchDesign(ctx: MerchRenderContext): Promise<Blob> {
   const { product } = ctx;
@@ -1047,8 +1097,8 @@ export interface MerchDesignInfo {
 }
 
 export const MERCH_DESIGNS: MerchDesignInfo[] = [
-  { id: 'crest',         label: 'Team Crest',      desc: 'circular badge · gold ring · 6 sprites around a monogram', recommendedFor: ['shirt', 'hoodie', 'mug', 'sticker'] },
-  { id: 'roster',        label: 'Champion Roster', desc: 'horizontal sprite strip · trainer name + region',           recommendedFor: ['mug', 'mousepad', 'tee back'] },
+  { id: 'crest',         label: 'Team Crest',      desc: 'circular badge · gold ring · 6 silhouettes around a monogram', recommendedFor: ['shirt', 'hoodie', 'mug', 'sticker'] },
+  { id: 'roster',        label: 'Champion Roster', desc: 'horizontal silhouette strip · trainer name + region',           recommendedFor: ['mug', 'mousepad', 'tee back'] },
   { id: 'id-card',       label: 'Trainer ID Card', desc: 'license-style badge · photo + region + party slot row',     recommendedFor: ['poster', 'sticker', 'phone case'] },
   { id: 'banner',        label: 'Gym Banner',      desc: 'tall pennant · 6 typed blocks stacked vertically',          recommendedFor: ['poster', 'phone case'] },
   // v6 — full trainer card with gym badges

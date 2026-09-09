@@ -116,7 +116,8 @@ src/
     compatibility.ts               ← form-aware game compat (megas excluded from Switch-era, etc.)
     constants.ts                   ← TYPES, TYPE_COLORS, TYPE_CHART, ART_STYLES (12), GAMES, GENERATIONS
     merch.ts                       ← v5 — 12-product POD catalog + Printful/Printify URL builders
-    merch-renderers.ts             ← v5 — print-ready PNGs at 300 DPI (4 designs)
+    merch-renderers.ts             ← v5 — print-ready PNGs at 300 DPI (5 designs); derived silhouettes only, never official art
+    silhouette.ts                  ← bounded sprite load → alpha-mask silhouette → type glyph fallback (shared by Legend Card + merch)
     pokemon.ts                     ← POKEMON_BY_ID lookup, sprites, learnsets, generation logic
     search-param.ts                ← v12 — `?q=` bridge from the reference pages into the builder
     posters.ts                     ← 12 canvas-based poster renderers (1080×1350)
