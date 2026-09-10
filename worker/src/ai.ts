@@ -154,7 +154,7 @@ export async function aiTeamArt(req: Request, env: AIEnv): Promise<Response> {
   const style = form.get('style')?.toString() || 'hyperreal-3d';
   const teamRaw = form.get('team')?.toString() || '[]';
   let team: string[] = [];
-  try { team = JSON.parse(teamRaw); } catch {}
+  try { team = JSON.parse(teamRaw); } catch { /* malformed client field — treat as an empty team */ }
 
   if (!photo || typeof photo === 'string') {
     return jsonError(req, env, 400, 'photo_required');

@@ -6,7 +6,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  clearStreak, currentStreak, hasPlayedToday, loadStreak, longestRun, recordDailyPlay,
+  clearStreak, currentStreak, FREE_REPAIRS, hasPlayedToday, loadStreak, longestRun,
+  recordDailyPlay, repairableDate, repairsRemaining, repairStreak,
 } from './streak';
 
 // jsdom isn't configured for this project, so provide the minimum localStorage
@@ -155,7 +156,7 @@ describe('resilience', () => {
   it('self-heals a corrupted stored payload', () => {
     const store = installLocalStorage();
     store.set('trainerscodex.journey.streak', '{ not json');
-    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0 });
+    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0, repairsUsed: [] });
 
     store.set('trainerscodex.journey.streak', JSON.stringify({
       playedDates: ['2026-08-01', 'garbage', null, 42, '2026-08-02'],
@@ -183,8 +184,97 @@ describe('resilience', () => {
       removeItem() { throw new Error('denied'); },
     });
     expect(() => loadStreak()).not.toThrow();
-    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0 });
+    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0, repairsUsed: [] });
     expect(() => recordDailyPlay('2026-08-04')).not.toThrow();
     expect(() => clearStreak()).not.toThrow();
+  });
+});
+
+
+describe('streak repair', () => {
+  beforeEach(() => {
+    installLocalStorage();
+    clearStreak();
+  });
+
+  it('offers nothing when there is no gap', () => {
+    recordDailyPlay('2026-03-01');
+    recordDailyPlay('2026-03-02');
+    recordDailyPlay('2026-03-03');
+    expect(repairableDate(loadStreak(), '2026-03-04')).toBeNull();
+  });
+
+  it('finds a one-day gap between two played days', () => {
+    recordDailyPlay('2026-03-01');
+    // 03-02 missed
+    recordDailyPlay('2026-03-03');
+    expect(repairableDate(loadStreak(), '2026-03-04')).toBe('2026-03-02');
+  });
+
+  it('will not bridge a two-day gap — a repair mends, it does not extend', () => {
+    recordDailyPlay('2026-03-01');
+    // 03-02 and 03-03 both missed
+    recordDailyPlay('2026-03-04');
+    expect(repairableDate(loadStreak(), '2026-03-05')).toBeNull();
+  });
+
+  it('never offers to repair today, which has not been missed yet', () => {
+    recordDailyPlay('2026-03-01');
+    recordDailyPlay('2026-03-03');
+    // If "today" IS the gap, the player can still earn it — selling it back
+    // would be selling something they already have.
+    expect(repairableDate(loadStreak(), '2026-03-02')).toBeNull();
+  });
+
+  it('a repair restores the streak across the gap', () => {
+    recordDailyPlay('2026-03-01');
+    recordDailyPlay('2026-03-02');
+    recordDailyPlay('2026-03-04');
+    expect(currentStreak(loadStreak(), '2026-03-04')).toBe(1);
+    const after = repairStreak('2026-03-03', '2026-03-04');
+    expect(currentStreak(after, '2026-03-04')).toBe(4);
+  });
+
+  it('is limited to the free allowance', () => {
+    recordDailyPlay('2026-03-01');
+    recordDailyPlay('2026-03-03');
+    expect(repairsRemaining(loadStreak())).toBe(FREE_REPAIRS);
+    repairStreak('2026-03-02', '2026-03-05');
+    expect(repairsRemaining(loadStreak())).toBe(FREE_REPAIRS - 1);
+    // A second gap exists but there is no repair left to spend on it.
+    recordDailyPlay('2026-03-06');
+    recordDailyPlay('2026-03-08');
+    expect(repairableDate(loadStreak(), '2026-03-09')).toBeNull();
+  });
+
+  it('refuses an illegal date instead of corrupting the history', () => {
+    recordDailyPlay('2026-03-01');
+    recordDailyPlay('2026-03-03');
+    const before = loadStreak();
+    // Not the gap; not a date at all; today.
+    for (const bad of ['2026-03-09', 'not-a-date', '2026-03-04']) {
+      expect(repairStreak(bad, '2026-03-04').playedDates).toEqual(before.playedDates);
+    }
+    expect(repairsRemaining(loadStreak())).toBe(FREE_REPAIRS);
+  });
+
+  it('a repaired day survives the storage round trip', () => {
+    recordDailyPlay('2026-03-01');
+    recordDailyPlay('2026-03-03');
+    repairStreak('2026-03-02', '2026-03-04');
+    const reloaded = loadStreak();
+    expect(reloaded.playedDates).toContain('2026-03-02');
+    expect(reloaded.repairsUsed).toContain('2026-03-02');
+  });
+
+  it('a history written before repairs existed loads clean', () => {
+    // No `repairsUsed` key at all — every payload written before this feature.
+    localStorage.setItem('trainerscodex.journey.streak', JSON.stringify({
+      playedDates: ['2026-03-01', '2026-03-03'], bestStreak: 1,
+    }));
+    const state = loadStreak();
+    expect(state.repairsUsed).toEqual([]);
+    expect(repairsRemaining(state)).toBe(FREE_REPAIRS);
+    expect(repairableDate(state, '2026-03-04')).toBe('2026-03-02');
   });
 });

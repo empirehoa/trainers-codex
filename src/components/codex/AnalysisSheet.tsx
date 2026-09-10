@@ -155,7 +155,7 @@ export function AnalysisSheet({
                       )}
                       <div className="absolute bottom-0 right-0 left-0 flex justify-between opacity-0 group-hover:opacity-100 transition">
                         <button onClick={() => onViewTCG(p)} title="TCG cards"
-                                className="px-1 py-0.5 text-[8px] font-mono"
+                                className="px-1 py-0.5 text-[10px] font-mono"
                                 style={{ background: 'hsl(var(--card)/0.95)', color: 'hsl(var(--primary))' }}>
                           TCG
                         </button>
@@ -166,11 +166,11 @@ export function AnalysisSheet({
                         </button>
                       </div>
                     </div>
-                    <div className="font-mono text-[9px] mt-1 truncate text-muted-foreground">
+                    <div className="font-mono text-[10px] mt-1 truncate text-muted-foreground">
                       {m?.nickname || p.display}
                     </div>
                     {m?.moves && m.moves.length > 0 && (
-                      <div className="font-mono text-[8px] truncate text-primary/70">
+                      <div className="font-mono text-[10px] truncate text-primary/70">
                         {m.moves.length} moves set
                       </div>
                     )}
@@ -274,7 +274,7 @@ export function AnalysisSheet({
                 <Heading icon={<Shield size={13} />} title="defensive matrix" sub="how each attacking type fares against your team" />
                 <div className="mt-2 overflow-x-auto scroll-x">
                   <div className="grid grid-cols-1 gap-0.5 min-w-[480px]">
-                    <div className="grid grid-cols-[80px_repeat(6,1fr)] gap-1 text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
+                    <div className="grid grid-cols-[80px_repeat(6,1fr)] gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                       <div></div>
                       <div className="text-center">4×</div>
                       <div className="text-center">2×</div>

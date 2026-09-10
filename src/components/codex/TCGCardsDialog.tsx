@@ -81,7 +81,7 @@ export function TCGCardsDialog({ open, onClose, pokemon }: TCGCardsDialogProps) 
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-4xl p-0 gap-0 max-h-[92vh] overflow-y-auto scroll-y bg-card">
+      <DialogContent className="max-w-4xl p-0 gap-0 max-h-[92dvh] overflow-y-auto scroll-y bg-card">
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
           <DialogTitle className="font-display text-lg lowercase" style={{ color: primary }}>
             tcg cards · {pokemon?.display.toLowerCase()}
@@ -220,7 +220,7 @@ export function TCGCardsDialog({ open, onClose, pokemon }: TCGCardsDialogProps) 
                     )}
                   </div>
                 )}
-                <p className="font-mono text-[9px] text-muted-foreground text-center">
+                <p className="font-mono text-[10px] text-muted-foreground text-center">
                   card data: pokemontcg.io · prices auto-pulled when available
                 </p>
               </div>
@@ -230,7 +230,7 @@ export function TCGCardsDialog({ open, onClose, pokemon }: TCGCardsDialogProps) 
 
         <div className="p-3 border-t bg-background/50">
           <p className="text-[10px] font-mono text-muted-foreground text-center">
-            <Badge variant="outline" className="font-mono text-[9px] mr-1">TCG</Badge>
+            <Badge variant="outline" className="font-mono text-[10px] mr-1">TCG</Badge>
             data via pokemontcg.io · for personal collection reference only
           </p>
         </div>

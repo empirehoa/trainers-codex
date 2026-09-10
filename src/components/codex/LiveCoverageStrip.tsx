@@ -99,7 +99,7 @@ export function LiveCoverageStrip({ team }: LiveCoverageStripProps) {
                 <div key={w.type} className="relative" title={`${w.weak} weak / ${w.resist} resist`}>
                   <TypePill type={w.type} sm />
                   {w.weak >= 3 && (
-                    <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center pointer-events-none">
+                    <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center pointer-events-none">
                       !
                     </span>
                   )}

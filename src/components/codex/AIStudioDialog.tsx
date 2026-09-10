@@ -267,7 +267,7 @@ export function AIStudioDialog({
       if (!resp.ok) {
         const errText = await resp.text();
         let errCode = 'generation_failed';
-        try { errCode = JSON.parse(errText).error || errCode; } catch {}
+        try { errCode = JSON.parse(errText).error || errCode; } catch { /* non-JSON error body — keep the generic code */ }
         const MESSAGES: Record<string, string> = {
           ai_not_configured: 'AI image generation is not yet configured on this deploy. Try again in a few minutes.',
           quota_exhausted: 'Monthly quota exhausted — resets on the 1st.',
@@ -322,7 +322,7 @@ export function AIStudioDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-3xl p-0 gap-0 max-h-[94vh] overflow-y-auto scroll-y bg-card">
+      <DialogContent className="max-w-3xl p-0 gap-0 max-h-[94dvh] overflow-y-auto scroll-y bg-card">
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
           <button
             type="button"
@@ -399,12 +399,12 @@ export function AIStudioDialog({
                       className="relative rounded-md border border-border bg-card hover:border-primary hover:bg-primary/5 transition px-2 py-3 flex flex-col items-center gap-0.5"
                     >
                       {p.tag && (
-                        <span className="absolute -top-2 right-1 text-[8px] font-mono uppercase tracking-wider bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
+                        <span className="absolute -top-2 right-1 text-[10px] font-mono uppercase tracking-wider bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
                           {p.tag}
                         </span>
                       )}
                       <span className="font-display text-lg text-primary leading-none">{p.credits}</span>
-                      <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">{p.credits === '1' ? 'credit' : 'credits'}</span>
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{p.credits === '1' ? 'credit' : 'credits'}</span>
                       <span className="font-mono text-xs mt-1">{p.price}</span>
                     </button>
                   ))}
@@ -412,7 +412,7 @@ export function AIStudioDialog({
 
                 <div className="flex items-center gap-2 pt-1">
                   <div className="flex-1 h-px bg-border" />
-                  <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">or go premium</span>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">or go premium</span>
                   <div className="flex-1 h-px bg-border" />
                 </div>
 
@@ -436,7 +436,7 @@ export function AIStudioDialog({
                     <Sparkles size={11} className="mr-1.5" /> $39/yr
                   </Button>
                 </div>
-                <p className="font-mono text-[9px] text-muted-foreground text-center leading-relaxed">
+                <p className="font-mono text-[10px] text-muted-foreground text-center leading-relaxed">
                   Premium = 5 generations per kind every month + all premium poster &amp; merch designs.
                 </p>
               </>

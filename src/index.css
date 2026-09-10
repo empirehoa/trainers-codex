@@ -116,6 +116,27 @@
   @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
   .pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
 
+  /* ---- Touch sizing -------------------------------------------------
+     The header's icon buttons are 32px, which is fine under a mouse and
+     fiddly under a thumb. Apple's HIG asks for 44pt, but the header carries
+     15 controls and at 768px (iPad portrait, the narrowest tablet) the
+     cluster already measures 649px against 119px of slack — 44px would add
+     168px and push the header into horizontal overflow, which is a worse bug
+     than a small target.
+
+     36px is the largest size that fits — it adds 56px and is what shadcn's own
+     `size="icon"` uses. Applied only on coarse pointers, so mouse users keep
+     the compact chrome.
+
+     Below 1024px the row is replaced by a two-control overflow menu, and those
+     two are sized 44px directly in the markup where there is room for it. The
+     ceiling here is the button count, not the CSS: if the desktop row ever
+     sheds controls, this can go up. tests/test-responsive.mjs asserts no
+     overflow and a legible wordmark at 768/820/1024 so it cannot regress. */
+  @media (pointer: coarse) {
+    header button.w-8.h-8 { width: 2.25rem; height: 2.25rem; }
+  }
+
   .scroll-x::-webkit-scrollbar, .scroll-y::-webkit-scrollbar { height: 6px; width: 6px; }
   .scroll-x::-webkit-scrollbar-thumb, .scroll-y::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
   .scroll-x::-webkit-scrollbar-track, .scroll-y::-webkit-scrollbar-track { background: transparent; }

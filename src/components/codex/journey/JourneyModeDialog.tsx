@@ -9,7 +9,7 @@ import {
 import { useI18n } from '@/i18n/useI18n';
 import { LOCALES, type Locale } from '@/i18n/strings';
 import { isEnabled } from '@/lib/flags';
-import { simulate } from '@/journey/engine';
+import { simulate, decisionChapterIndices} from '@/journey/engine';
 import { TRAINER_NAMES, getPace, getRegion, JOURNEY_REGIONS } from '@/journey/content';
 import {
   dailySeed, localDateString, namedRng, pick, randomSeed,
@@ -187,6 +187,23 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
 
   const start = useCallback(() => beginRun(draft), [beginRun, draft]);
 
+  /**
+   * Play any daily issue by its date. `playDaily` is this with today's date —
+   * an archive issue is not a different mode, it is the same daily on an
+   * earlier calendar day, which is what makes the seed reproducible.
+   */
+  const playIssue = useCallback((date: string) => {
+    setDailyDate(date);
+    const next: Setup = {
+      ...draft,
+      seed: dailySeed(date),
+      source: 'daily',
+      dailyDate: date,
+    };
+    setDraft(next);
+    beginRun(next);
+  }, [draft, beginRun]);
+
   const playDaily = useCallback(() => {
     const date = localDateString();
     setDailyDate(date);
@@ -260,8 +277,14 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
   const skipToEnd = useCallback(() => {
     if (!setup) return;
     const acc = [...choices];
-    // Bounded by MAX_CHAPTERS decisions; the guard is a runaway-loop backstop.
-    for (let i = 0; i < 32; i++) {
+    // The bound has to come from the run, not from a constant: 32 was written
+    // when every career was a single 12-20 chapter region, and a saga has up to
+    // ~140 chapters. Skipping a long campaign stopped a third of the way in and
+    // left the player on a recap with dozens of chapters never revealed.
+    // +1 so the loop gets one iteration past the last decision to read the
+    // finished snapshot.
+    const maxSteps = decisionChapterIndices(setup).length + 1;
+    for (let i = 0; i < maxSteps; i++) {
       const snap = simulate(setup, acc, actions);
       if (snap.status !== 'awaiting-decision' || !snap.decision) {
         setChoices(acc);
@@ -317,7 +340,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) handleClose(); }}>
       <DialogContent
-        className="max-w-md p-0 gap-0 max-h-[94vh] overflow-y-auto scroll-y bg-card"
+        className="max-w-md p-0 gap-0 max-h-[94dvh] overflow-y-auto scroll-y bg-card"
         data-testid="journey-dialog"
       >
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
@@ -327,12 +350,15 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
                 <Compass size={16} className="inline mr-1.5" />
                 {t('journey.title')}
               </DialogTitle>
-              <DialogDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+              {/* The sticky header repeats on every screen of the run; the
+                  tagline cost ~40px of a 390px phone each time. Kept for
+                  assistive tech, shown from sm: up. */}
+              <DialogDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground sr-only sm:not-sr-only">
                 // {t('journey.tagline')}
               </DialogDescription>
             </div>
             <Select value={locale} onValueChange={v => setLocale(v as Locale)}>
-              <SelectTrigger className="w-[104px] h-8 font-mono text-[10px] shrink-0"
+              <SelectTrigger className="w-11 sm:w-[104px] h-11 sm:h-8 font-mono text-[10px] shrink-0 justify-center sm:justify-between [&>span]:hidden sm:[&>span]:inline"
                              aria-label={t('journey.locale.label')}
                              data-testid="journey-locale">
                 <Globe size={11} className="mr-1 shrink-0" />
@@ -359,11 +385,13 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
             invalidLink={invalidLink}
             onClearShared={clearShared}
             onPlayDaily={playDaily}
+            onPlayIssue={playIssue}
           />
         )}
 
         {uiState === 'chapter-recap' && snapshot && (
           <JourneyRecap
+            seed={draft.seed}
             chapters={unrevealed}
             chapterCount={snapshot.chapterCount}
             roster={snapshot.roster}
@@ -377,6 +405,7 @@ export function JourneyModeDialog({ open, onClose, onBuilderHandoff, onMerch, li
 
         {uiState === 'decision' && snapshot?.decision && snapshot.prepare && (
           <JourneyDecision
+            seed={draft.seed}
             decision={snapshot.decision}
             stats={snapshot.stats}
             chapterCount={snapshot.chapterCount}

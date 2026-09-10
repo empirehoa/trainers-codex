@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { Dices, Play, Sparkles, X } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { Dices, Play, Sparkles, Wrench, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useI18n } from '@/i18n/useI18n';
@@ -7,8 +7,11 @@ import {
   ARCHETYPES, JOURNEY_REGIONS, PACES, TRAINER_NAMES, getRegion, rosterCaption,
 } from '@/journey/content';
 import { CAMPAIGNS } from '@/journey/campaign';
+import { listArchive } from '@/journey/archive';
 import { dailyIssueNumber, localDateString, namedRng, pick, randomSeed } from '@/journey/prng';
-import { currentStreak, hasPlayedToday, loadStreak } from '@/journey/streak';
+import {
+  currentStreak, hasPlayedToday, loadStreak, repairableDate, repairsRemaining, repairStreak,
+} from '@/journey/streak';
 import { pixelSprite } from '@/lib/pokemon';
 import { cn } from '@/lib/utils';
 import type { Archetype, JourneySetup as Setup, Pace } from '@/journey/types';
@@ -23,18 +26,29 @@ interface Props {
   invalidLink: boolean;
   onClearShared: () => void;
   onPlayDaily: () => void;
+  /** Play a past archive issue by its date. */
+  onPlayIssue: (date: string) => void;
 }
 
 export function JourneySetup({
   draft, onChange, onStart, sharedSeed, dailyDate, invalidLink,
-  onClearShared, onPlayDaily,
+  onClearShared, onPlayDaily, onPlayIssue,
 }: Props) {
   const { t } = useI18n();
   const region = getRegion(draft.regionId);
-  const streak = loadStreak();
+  // Re-read after a repair so the streak line and the offer both refresh.
+  const [streakNonce, setStreakNonce] = useState(0);
+  const streak = useMemo(() => loadStreak(), [streakNonce]);
   const today = localDateString();
   const playedToday = hasPlayedToday(streak, today);
   const streakDays = currentStreak(streak, today);
+  const repairDate = repairableDate(streak, today);
+  const repairsLeft = repairsRemaining(streak);
+  const [showArchive, setShowArchive] = useState(false);
+  const archive = useMemo(
+    () => listArchive({ today, playedDates: streak.playedDates, limit: 60 }),
+    [today, streak.playedDates],
+  );
 
   const rollName = useCallback(() => {
     onChange({ ...draft, trainerName: pick(namedRng(randomSeed(), 'name'), TRAINER_NAMES) });
@@ -65,7 +79,7 @@ export function JourneySetup({
             {t('journey.setup.seedShared', { seed: sharedSeed })}
           </div>
           <Button variant="ghost" size="sm" onClick={onClearShared}
-                  className="font-mono text-[9px] shrink-0 text-muted-foreground hover:text-primary">
+                  className="font-mono text-[10px] shrink-0 text-muted-foreground hover:text-primary">
             {t('journey.setup.seedClear')}
           </Button>
         </div>
@@ -125,7 +139,7 @@ export function JourneySetup({
                 )}
               >
                 <img src={pixelSprite(id)} alt="" width={48} height={48}
-                     className="pixelated" loading="lazy" />
+                     className="pixelated w-10 h-10 sm:w-12 sm:h-12" loading="lazy" />
                 {/*
                   Through rosterCaption, not POKEMON_BY_ID[id].display — the
                   starter picker is a user-visible reference to a species and so
@@ -141,8 +155,12 @@ export function JourneySetup({
       </Field>
 
       {/* ---- archetype ---- */}
+      {/* The setup screen ran 1.8 screens on a 390px phone with the Start button
+          1.5 screens down, on a mode whose promise is "a career in three
+          minutes". Archetype rows go two-up; pace and campaign become segmented
+          controls. Every testid is unchanged. */}
       <Field label={t('journey.setup.archetype')}>
-        <div className="space-y-1">
+        <div className="grid grid-cols-2 gap-1">
           {ARCHETYPES.map(a => (
             <OptionRow
               key={a}
@@ -158,42 +176,55 @@ export function JourneySetup({
 
       {/* ---- pace ---- */}
       <Field label={t('journey.setup.pace')}>
-        <div className="space-y-1">
+        <div className="grid grid-cols-3 gap-1">
           {PACES.map(p => (
-            <OptionRow
+            <Segment
               key={p.id}
               active={draft.pace === p.id}
               onClick={() => onChange({ ...draft, pace: p.id as Pace })}
               title={t(`journey.pace.${p.id}`)}
-              sub={t(`journey.pace.${p.id}.desc`, { minutes: p.approxMinutes })}
+              sub={`${p.approxMinutes} min`}
               testId={`journey-pace-${p.id}`}
             />
           ))}
         </div>
+        <p className="font-mono text-[10px] text-muted-foreground mt-1.5" data-testid="journey-hint-pace">
+          {t(`journey.pace.${draft.pace}.desc`, { minutes: PACES.find(p => p.id === draft.pace)?.approxMinutes ?? 0 })}
+        </p>
       </Field>
 
       {/* ---- campaign length ---- */}
       <Field label={t('journey.campaign.label')}>
-        <div className="space-y-1">
+        <div className="grid grid-cols-3 gap-1">
           {CAMPAIGNS.map(c => (
-            <OptionRow
+            <Segment
               key={c.id}
               active={(draft.campaign ?? 'short') === c.id}
               onClick={() => onChange({ ...draft, campaign: c.id })}
-              title={`${t(c.nameKey)} · ${c.approx}`}
-              sub={t(c.descKey)}
+              title={t(c.nameKey)}
+              sub={c.approx}
               testId={`journey-campaign-${c.id}`}
             />
           ))}
         </div>
+        <p className="font-mono text-[10px] text-muted-foreground mt-1.5" data-testid="journey-hint-campaign">
+          {t(CAMPAIGNS.find(c => c.id === (draft.campaign ?? 'short'))?.descKey ?? CAMPAIGNS[0].descKey)}
+        </p>
       </Field>
 
       {/* ---- start ---- */}
+      {/* Sticky on phones: the form ran 1.5 screens and this button sat at
+          ~1,020px, so the mode that promises a three-minute career opened with
+          a scroll to find Start. Pinned to the dialog's bottom edge under 640px
+          with the safe-area inset honoured; ordinary flow from sm: up. */}
+      <div className="sticky bottom-0 -mx-4 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-card/95 backdrop-blur-sm border-t sm:static sm:mx-0 sm:px-0 sm:pt-0 sm:pb-0 sm:border-0 sm:bg-transparent sm:backdrop-blur-none"
+           style={{ borderColor: 'hsl(var(--border))' }}>
       <Button onClick={onStart} className="w-full font-mono text-xs font-bold h-11"
               data-testid="journey-start">
         <Play size={13} className="mr-1.5" />
         {t('journey.setup.start')}
       </Button>
+      </div>
 
       <div className="font-mono text-[10px] text-muted-foreground text-center">
         {t('journey.setup.seedLabel')} {draft.seed}
@@ -231,8 +262,67 @@ export function JourneySetup({
               {playedToday ? t('journey.daily.replayFree') : t('journey.daily.play')}
             </Button>
           </div>
+          {/* Streak repair. Offered only when there is a real one-day gap that
+              a repair would bridge, and only while a free one is unspent — so it
+              is an offer, never a permanent upsell shaped like a button. */}
+          {repairDate && (
+            <div className="flex items-center justify-between gap-2 pt-1 border-t"
+                 style={{ borderColor: 'hsl(var(--border))' }}
+                 data-testid="journey-repair-offer">
+              <div className="font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                {t('journey.daily.repairOffer', { date: repairDate })}
+                <span className="text-muted-foreground ml-1">
+                  {t('journey.daily.repairsLeft', { n: repairsLeft })}
+                </span>
+              </div>
+              <Button variant="outline" size="sm"
+                      onClick={() => {
+                        repairStreak(repairDate);
+                        setStreakNonce(n => n + 1);
+                      }}
+                      className="font-mono text-[10px] shrink-0"
+                      data-testid="journey-repair">
+                <Wrench size={11} className="mr-1" />
+                {t('journey.daily.repair')}
+              </Button>
+            </div>
+          )}
           {playedToday && (
             <div className="font-mono text-[10px] text-muted-foreground">// {t('journey.daily.done')}</div>
+          )}
+
+          {/* Archive. A player who arrives on day 40 otherwise has one puzzle
+              available and 39 they can never see. Bounded render — the list
+              grows by one every day, forever. */}
+          {archive.length > 1 && (
+            <div className="pt-1 border-t" style={{ borderColor: 'hsl(var(--border))' }}>
+              <button onClick={() => setShowArchive(v => !v)}
+                      className="font-mono text-[10px] text-muted-foreground hover:text-primary transition min-h-9"
+                      data-testid="journey-archive-toggle">
+                {showArchive ? '▾' : '▸'} {t('journey.archive.heading', { n: archive.length })}
+              </button>
+              {showArchive && (
+                <div className="mt-1.5 max-h-40 overflow-y-auto space-y-1" data-testid="journey-archive">
+                  {archive.filter(e => !e.today).map(e => (
+                    <button key={e.date}
+                            onClick={() => onPlayIssue(e.date)}
+                            className="w-full flex items-center justify-between gap-2 rounded border px-2 py-1
+                                       text-left transition hover:border-primary/60"
+                            style={{ borderColor: 'hsl(var(--border))' }}
+                            data-testid={`journey-archive-${e.issue}`}>
+                      <span className="font-mono text-[10px]">
+                        {t('journey.archive.issue', { n: e.issue })}
+                        <span className="text-muted-foreground ml-1.5">{e.date}</span>
+                      </span>
+                      <span className="font-mono text-[10px] shrink-0"
+                            style={{ color: e.played ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}>
+                        {e.played ? t('journey.archive.played') : t('journey.archive.unplayed')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -256,11 +346,31 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     <button
       onClick={onClick}
       className={cn(
-        'font-mono text-[10px] px-2 py-1 rounded border transition uppercase tracking-wider',
+        'font-mono text-[10px] px-2.5 min-h-9 rounded border transition uppercase tracking-wider',
         active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary',
       )}
     >
       {children}
+    </button>
+  );
+}
+
+/** One cell of a segmented control: title on top, a short sub underneath. */
+function Segment({ active, onClick, title, sub, testId }: {
+  active: boolean; onClick: () => void; title: string; sub: string; testId?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      data-testid={testId}
+      aria-pressed={active}
+      className={cn(
+        'rounded border px-2 py-2 min-h-11 text-center transition',
+        active ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50',
+      )}
+    >
+      <div className="font-mono text-xs font-semibold truncate">{title}</div>
+      <div className="font-mono text-[10px] text-muted-foreground mt-0.5 truncate">{sub}</div>
     </button>
   );
 }
@@ -278,7 +388,7 @@ function OptionRow({ active, onClick, title, sub, testId }: {
       )}
     >
       <div className="font-mono text-xs font-semibold">{title}</div>
-      <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{sub}</div>
+      <div className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden sm:block">{sub}</div>
     </button>
   );
 }

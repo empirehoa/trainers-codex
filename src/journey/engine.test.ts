@@ -300,7 +300,7 @@ describe('bounds + invariants', () => {
     const absurd = {
       age: 900, badges: 9999, wins: 1e6, losses: 0, catches: 1e6, shinies: 1e6,
       titles: 1e6, peakRank: 0, fame: 1e6, fatigue: -500, bond: 1e6,
-      rivalWins: 1e6, rivalLosses: 0,
+      rivalWins: 1e6, rivalLosses: 0, money: 1e6,
     };
     const values = componentValues(absurd, 1e6);
     for (const v of Object.values(values)) {
@@ -316,7 +316,7 @@ describe('bounds + invariants', () => {
     const empty = {
       age: 10, badges: 0, wins: 0, losses: 0, catches: 0, shinies: 0,
       titles: 0, peakRank: UNRANKED, fame: 0, fatigue: 100, bond: 0,
-      rivalWins: 0, rivalLosses: 0,
+      rivalWins: 0, rivalLosses: 0, money: 0,
     };
     for (const a of ARCHETYPES) {
       const { total } = scoreCareer(empty, a, 0);

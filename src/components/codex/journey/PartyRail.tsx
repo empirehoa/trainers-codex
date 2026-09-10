@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Star, BookMarked, Sparkles } from 'lucide-react';
+import { Star, BookMarked, Sparkles, Gift } from 'lucide-react';
 import { useI18n } from '@/i18n/useI18n';
 import { pixelSprite } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
@@ -30,13 +30,13 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
     <div className="rounded-md border" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--card))' }}
          data-testid="journey-party">
       <div className="flex items-center justify-between px-2.5 pt-2">
-        <span className="font-mono text-[9px] uppercase tracking-wider text-primary">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-primary">
           {t('journey.party.title')}
         </span>
         <button
           onClick={() => setDexOpen(o => !o)}
           data-testid="journey-dex-toggle"
-          className="font-mono text-[9px] text-muted-foreground hover:text-primary flex items-center gap-1"
+          className="font-mono text-[10px] text-muted-foreground hover:text-primary flex items-center gap-1 min-h-9 px-1 -mr-1"
         >
           <BookMarked size={10} />
           {t('journey.party.dexCount', { caught: dex.caught.length, seen: dex.seen.length })}
@@ -56,7 +56,9 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
               borderColor: i === 0 && m ? 'hsl(var(--primary))' : 'hsl(var(--border))',
               background: m ? 'hsl(var(--muted)/0.25)' : 'transparent',
             }}
-            title={m ? `${rosterCaption(m.id)}${m.shiny ? ' ★' : ''}` : undefined}
+            title={m
+              ? `${rosterCaption(m.id)}${m.shiny ? ' ★' : ''}${m.origin === 'event' ? ' (event)' : ''}`
+              : undefined}
           >
             {m ? (
               <>
@@ -69,7 +71,16 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
                   </span>
                 )}
                 {m.shiny && (
-                  <Sparkles size={9} className="absolute top-0.5 right-0.5 text-yellow-400" />
+                  <Sparkles size={9} className="absolute top-0.5 right-0.5 text-yellow-400"
+                            data-testid="journey-party-shiny" />
+                )}
+                {/* Event provenance is its own marker, not a reuse of the shiny
+                    sparkle — the two used to be the same fact and a player had
+                    no way to tell a shiny catch from a legendary encounter. */}
+                {m.origin === 'event' && (
+                  <Gift size={9}
+                        className="absolute bottom-0.5 right-0.5 text-fuchsia-500 dark:text-fuchsia-400"
+                        data-testid="journey-party-event" />
                 )}
                 {evolvable.has(m.id) && (
                   // NB: testid is deliberately NOT prefixed "journey-evolve-" —
@@ -84,7 +95,7 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
                 )}
               </>
             ) : (
-              <span className="font-mono text-[9px] text-muted-foreground">–</span>
+              <span className="font-mono text-[10px] text-muted-foreground">–</span>
             )}
           </div>
         ))}
@@ -92,7 +103,7 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
 
       {dexOpen && (
         <div className="border-t px-2.5 py-2" style={{ borderColor: 'hsl(var(--border))' }} data-testid="journey-dex-grid">
-          <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground mb-1.5">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
             {t('journey.party.caughtHeading')} ({dex.caught.length})
           </div>
           <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto scroll-y">

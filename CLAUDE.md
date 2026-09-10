@@ -55,7 +55,7 @@ src/
   App.tsx                          ← main shell, header, team bar, modals wired
   main.tsx                         ← React root
   components/
-    ui/                            ← shadcn primitives (don't modify unless adding)
+    ui/                            ← shadcn primitives, 14 of them (see gotcha #24)
     codex/                         ← all custom components
       AnalysisSheet.tsx            ← side panel with defensive/offensive/threats/game-compat
       GameCompatibilitySection.tsx
@@ -80,6 +80,7 @@ src/
         JourneyDecision.tsx        ← also exports ProgressHeader + StatStrip
         JourneyRecap.tsx
         JourneyResult.tsx          ← retired beat, card, share tiers, CTAs
+        AreaMap.tsx                ← v12 — SVG route map, fills in as it's travelled
   journey/                         ← v6 — the sim. Pure TS, no React, no DOM.
     prng.ts                        ← mulberry32, FNV-1a, seed coercion, local dates
     types.ts
@@ -87,16 +88,27 @@ src/
     engine.ts                      ← simulate(setup, choices) — pure + deterministic
     scoring.ts                     ← archetype-weighted 0-999 + verdict resolution
     deeplink.ts                    ← ?seed= / ?daily= parse + build
-    streak.ts                      ← daily streak, stored as local date strings
+    streak.ts                      ← daily streak + one-free repair (local date strings)
+    archive.ts                     ← v11 — daily archive, ?issue=N deep links
+    ranks.ts                       ← v11 — score percentile + named rank tiers
     analytics.ts                   ← fire-and-forget Supabase REST inserts
     share.ts                       ← Web Share / clipboard / download tiers
     legend-card.ts                 ← canvas renderer, 1080×1350 + 300 DPI
+    card-video.ts                  ← v11 — 9:16 clip, captureStream + MediaRecorder
+    atlas.ts                       ← v12 — seeded region route maps (pure geometry)
+    luck.ts                        ← v14 — skill-vs-luck: replay the seed 4 ways, decompose the score
+    risk.test.ts                   ← v14 — 3,000-career sweep pinning "risk is a choice, not a tax"
+    ranks.gen.test.ts              ← v14 — regenerates SCORE_PERCENTILES (GEN_RANKS=1), skipped otherwise
     *.test.ts                      ← vitest, colocated
   i18n/
     strings.ts                     ← EN + ES complete; PT + JA seeded
     useI18n.ts                     ← context + useI18n hook
     I18nProvider.tsx               ← provider component (kept separate from the
                                      hook: a file exporting both breaks Fast Refresh)
+  seo/                           ← v12 — build-time static page generation.
+    data.ts                        ← pure derivation: matchups, counters, copy, FAQ
+    render.ts                      ← HTML templates (no DOM, no framework, no app bundle)
+    *.test.ts                      ← vitest; sweeps all 1,307 rendered pages
   lib/
     flags.ts                       ← v6 — feature flags (defaults → config → ?ff=)
     analysis.ts                    ← defensive matrix, offensive coverage, threats, counter team, sharecode
@@ -106,6 +118,7 @@ src/
     merch.ts                       ← v5 — 12-product POD catalog + Printful/Printify URL builders
     merch-renderers.ts             ← v5 — print-ready PNGs at 300 DPI (4 designs)
     pokemon.ts                     ← POKEMON_BY_ID lookup, sprites, learnsets, generation logic
+    search-param.ts                ← v12 — `?q=` bridge from the reference pages into the builder
     posters.ts                     ← 12 canvas-based poster renderers (1080×1350)
     storage.ts                     ← localStorage v2 schema + migration from v1
     types.ts                       ← Pokemon, TeamMember, TrainerProfile, FormCategory, Move, etc.
@@ -116,16 +129,22 @@ src/
     moves.json                     ← 919 moves, ~92KB
     species.json                   ← ~56KB
 inline.mjs                         ← bundle.html generator (regex-based Vite dist inliner)
+docs/
+  RESEARCH_2026-09-07.md           ← deep-research report: what moves retention/sharing (cited, with refuted claims)
 scripts/
   make-og-image.mjs                ← renders public/og-journey.jpg via puppeteer (`pnpm og`)
+  gen-seo-pages.ts                 ← v12 — emits ~1,330 static pages + sitemap.xml (`pnpm seo`)
+  inject-config.mjs                ← stages /tmp/tc-deploy for the Cloudflare deploy
 public/
   _headers                         ← Cloudflare CSP + security headers
   _redirects                       ← 200 rewrite for /journey (preserves ?seed=)
   og-journey.jpg                   ← static OG card, 1200×630 (not inlined into the bundle)
+  sw.js                            ← PWA service worker (see gotcha #21)
+  (no sitemap.xml — it is generated; see "Static reference pages" below)
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 7 suites, 75 tests
+  test-*.mjs                       ← 21 suites, 224 tests
 ```
 
 ## Build + bundle workflow
@@ -144,7 +163,55 @@ reads `dist/index.html`, swaps the `<link>` and `<script>` tags for inline
 `<style>` and `<script>` blocks pulling from `dist/assets/`, and writes
 `bundle.html`. The result drops onto any static host.
 
+## Static reference pages (v12)
+
+`pnpm build` also runs `scripts/gen-seo-pages.ts`, which emits ~1,330 plain
+static HTML files into `dist/` — one per species, one per form, one per type,
+plus two hubs and a regenerated `sitemap.xml`:
+
+```
+dist/pokemon/index.html            hub, links all 1,307
+dist/pokemon/<slug>/index.html     matchup chart, base stats, moves, evolution, counters
+dist/type/index.html               the 18x18 chart
+dist/type/<type>/index.html        per-type page + every member by BST
+dist/sitemap.xml                   every URL above
+```
+
+**Why:** the whole product was one indexable URL. The dataset that makes the app
+good — 1,307 species, 919 moves, every learnset — was invisible to search
+because none of it was addressable. The comparable fan sites earn effectively
+all of their organic traffic from one page per species; the data is the same,
+the difference was purely that theirs had URLs.
+
+Rules for this layer:
+
+- It is **additive**. `bundle.html` is unaffected — nothing under `src/seo/` is
+  imported by `App.tsx`, so Vite never bundles it.
+- The pages load **no script and no external resource at all**: no sprite art,
+  no fonts, no analytics, no app bundle. Asserted in `src/seo/render.test.ts`
+  and again in the browser suite. Hotlinking third-party artwork onto 1,300
+  indexed pages is a different IP posture than referencing it inside the tool —
+  don't add images here without deciding that deliberately.
+- Every page ends with a link to `/?q=<Display Name>`, read by
+  `lib/search-param.ts`. That is the only conversion path from a search result
+  into the product; `tests/test-seo-pages.mjs` guards it.
+- `sitemap.xml` is generated, not committed. The old three-URL file in
+  `public/` was deleted — a stale sitemap is worse than none.
+- `scripts/inject-config.mjs` regenerates the pages straight into the staging
+  directory at deploy time, so a deploy can't ship the app without them.
+
 ## Test commands
+
+**CI runs all three layers on every push and pull request**
+(`.github/workflows/ci.yml`). Before that workflow existed the suite only ran
+when someone remembered to.
+
+`pnpm lint` is a real gate — the tree is at **0 errors**, so any new one fails
+CI. It carries 23 warnings from four react-hooks/react-refresh rules that are
+set to `warn` in `eslint.config.js`: every violation predates the workflow and
+sits in components whose fix is a restructure rather than an edit. The rationale
+and the count to drive down are in that config; when it reaches zero, promote
+them back to `error`.
 
 Tests are committed under `tests/` (Puppeteer, drives the built `bundle.html`),
 colocated `*.test.ts` files under `src/` (vitest, pure logic — scoped by
@@ -154,8 +221,11 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 123 tests · engine, i18n, deeplink, streak, analytics, paste-url, share summary
-pnpm test:browser  # puppeteer · 18 suites / 168 tests (incl. 27 Journey Mode)
+pnpm test:unit     # vitest · 365 tests · engine, battles/badges/shinies/events, level economy,
+                   #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
+                   #            content health, i18n, deeplink, streak, analytics, prepare
+pnpm test:browser  # puppeteer · 21 suites / 224 tests (incl. 44 Journey Mode, 16 responsive,
+                   #            10 SEO pages — the last needs `pnpm build` for dist/)
 (cd worker && node --test test/*.test.ts)   # 19 worker tests
 ```
 
@@ -290,6 +360,162 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     suites; vitest reports "No test suite found" on them. `vitest.config.ts`
     scopes vitest to `src/**/*.test.ts` — keep it that way.
 
+21. **The service worker's navigate handler must not cache every navigation as
+    the shell.** It used to `cache.put('/', response)` on *any* navigation.
+    That was harmless while the deploy had one HTML file; the moment ~1,300
+    reference pages shipped alongside it, opening `/pokemon/charizard` stored
+    that page as the offline app shell, so going offline and opening `/` served
+    Charizard instead of the builder. Only `/` and `/index.html` may refresh the
+    shell entry. Bump `CACHE_VERSION` whenever you touch `sw.js`, or clients
+    keep the old one.
+
+22. **`src/` is typechecked with `types: ["vite/client"]` — no Node types.**
+    A colocated `*.test.ts` therefore cannot `import { readFileSync } from
+    'node:fs'` or touch `import.meta.dirname`; `tsc -b` fails even though
+    vitest runs the file fine. Load fixture data with a JSON import
+    (`import raw from '@/data/pokemon-data.json'`) instead — `resolveJsonModule`
+    is on and that is what the rest of the suite does.
+
+24. **Only add a shadcn component when something imports it.** 26 of the 40
+    vendored `ui/` primitives were never imported by app code — ~2,250 dead
+    lines carrying 26 npm dependencies, plus a complete second toast stack
+    (`ui/toast` + `ui/toaster` + `hooks/use-toast`) that duplicated Sonner,
+    which is what the app actually uses. Vite tree-shook them out of the
+    bundle, so the cost was invisible there and real everywhere else: install
+    size, audit surface, and lint warnings on files nobody ran. The directory
+    is now 14 components, all reachable. `shadcn add` pulls a dependency —
+    only run it when you are about to import the result.
+
+25. **The header is the tightest layout in the app; screenshot it after any
+    change to it.** It carries 15 controls and every one competes with the
+    wordmark. Growing the icon buttons 32px → 36px for touch silently
+    truncated the brand to "tr…" at 768px with its subtitle wrapped to three
+    lines — and *every overflow assertion still passed*, because the header
+    relieves pressure by collapsing its own children rather than scrolling the
+    document. Overflow tests cannot see this class of bug. The full icon row is
+    now `lg:` (≥1024px) and everything below gets the overflow menu;
+    `test-responsive.mjs` asserts the wordmark renders un-clipped and
+    un-wrapped at 768/820/1024.
+
+26. **Mobile's enemy is the empty state, not the bundle.** Boot is 584ms and
+    the heap 20MB, but on a 390px phone the first Pokémon card sat at 1,022px —
+    1.2 screens of scrolling past a 60-word intro and 20 always-open preset
+    chips before the app showed what it does. Trimming the copy and collapsing
+    the presets behind one tap moved it to 545px, better than desktop. Judge
+    mobile by distance-to-first-content, not load time. `test-responsive.mjs`
+    pins it under one screen.
+
+27. **A feature that only exists in the overflow menu does not exist on a
+    phone.** Journey Mode is the app's most engaging surface and, below the
+    header breakpoint, reaching it meant tapping "More actions" and hunting a
+    12-item list. It now has a first-screen CTA in the empty state. Anything
+    you would put in the marketing copy needs a reachable entry point at 390px.
+
+29. **Two functions computing "the same" number will disagree.** Career length
+    had two implementations: `chapterCountFor` drew a short run from the
+    `career-length` stream, `regionChapterSpans` drew from `campaign-length`.
+    A 13-chapter career therefore reported a 20-chapter region, and anything
+    measuring position *within* a region against the *career* total resolved to
+    the wrong phase. `regionChapterSpans` is now the single source and
+    `campaignChapterCount` sums it; `campaign.test.ts` asserts they agree for
+    every campaign and seed. When you add a second way to compute a quantity,
+    delete the first.
+
+30. **A default that is also a fallback hides its own failure.**
+    `visited[Math.min(tourIndex, visited.length - 1)]` looks defensive and is
+    the reason a nine-region saga ran nine regions of chapters inside Kanto:
+    `visited` only grows through a player travel choice, so every later tour
+    stop clamped back to region one. Badges hit the 8-per-region ceiling,
+    `gymLeaders` ran dry, and eight regions had nothing to fight. `?? ` to the
+    seeded value, don't clamp to the last known one.
+
+31. **Type effectiveness against a dual type is the PRODUCT, never the max, and
+    an accumulator seeded at 1 can never record a resistance.** `matchupFor`
+    made both mistakes at once, so Charizard read as *weak* to Ground (it is
+    immune) and every resistance in the game read as neutral. Both `<= 0.5`
+    arms of the function were unreachable, which meant the defensive half of
+    "bring the right team" did nothing. `lib/analysis.ts` `eff` has always been
+    correct — match it. `journey/matchup.test.ts` pins the cases.
+
+32. **A paid reroll must exclude what it replaces.** Drawing the reroll from an
+    independent rng stream returned the same card 19.4% of the time — 21% in
+    the six-card gym pool, ~50% in world-cup's two. Walk the chain from zero and
+    filter what has been shown, which keeps the draw a pure function of
+    (seed, chapterIndex, rerolls) and the replay contract intact.
+
+33. **Risk needs a durable payoff or it is a tax, and the sweep is the only
+    way to know which.** Every risky option now carries `payoff` (see `Payoff`
+    in `journey/types.ts`): money, an item, a rare partner, or the fatigue
+    refunded, granted when the chapter's own roll comes up positive — a
+    deterministic coin flip. `landedSoFar` adds bounded **momentum** to win
+    rate so an early gamble is run-defining. Before this, always-min-risk beat
+    always-max-risk by 26–74 points for *every* archetype; after, |gap| ≤ 20
+    with risk ahead for three of five, and a risky career banks ≥15% more
+    money. `journey/risk.test.ts` sweeps 3,000 careers and pins all of it. Any
+    balance change: run it, then regenerate the rank table (next item).
+
+34. **The rank table is a snapshot of the engine; regenerate it after any
+    balance change.** `SCORE_PERCENTILES` in `ranks.ts` is measured, not
+    derived, so when engine numbers move every run is silently mis-ranked.
+    `ranks.test.ts` catches the drift; fix it with
+    `GEN_RANKS=1 npx vitest run src/journey/ranks.gen.test.ts` and paste.
+
+35. **Two things that compute "the same" number will disagree, and a fallback
+    that clamps hides its own failure.** Both bit the multi-region campaigns
+    (see HANDOFF v13). Check for the pattern whenever a quantity has a second
+    implementation or a `Math.min(i, arr.length - 1)` index.
+
+36. **Test-id prefixes are selectors.** `tests/test-journey.mjs` counts options
+    with `[data-testid^="journey-option-"]`. Adding `journey-option-risk` to a
+    span *inside* an option would have inflated that count. Inner elements get
+    their own prefix (`journey-risk-tag`, `journey-consequences`).
+
+37. **A one-shot Python edit that asserts every anchor and writes at the end is
+    atomic — and silently a no-op when one anchor is wrong.** Two engine edits
+    here "succeeded" in five of six replacements and applied none of them,
+    because the import anchor guessed a format the file did not use. Read the
+    exact lines before anchoring on them; for imports, find `from '<module>'`
+    and walk back to the brace rather than matching the whole statement.
+
+38. **The decision must lead the decision screen.** Journey's prompt sat 8th in
+    document order — below the badge track, map, opponent, party rail and the
+    whole prepare panel — putting the question at y≈780 of a 844px phone. It is
+    now at y≈245, with the option's consequences (delta chips, risk tag, "if it
+    lands: …") visible *before* the tap. Same for setup: Start is sticky on
+    phones. Anything that asks the player something goes above the things
+    that merely inform them.
+
+39. **Measure overflow on the scroll container, not the page.** Journey's
+    dialog scrolls vertically inside a fixed-width box, so a child that grows
+    sideways (an unbreakable share URL in a `<pre>`) clips *inside* the dialog
+    and never moves `document.documentElement.scrollWidth`. Every page-level
+    overflow test stayed green while the card screen ran off the right edge of
+    a 390px phone. Assert `dialog.scrollWidth <= dialog.clientWidth` on the
+    dialog itself; for long tokens use `[overflow-wrap:anywhere]` — plain
+    `break-words` does not reduce min-content width.
+
+40. **`pkill -f` matches its own shell.** A chain that begins
+    `pkill -f "tests/test-"` and later runs `tests/test-journey.mjs` kills
+    itself at line one (exit 144), because the pattern appears in the shell's
+    own command line — and every edit after it silently never happens. Use a
+    pattern that matches the target but not the literal text you typed:
+    `pkill -f "run-al[l].mjs"`.
+
+41. **Don't draw from the RNG when the outcome is moot.** Moving a recruit
+    roll out of a short-circuited `&&` so it ran even on a full roster shifted
+    every later roll on the seed and flipped a browser test that had nothing to
+    do with recruitment. Under the replay contract *any* extra `rng()` call is
+    a behaviour change; keep draws behind the guards they were behind.
+
+42. **A build-time script that shares code with `src/` must import with an
+    explicit `.ts` extension.** `scripts/gen-seo-pages.ts` runs under Node's
+    native type stripping, which is real ESM: extensionless specifiers do not
+    resolve. `allowImportingTsExtensions` is already on, so
+    `from '../src/seo/render.ts'` satisfies Node, Vite, vitest and `tsc` at
+    once. The chain only works because every module it reaches is pure or
+    type-only — routing it through something that imports `./constants`
+    extensionless breaks it at runtime with no compile-time warning.
+
 ## Code style conventions
 
 - **No defensive `try/catch` everywhere.** The codebase trusts its inputs.
@@ -300,7 +526,10 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
   scientific-instrument. Headings use `font-display` (Major Mono Display).
   Body copy in mons / dialogs uses `font-sans` only sparingly.
 - **`text-[10px]` for labels, `text-xs` (12px) for body, `text-sm` (14px) for important UI.**
-  No arbitrary text sizes outside this scale.
+  No arbitrary text sizes outside this scale. This had drifted to 98 uses of
+  `text-[8px]`/`text-[9px]` before being pulled back to the floor; 8px is not
+  readable on a phone. `test-responsive.mjs` now fails on anything under 10px,
+  so the scale is enforced rather than merely documented.
 - **Tailwind not BEM/CSS modules.** Inline styles are fine for one-offs
   involving type colors (we already use TypeScript type-color lookups).
 - **Components are functional, no classes.** Hooks only.

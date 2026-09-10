@@ -95,12 +95,12 @@ export function storeLicense(jwt: string): LicenseClaims | null {
   if (!isLicenseValid(claims)) return null;
   try {
     localStorage.setItem(LICENSE_KEY, jwt);
-  } catch {}
+  } catch { /* private mode — the claims are returned regardless, so this session still works */ }
   return claims;
 }
 
 export function clearLicense(): void {
-  try { localStorage.removeItem(LICENSE_KEY); } catch {}
+  try { localStorage.removeItem(LICENSE_KEY); } catch { /* nothing to clear if storage is denied */ }
 }
 
 // ── Credits token lifecycle ──────────────────────────────────────────────
@@ -131,7 +131,7 @@ export function getStoredCreditsToken(): { jwt: string; claims: LicenseClaims } 
 export function storeCreditsToken(jwt: string): LicenseClaims | null {
   const claims = decodeLicense(jwt);
   if (!isCreditsTokenValid(claims)) return null;
-  try { localStorage.setItem(CREDITS_TOKEN_KEY, jwt); } catch {}
+  try { localStorage.setItem(CREDITS_TOKEN_KEY, jwt); } catch { /* private mode — claims are still returned for this session */ }
   return claims;
 }
 
@@ -139,7 +139,7 @@ export function clearCreditsToken(): void {
   try {
     localStorage.removeItem(CREDITS_TOKEN_KEY);
     localStorage.removeItem(CREDITS_BALANCE_KEY);
-  } catch {}
+  } catch { /* nothing to clear if storage is denied */ }
 }
 
 /** Cached balance so the UI has a number to show before /credits/balance returns. */
@@ -154,7 +154,7 @@ export function getCachedCreditBalance(): number {
 }
 
 export function setCachedCreditBalance(balance: number): void {
-  try { localStorage.setItem(CREDITS_BALANCE_KEY, String(Math.max(0, Math.floor(balance)))); } catch {}
+  try { localStorage.setItem(CREDITS_BALANCE_KEY, String(Math.max(0, Math.floor(balance)))); } catch { /* a cached balance is an optimisation, never the source of truth */ }
 }
 
 /**

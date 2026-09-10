@@ -3,6 +3,8 @@ import type {
   SuggestionCandidate, CounterCandidate, Stats
 } from './types';
 import { TYPES, TYPE_CHART, STAT_KEYS } from './constants';
+// No cycle: pokemon.ts imports only the data JSON, ./types and ./constants.
+import { POKEMON_BY_ID } from './pokemon';
 
 export function eff(attacker: PokemonType, defenderTypes: PokemonType[]): number {
   let m = 1;
@@ -362,7 +364,13 @@ export function parseShareCode(code: string): (TeamMember | null)[] | null {
   return parts.map(part => {
     const shiny = part.endsWith('s');
     const n = parseInt(shiny ? part.slice(0, -1) : part, 10);
-    if (!n || n <= 0 || n > 1025) return null;
+    // Alternate forms live above 10000 in PokeAPI's numbering (Charizard Mega X
+    // is 10034), and addToTeam stores those ids happily — so a `1025` ceiling
+    // silently dropped every Mega, regional and Gigantamax slot out of a shared
+    // team. Worse, the builder then rewrote the URL from the parsed result, so
+    // the original code was destroyed on arrival. Validate against the dataset
+    // instead of against a number that was only ever the base-species count.
+    if (!n || n <= 0 || !POKEMON_BY_ID[n]) return null;
     return { id: n, shiny };
   });
 }

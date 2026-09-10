@@ -77,6 +77,422 @@ async function revealCard(page) {
 // ---------- tests ----------
 
 const tests = [
+  // ---- gym battles, shinies, event Pokemon (v11) ----
+
+  {
+    name: 'the area map renders, and the road fills in as the career walks it',
+    pageOpts: { query: 'seed=8843' },
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-map-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-map-svg"]', { timeout: 8000 });
+
+      const shape = await page.evaluate(() => ({
+        nodes: document.querySelectorAll('[data-testid^="journey-map-node-"]').length,
+        gyms: document.querySelectorAll('[data-cleared]').length,
+        current: document.querySelectorAll('[data-state="current"]').length,
+      }));
+      // 8 gyms per region — the map and the badge track must agree, which is
+      // asserted structurally in src/journey/atlas.test.ts and visually here.
+      assertEq(shape.gyms, 8, `expected 8 gym nodes on the map, got ${shape.gyms}`);
+      assertGte(shape.nodes, 12, `map should have a real route, got ${shape.nodes} nodes`);
+      assertEq(shape.current, 1, `exactly one node should be current, got ${shape.current}`);
+
+      const startIdx = await page.evaluate(() => {
+        const el = document.querySelector('[data-state="current"]');
+        return Number(el.getAttribute('data-testid').replace('journey-map-node-', ''));
+      });
+
+      // Walk a good way into the run, then confirm the marker advanced.
+      for (let i = 0; i < 18; i++) {
+        await page.evaluate(() => {
+          const c = document.querySelector('[data-testid="journey-continue"]');
+          if (c) { c.click(); return; }
+          const o = [...document.querySelectorAll('[data-journey-option="1"]')];
+          if (o.length) o[0].click();
+        });
+        await sleep(60);
+        if (await has(page, '[data-testid="journey-retired"]')) break;
+      }
+
+      const openNow = await has(page, '[data-testid="journey-map-svg"]');
+      if (!openNow) {
+        await page.evaluate(() => document.querySelector('[data-testid="journey-map-toggle"]')?.click());
+        await page.waitForSelector('[data-testid="journey-map-svg"]', { timeout: 8000 });
+      }
+      const laterIdx = await page.evaluate(() => {
+        const el = document.querySelector('[data-state="current"]');
+        return el ? Number(el.getAttribute('data-testid').replace('journey-map-node-', '')) : -1;
+      });
+      assertGte(laterIdx, startIdx + 1,
+        `the map marker did not advance (${startIdx} -> ${laterIdx})`);
+
+      const body = await text(page);
+      assert(!/journey\.map\./.test(body), 'map keys must not leak into the UI');
+    },
+  },
+
+  {
+    name: 'the finished run shows the whole road, open, with cleared gyms lit',
+    pageOpts: { query: 'seed=8843' },
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      // Open by default on the retired beat — it is part of the artifact there.
+      await page.waitForSelector('[data-testid="journey-map-svg"]', { timeout: 8000 });
+      const state = await page.evaluate(() => {
+        const gyms = [...document.querySelectorAll('[data-cleared]')];
+        const badgeText = document.querySelector('[data-testid="journey-map-badges"]')?.innerText ?? '';
+        return {
+          lit: gyms.filter(g => g.getAttribute('data-cleared') === 'true').length,
+          badgeText,
+        };
+      });
+      // Whatever the badge readout claims, exactly that many gyms are lit —
+      // the map reads the badge list rather than keeping a parallel rule.
+      const claimed = Number((state.badgeText.match(/(\d+)\s*\//) || [])[1]);
+      assert(Number.isInteger(claimed), `could not read the badge count: "${state.badgeText}"`);
+      assertEq(state.lit, claimed,
+        `${claimed} badges claimed but ${state.lit} gyms lit on the map`);
+    },
+  },
+
+  {
+    name: 'the 9:16 clip encodes for real, offline, and is offered only when supported',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await revealCard(page);
+      // The share row only mounts once the card PNG blob resolves, so waiting
+      // on the card screen alone races it — that raced check reported the clip
+      // button missing when it was merely not rendered yet.
+      await page.waitForSelector('[data-testid="journey-share-download"]', { timeout: 10000 });
+
+      const supported = await page.evaluate(() => {
+        const probe = document.createElement('canvas');
+        const hasCapture = typeof probe.captureStream === 'function';
+        let codec = false;
+        try {
+          codec = typeof MediaRecorder !== 'undefined'
+            && MediaRecorder.isTypeSupported('video/webm;codecs=vp9');
+        } catch { codec = false; }
+        return hasCapture && codec;
+      });
+
+      const buttonShown = await has(page, '[data-testid="journey-share-video"]');
+      // The button must track real capability in BOTH directions — a dead
+      // button is worse than no button, and hiding a working one loses the
+      // highest-leverage share surface.
+      assert(buttonShown === supported,
+        `clip button shown=${buttonShown} but pipeline supported=${supported}`);
+      if (!supported) return;
+
+      // Encode a real clip in-page. The harness blocks all non-file:// requests,
+      // so this also proves the clip renders with zero network — sprite loads
+      // fall back to derived silhouettes.
+      const result = await page.evaluate(async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1080;
+        canvas.height = 1920;
+        const c = canvas.getContext('2d');
+        const stream = canvas.captureStream(30);
+        const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+        const chunks = [];
+        rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+        const stopped = new Promise(res => { rec.onstop = res; });
+        rec.start();
+        for (let f = 0; f < 20; f++) {
+          c.fillStyle = f % 2 ? '#111' : '#222';
+          c.fillRect(0, 0, 1080, 1920);
+          await new Promise(r => requestAnimationFrame(r));
+        }
+        rec.stop();
+        await stopped;
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        return { size: blob.size, type: blob.type };
+      });
+      assertGte(result.size, 1, `recorder produced an empty clip: ${JSON.stringify(result)}`);
+
+      // And the app's own button runs without throwing.
+      const errors = [];
+      page.on('pageerror', e => errors.push(String(e)));
+      await page.evaluate(() => document.querySelector('[data-testid="journey-share-video"]').click());
+      await sleep(1200);
+      assertEq(errors.length, 0, `clip render threw: ${errors.join(' | ')}`);
+    },
+  },
+
+  {
+    name: 'the prepare step shows prize money and a priced reroll',
+    // Pinned seed. An earlier version of this test started a run on the setup
+    // screen's RANDOM default seed and asserted the rerolled card must differ —
+    // which is not a property the feature has: a reroll draws from the phase's
+    // pool and can legitimately redraw the same card. It passed standalone and
+    // failed under full-suite load, purely because the seed changed.
+    //
+    // "a reroll can change the card" is proved deterministically in
+    // src/journey/economy.test.ts across several reroll depths. What belongs
+    // here is the browser-side contract: the cost is shown, the reroll
+    // registers, and the price escalates.
+    pageOpts: { query: 'seed=8843' },
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-prepare-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-reroll"]', { timeout: 8000 });
+
+      const money = await page.$eval('[data-testid="journey-money"]', el => el.innerText.trim());
+      assert(/\d/.test(money), `money readout should carry a number, got "${money}"`);
+
+      // The first reroll of a run is free — that is what makes the mechanic
+      // discoverable without a tutorial.
+      const costBefore = await page.$eval('[data-testid="journey-reroll"]',
+        el => el.closest('div').innerText.trim());
+      assert(!/\u20BD\s*\d/.test(costBefore), `first reroll should read as free, got "${costBefore}"`);
+
+      await page.evaluate(() => document.querySelector('[data-testid="journey-reroll"]').click());
+      await page.waitForFunction(() => {
+        const el = document.querySelector('[data-testid="journey-reroll"]');
+        return el && /\u20BD\s*\d/.test(el.closest('div').innerText);
+      }, { timeout: 8000 });
+
+      // Reroll registered and the ladder moved on: the next one has a price.
+      const costAfter = await page.$eval('[data-testid="journey-reroll"]',
+        el => el.closest('div').innerText.trim());
+      assert(/\u20BD\s*\d/.test(costAfter), `second reroll should be priced, got "${costAfter}"`);
+
+      const body = await text(page);
+      assert(!/journey\.prepare\.reroll/.test(body), 'reroll keys must not leak into the UI');
+    },
+  },
+  {
+    name: 'the daily archive lists past issues and one is playable',
+    async fn(page) {
+      // The archive only appears once more than one issue exists, so seed a
+      // history far enough back that there are past issues to list.
+      await page.evaluate(() => {
+        const d = (n) => {
+          const t = new Date();
+          t.setDate(t.getDate() - n);
+          return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+        };
+        localStorage.setItem('trainerscodex.journey.streak', JSON.stringify({
+          playedDates: [d(2), d(1)].sort(), bestStreak: 2,
+        }));
+      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await openJourney(page);
+      const hasArchive = await has(page, '[data-testid="journey-archive-toggle"]');
+      if (!hasArchive) {
+        // Before DAILY_EPOCH + 1 there is genuinely only one issue, so there is
+        // nothing to archive. Assert that rather than silently passing.
+        const body = await text(page);
+        assert(!/journey\.archive\./.test(body), 'archive keys must not leak when the archive is hidden');
+        return;
+      }
+      await page.evaluate(() => document.querySelector('[data-testid="journey-archive-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-archive"]', { timeout: 8000 });
+      const rows = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
+          .filter(el => /journey-archive-\d+$/.test(el.getAttribute('data-testid'))).length);
+      assertGte(rows, 1, 'archive should list at least one past issue');
+      // Playing a past issue starts a real run on that issue's seed.
+      await page.evaluate(() => {
+        const el = [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
+          .find(e => /journey-archive-\d+$/.test(e.getAttribute('data-testid')));
+        el.click();
+      });
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      const body = await text(page);
+      assert(!/journey\.archive\./.test(body), 'archive keys must not leak into the UI');
+    },
+  },
+
+  {
+    name: 'a broken streak offers one repair, and taking it restores the run',
+    async fn(page) {
+      // Seed a history with a real one-day gap, then reload so setup reads it.
+      await page.evaluate(() => {
+        const d = (n) => {
+          const t = new Date();
+          t.setDate(t.getDate() - n);
+          return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+        };
+        // played: 4,3 days ago … gap at 2 … played 1 day ago.
+        localStorage.setItem('trainerscodex.journey.streak', JSON.stringify({
+          playedDates: [d(4), d(3), d(1)].sort(), bestStreak: 2,
+        }));
+      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await openJourney(page);
+      await page.waitForSelector('[data-testid="journey-repair-offer"]', { timeout: 8000 });
+      const before = await page.$eval('[data-testid="journey-streak"]', el => el.innerText);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-repair"]').click());
+      await sleep(200);
+      const after = await page.$eval('[data-testid="journey-streak"]', el => el.innerText);
+      assert(after !== before, `streak line should change after a repair (was "${before}")`);
+      // The offer is spent — one free repair, not a permanent button.
+      const stillOffered = await has(page, '[data-testid="journey-repair-offer"]');
+      assert(!stillOffered, 'the repair offer must disappear once spent');
+      const body = await text(page);
+      assert(!/journey\.daily\.repair/.test(body), 'repair keys must not leak into the UI');
+    },
+  },
+
+  {
+    name: 'a finished run shows a named rank and a percentile, not just an integer',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      const rank = await page.$eval('[data-testid="journey-rank-name"]', el => el.innerText.trim());
+      assertGte(rank.length, 3, 'rank name should render');
+      assert(!/^journey\./.test(rank), `rank must be translated, got: ${rank}`);
+      const pct = await page.$eval('[data-testid="journey-rank-percentile"]', el => el.innerText.trim());
+      // The copy must say these are simulated careers, not real players — we do
+      // not have a player population to rank against.
+      assert(/simulated|simulad/i.test(pct), `percentile line must not imply real players: "${pct}"`);
+      assert(/\d/.test(pct), `percentile line should carry a number: "${pct}"`);
+      const rarity = await page.$eval('[data-testid="journey-roster-rarity"]', el => el.innerText.trim());
+      assert(/\d/.test(rarity), `roster rarity should carry a number: "${rarity}"`);
+      const body = await text(page);
+      assert(!/journey\.rank\./.test(body), 'rank keys must not leak into the UI');
+    },
+  },
+
+  {
+    // Skill vs luck: the retired beat decomposes the score into this seed's
+    // dice and the player's choices by replaying the seed four ways. Both
+    // numbers are signed, they sum to the player's distance from an average
+    // career, and the range line names the best and worst path on this seed.
+    name: 'a finished run says whether it was skill or luck, with numbers that add up',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      const { score } = await playToEnd(page);
+      assert(await has(page, '[data-testid="journey-luck"]'), 'skill-vs-luck block should render on the retired beat');
+      const dice = await page.$eval('[data-testid="journey-luck-dice"]', el => el.innerText.trim());
+      const skill = await page.$eval('[data-testid="journey-luck-skill"]', el => el.innerText.trim());
+      const signedRe = /^([+\u2212-]\d+|\u00b10)$/;
+      assert(signedRe.test(dice), `dice should be a signed integer, got "${dice}"`);
+      assert(signedRe.test(skill), `skill should be a signed integer, got "${skill}"`);
+      const range = await page.$eval('[data-testid="journey-luck-range"]', el => el.innerText.trim());
+      const nums = (range.match(/\d+/g) || []).map(Number);
+      assertGte(nums.length, 3, `range line should carry worst, best and a percent: "${range}"`);
+      const [worst, best] = nums;
+      const s = Number(score);
+      assert(worst <= s && s <= best, `player ${s} must sit inside this seed's range ${worst}..${best}`);
+      const body = await text(page);
+      assert(!/journey\.luck\./.test(body), 'luck keys must not leak into the UI');
+      const o = await page.evaluate(() => {
+        const d = document.querySelector('[data-testid="journey-dialog"]');
+        return { s: d.scrollWidth, c: d.clientWidth };
+      });
+      assert(o.s <= o.c + 1, `retired beat overflows its dialog sideways: ${o.s} vs ${o.c}`);
+    },
+  },
+
+  {
+    // The text share artifact is what actually travels (Wordle's grid was pasted
+    // into private chats far more than posted publicly). It existed here but was
+    // hidden behind a button called "Copy link"; it is previewed now.
+    name: 'the card screen previews the text that gets pasted, emoji strip included',
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await page.evaluate(() => document.querySelector('[data-testid="journey-reveal-card"]').click());
+      await page.waitForSelector('[data-testid="journey-share-preview"]', { timeout: 20_000 });
+      const preview = await page.$eval('[data-testid="journey-share-preview"]', el => el.innerText);
+      assert(/[\u{1F3C5}\u25FD]/u.test(preview), `preview should carry the badge strip, got: ${preview.slice(0, 80)}`);
+      assert(/https?:\/\//.test(preview), 'preview should end with the play link');
+      const label = await page.$eval('[data-testid="journey-share-link"]', el => el.innerText.trim());
+      assert(!/link/i.test(label), `the copy button copies the whole text, not a link — label reads "${label}"`);
+      // The dialog scrolls vertically inside a fixed-width box, so a child that
+      // overflows sideways clips inside it without moving the page — the
+      // page-level overflow checks elsewhere cannot see that. Measure the dialog
+      // itself. (The share URL is one unbreakable token; this is where it broke.)
+      const o = await page.evaluate(() => {
+        const d = document.querySelector('[data-testid="journey-dialog"]');
+        return { s: d.scrollWidth, c: d.clientWidth };
+      });
+      assert(o.s <= o.c + 1, `card screen overflows its dialog sideways: scrollWidth ${o.s} vs clientWidth ${o.c}`);
+    },
+  },
+
+  {
+    name: 'gym battles are shown as battles, with the badge attached to a win',
+    async fn(page) {
+      await openJourney(page);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      // Walk far enough to clear the gym circuit, collecting every battle row.
+      let rows = [];
+      for (let step = 0; step < 40 && rows.length === 0; step++) {
+        await page.evaluate(() => {
+          const cont = document.querySelector('[data-testid="journey-continue"]');
+          if (cont) { cont.click(); return; }
+          const opts = [...document.querySelectorAll('[data-journey-option="1"]')];
+          if (opts.length) opts[0].click();
+        });
+        await sleep(70);
+        rows = await page.evaluate(() => [...document.querySelectorAll('[data-testid="journey-battle-row"]')]
+          .map(el => ({ won: el.getAttribute('data-won'), txt: el.innerText })));
+      }
+      assertGte(rows.length, 1, 'a gym-circuit recap should show at least one battle row');
+      // A row must say who was fought and whether it was won — the old build
+      // moved a badge counter and showed nothing about the leader.
+      for (const r of rows) {
+        assert(r.won === '1' || r.won === '0', `battle row missing a result: ${JSON.stringify(r)}`);
+        assertGte(r.txt.trim().length, 3, 'battle row should carry text');
+      }
+      // A badge is only ever attached to a won row.
+      const badgeOnLoss = rows.some(r => r.won === '0' && /BADGE|MEDALLA/.test(r.txt));
+      assert(!badgeOnLoss, 'a lost battle must never show a badge');
+      const body = await text(page);
+      assert(!/journey\.battle\./.test(body), 'battle rows must not leak raw i18n keys');
+    },
+  },
+
+  {
+    name: 'a shiny starter actually renders as shiny in the party rail',
+    // Seed 4 + shiny-hunter gives a shiny starter, verified against
+    // initialRoster's own `starter-shiny` roll. The engine half of the shiny fix
+    // is covered exhaustively in src/journey/battles.test.ts; this is the render
+    // half — a shiny that the player cannot see is the bug we just fixed.
+    pageOpts: { query: 'seed=4' },
+    async fn(page) {
+      await openJourney(page);
+      await page.evaluate(() => {
+        const b = document.querySelector('[data-testid="journey-archetype-shiny-hunter"]');
+        if (b) b.click();
+      });
+      await sleep(80);
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+      const shown = await page.evaluate(() => ({
+        marker: document.querySelectorAll('[data-testid="journey-party-shiny"]').length,
+        sprite: document.querySelectorAll('img[src*="shiny"]').length,
+      }));
+      assert(shown.marker > 0 || shown.sprite > 0,
+        `a shiny party member should render a marker or shiny sprite, got ${JSON.stringify(shown)}`);
+    },
+  },
   {
     name: 'journey button appears in the header and opens the dialog',
     async fn(page) {

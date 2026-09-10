@@ -54,9 +54,15 @@ export const ITEM_LEVEL_GRANT: Partial<Record<ItemId, number>> = {
   'rare-candy': 1,
 };
 
-/** Flat XP granted to the WHOLE party. */
+/**
+ * Flat XP granted to the WHOLE party.
+ *
+ * Scaled with XP_RATE in levels.ts. At 900 against a ~33k career this was 2.7%
+ * of a run's total and effectively did nothing; 4,000 is worth a couple of
+ * levels mid-run, which is what a one-shot item should feel like.
+ */
 export const ITEM_PARTY_XP: Partial<Record<ItemId, number>> = {
-  'exp-share': 900,
+  'exp-share': 4000,
 };
 
 /** Items that unlock a non-level evolution condition. */

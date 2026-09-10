@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DECISION_CARDS, CHAPTER_BEATS, CHAPTER_TITLES, VERDICTS, ARCHETYPES, PACES,
 } from '@/journey/content';
+import { RANK_TIERS } from '@/journey/ranks';
 import {
   LOCALES, hasKey, localeCoverage, localeKeys, referenceKeys, translate,
 } from './strings';
@@ -32,6 +33,32 @@ function contentKeys(): string[] {
   for (const c of ['winRate', 'titles', 'peak', 'badges', 'catches', 'shinies', 'fame', 'bond', 'durability', 'longevity']) {
     keys.push(`journey.score.${c}`);
   }
+  // Rank tiers are a content table like any other — enumerated here so a typo
+  // in RANK_TIERS fails the build instead of printing `journey.rank.ace` in the
+  // middle of a share card.
+  for (const t of RANK_TIERS) keys.push(`journey.rank.${t.id}`);
+  keys.push('journey.rank.percentile', 'journey.rank.rosterRarity');
+  // Battle rows and the event line, both emitted from JourneyRecap.
+  for (const k of ['beat', 'lostTo', 'rematch', 'badge', 'level', 'strong', 'weak']) {
+    keys.push(`journey.battle.${k}`);
+  }
+  keys.push('journey.recap.event', 'journey.recap.eventShiny', 'journey.recap.landed');
+  // Skill-vs-luck block on the retired beat, and the share-text preview.
+  for (const k of ['heading', 'dice', 'diceSub', 'choices', 'choicesSub', 'range', 'note']) keys.push(`journey.luck.${k}`);
+  keys.push('journey.share.preview');
+  // The option consequence line: risk tags and every payoff kind an option can
+  // carry. A payoff key that resolves to its own name would print
+  // `journey.payoff.recruit.rare` under a decision button.
+  for (const r of ['steady', 'risky', 'gamble']) keys.push(`journey.option.risk.${r}`);
+  keys.push('journey.option.ifLands', 'journey.payoff.money',
+    'journey.payoff.recruit.rare', 'journey.payoff.recruit.legendary', 'journey.payoff.fatigueRefund');
+  for (const card of DECISION_CARDS) {
+    for (const opt of card.options) {
+      if (opt.payoff?.item) keys.push(`journey.item.${opt.payoff.item}.name`);
+    }
+  }
+  // The area map's chrome.
+  for (const k of ['title', 'here', 'legend', 'badges', 'alt']) keys.push(`journey.map.${k}`);
 
   return keys;
 }

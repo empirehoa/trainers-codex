@@ -11,7 +11,7 @@
 // Everything here is pure arithmetic on already-deterministic inputs, so the
 // replay contract is untouched.
 
-import type { CareerStats, ChapterPhase, RosterEntry } from './types';
+import type { ChapterPhase, RosterEntry } from './types';
 
 export const MAX_LEVEL = 100;
 export const START_LEVEL = 5;
@@ -46,6 +46,28 @@ export function xpProgress(xp: number): { level: number; into: number; need: num
   const need = next - base;
   return { level, into, need, pct: need > 0 ? Math.min(1, into / need) : 1 };
 }
+
+/**
+ * Global XP rate.
+ *
+ * This was 0.5, and it made the player's own Pokémon a dead end. Measured over
+ * 300 careers, a starter finished at level p50 25 / max 28 on ~3,300 total XP —
+ * and since most three-stage lines gate their second evolution at 32-36,
+ * **0% of starters could ever take it**. The one thing a career sim is about
+ * (raising the team you chose) was arithmetically unreachable, so the only
+ * strategy left was swapping in whatever the engine caught last chapter. That
+ * is the repetitiveness.
+ *
+ * At 5.0 a full career earns ~33k XP, which lands a starter around level 55 and
+ * clears the 16/32/36 ladder with room for the late lines (Dragonite and
+ * Tyranitar evolve at 55).
+ *
+ * NOTE: this number and the opponent ladders in `opponents.ts` are ONE number in
+ * two places. v10's ladders (gyms to 54, Elite Four 58-70, champion 76) were
+ * built for a party that reaches ~60 — they were never wrong, this rate was.
+ * Change one and you must re-derive the other.
+ */
+const XP_RATE = 5.0;
 
 /** Per-phase XP scale — later stages of a career are worth more per battle. */
 const PHASE_XP: Record<ChapterPhase, number> = {
@@ -83,7 +105,7 @@ export function chapterXp(opts: {
   // has had time to close the gap.
   const fresh = chapterIndex - Math.max(joinedAt, 0) <= 3 ? 1.5 : 1;
   const spread = partySize > 0 ? 6 / Math.max(3, partySize) : 1;
-  return Math.max(1, Math.round(base * share * fresh * spread * 0.5));
+  return Math.max(1, Math.round(base * share * fresh * spread * XP_RATE));
 }
 
 /** A member's level, derived from its XP. */
@@ -140,8 +162,28 @@ export function canEvolveNow(opts: {
   return level >= need ? { ok: true } : { ok: false, reason: 'level', needLevel: need };
 }
 
-/** Level a newly-boxed/swapped-in member should arrive at — scaled to the run. */
-export function levelForNewCatch(stats: CareerStats, chapterIndex: number): number {
-  // Roughly tracks the party's own progression so a swap-in is playable.
-  return Math.max(START_LEVEL, Math.min(70, 5 + chapterIndex * 3 + stats.badges * 2));
+/**
+ * Level a newly-caught or newly-boxed Pokémon arrives at.
+ *
+ * Derived from the party the player has actually raised, and deliberately BELOW
+ * it. The old formula — `5 + chapterIndex * 3 + badges * 2` — looked at neither
+ * the party nor the XP economy, and handed out level 60 at chapter 15 while the
+ * starter was stuck at 25. Measured result: an auto-caught Pokémon outclassed
+ * the player's starter in **300 of 300 careers**, by as much as 45 levels.
+ *
+ * That is not a difficulty problem, it is an agency problem. Nothing the player
+ * raised could ever be their best Pokémon, so the optimal line was always "use
+ * whatever was caught most recently" and every chapter played the same.
+ *
+ * A wild Pokémon arrives promising but untrained: 85% of the party's average,
+ * and never at or above it. Close enough to be worth swapping in, never a
+ * replacement for the work.
+ */
+export function levelForNewCatch(partyLevel: number, chapterIndex: number): number {
+  // Early on there is no meaningful party average yet, so track the chapter.
+  const floor = Math.min(12, START_LEVEL + chapterIndex);
+  const fromParty = Math.round(partyLevel * 0.85);
+  // Strictly below the party — a fresh catch never ties the invested team.
+  const capped = Math.min(fromParty, Math.max(START_LEVEL, partyLevel - 1));
+  return Math.max(START_LEVEL, Math.max(floor, capped));
 }

@@ -4,7 +4,7 @@ import {
   Share2, Grid3x3, Filter as FilterIcon,
   RotateCcw, FolderOpen, HelpCircle, Dices,
   User, Wand2, ShoppingBag, LogIn, Cloud, Compass,
-  Sun, Moon, Sparkles, ClipboardList, Globe, MoreHorizontal
+  Sun, Moon, Sparkles, ClipboardList, Globe, MoreHorizontal, ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,7 @@ import {
 } from '@/lib/analysis';
 import { BADGE_REGIONS, badgesForRegion } from '@/lib/merch-renderers';
 import { loadStorage, saveStorage, genId } from '@/lib/storage';
+import { initialSearchQuery } from '@/lib/search-param';
 import {
   type Ruleset, UNRESTRICTED, FORMAT_PRESETS, presetById,
   checkLegality, teamLegality, isUnrestricted, isLegal,
@@ -96,7 +97,7 @@ const JOURNEY_LINK = parseCurrentJourneyLink();
 
 type CategoryFilter =
   | 'all' | 'normal' | 'legendary' | 'mythical' | 'special'
-  | 'base-only' | 'mega' | 'gigantamax' | 'regional' | 'paradox';
+  | 'base-only' | 'mega' | 'gigantamax' | 'regional' | 'paradox' | 'favorites';
 
 const EMPTY_MEMBERS: (TeamMember | null)[] = [null, null, null, null, null, null];
 
@@ -110,6 +111,18 @@ export default function App() {
   const [teamName, setTeamName] = useState('');
   const [trainer, setTrainer] = useState<TrainerProfile | null>(null);
   const [premium, setPremium] = useState(false);
+  // Favourites. A Set for O(1) membership from PokemonCard, persisted as an
+  // array (see StorageShape.favorites).
+  const [favorites, setFavorites] = useState<Set<number>>(() => new Set());
+  // Referentially stable, so PokemonCard's React.memo still skips work. An
+  // inline arrow here would re-render all 240 mounted cards on every keystroke.
+  const toggleFavorite = useCallback((p: Pokemon) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+      return next;
+    });
+  }, []);
   // v6: light/dark mode. Default to dark (the original v5 brand vibe), persist
   // in localStorage. We toggle the `.light` / `.dark` class on documentElement
   // so the CSS variables in index.css switch palettes.
@@ -122,7 +135,7 @@ export default function App() {
     const root = document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
-    try { localStorage.setItem('trainerscodex.theme', theme); } catch {}
+    try { localStorage.setItem('trainerscodex.theme', theme); } catch { /* private mode or quota — the theme is already applied to the DOM */ }
   }, [theme]);
   const toggleTheme = useCallback(() => {
     setTheme(t => t === 'dark' ? 'light' : 'dark');
@@ -179,7 +192,7 @@ export default function App() {
       const clean = window.location.pathname.replace(/\/u\/[^/?#]+/i, '/') || '/';
       const hash = /(?:^#|[#&])\/?u[/=]/i.test(window.location.hash) ? '' : window.location.hash;
       history.replaceState(null, '', clean + window.location.search + hash);
-    } catch {}
+    } catch { /* replaceState throws on some sandboxed/file:// origins — the URL is cosmetic here */ }
   }, []);
 
   const [pendingTeam, setPendingTeam] = useState<(TeamMember | null)[] | null>(null);
@@ -189,7 +202,13 @@ export default function App() {
   const [sharedIncoming, setSharedIncoming] = useState<
     { members: (TeamMember | null)[]; teamName?: string; by?: string } | null
   >(null);
-  const [search, setSearch] = useState('');
+  // Seeded from `?q=` so the static reference pages under /pokemon/<slug> can
+  // hand a visitor straight into the builder with that Pokémon already filtered
+  // — the whole point of generating them (see scripts/gen-seo-pages.ts). Read
+  // once at mount; the param is left in the URL so a refresh is idempotent.
+  const [search, setSearch] = useState(initialSearchQuery);
+  // Empty-state preset chips: collapsed on phones (see the empty state below).
+  const [presetsOpen, setPresetsOpen] = useState(false);
   const [filterTypes, setFType] = useState<PokemonType[]>([]);
   const [filterGens, setFGens] = useState<number[]>([]);
   const [filterRoles, setFRoles] = useState<Role[]>([]);
@@ -201,11 +220,11 @@ export default function App() {
     try {
       const raw = localStorage.getItem('trainerscodex.format');
       if (raw) return { ...UNRESTRICTED, ...JSON.parse(raw) } as Ruleset;
-    } catch {}
+    } catch { /* unreadable or corrupt — fall through to UNRESTRICTED below */ }
     return UNRESTRICTED;
   });
   useEffect(() => {
-    try { localStorage.setItem('trainerscodex.format', JSON.stringify(ruleset)); } catch {}
+    try { localStorage.setItem('trainerscodex.format', JSON.stringify(ruleset)); } catch { /* private mode or quota — the ruleset still applies this session */ }
   }, [ruleset]);
   const formatActive = useMemo(() => !isUnrestricted(ruleset), [ruleset]);
   const applyPreset = useCallback((id: string) => setRuleset(presetById(id)), []);
@@ -277,7 +296,7 @@ export default function App() {
     try {
       const hash = window.location.hash || '';
       // `#team=` is an INCOMING SHARE: show the landing, don't auto-load.
-      const shared = hash.match(/(?:^#|&)team=([0-9a-z,\-]+)/);
+      const shared = hash.match(/(?:^#|&)team=([0-9a-z,-]+)/);
       if (shared) {
         const parsed = parseShareCode(shared[1]);
         if (parsed && parsed.some(Boolean)) {
@@ -292,12 +311,12 @@ export default function App() {
         }
       }
       // `#t=` is the app's own resume/bookmark hash — load it into the builder.
-      const m = hash.match(/(?:^#|&)t=([0-9a-z,\-]+)/);
+      const m = hash.match(/(?:^#|&)t=([0-9a-z,-]+)/);
       if (m) {
         const parsed = parseShareCode(m[1]);
         if (parsed) setPendingTeam(parsed);
       }
-    } catch {}
+    } catch { /* a malformed share link must open the app, not an error screen */ }
   }, []);
 
   // ---------- Resolve pending team ----------
@@ -329,7 +348,7 @@ export default function App() {
       if (cur !== newHash) {
         history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
       }
-    } catch {}
+    } catch { /* see above — the share hash is cosmetic, never load-bearing */ }
   }, [members]);
 
   // ---------- Load saved teams + restore current from localStorage on mount ----------
@@ -337,6 +356,7 @@ export default function App() {
     const stored = loadStorage();
     setSavedTeams(stored.teams);
     if (stored.trainer) setTrainer(stored.trainer);
+    if (stored.favorites?.length) setFavorites(new Set(stored.favorites));
 
     // Premium gating: a signed Stripe license JWT takes precedence over the
     // legacy localStorage `premium` flag (which was the dev-only preview
@@ -398,8 +418,9 @@ export default function App() {
       current: { members, name: teamName },
       trainer,
       premium: premium || undefined,
+      favorites: [...favorites],
     });
-  }, [members, teamName, savedTeams, trainer, premium, hasLoadedStorage]);
+  }, [members, teamName, savedTeams, trainer, premium, favorites, hasLoadedStorage]);
 
   // ---------- Keyboard shortcuts ----------
   useEffect(() => {
@@ -518,6 +539,7 @@ export default function App() {
     else if (filterCategory === 'mega') list = list.filter(p => p.form === 'mega' || p.form === 'primal');
     else if (filterCategory === 'gigantamax') list = list.filter(p => p.form === 'gigantamax');
     else if (filterCategory === 'regional') list = list.filter(p => ['alolan', 'galarian', 'hisuian', 'paldean'].includes(p.form || ''));
+    else if (filterCategory === 'favorites') list = list.filter(p => favorites.has(p.id));
     else if (filterCategory === 'paradox') {
       // Paradox Pokémon don't have a "form" tag — they're regular species in the 984-1024 range
       const PARADOX_IDS = new Set([984, 985, 986, 987, 988, 989, 990, 991, 992, 993, 994, 995, 1005, 1006, 1007, 1008, 1009, 1010, 1020, 1021, 1022, 1023]);
@@ -532,7 +554,7 @@ export default function App() {
       return ((a.stats[sortBy as keyof Stats] ?? 0) - (b.stats[sortBy as keyof Stats] ?? 0)) * dir;
     });
     return list;
-  }, [deferredSearch, filterTypes, filterGens, filterRoles, filterCategory, sortBy, sortDir]);
+  }, [deferredSearch, filterTypes, filterGens, filterRoles, filterCategory, sortBy, sortDir, favorites]);
 
   // ---------- Windowed grid ----------
   // Mounting all 1,307 cards at once was the app's single biggest jank source:
@@ -820,7 +842,9 @@ export default function App() {
       />
 
       {/* ============== HEADER ============== */}
-      <header className="border-b sticky top-0 z-30 backdrop-blur-md bg-background/92" style={{ borderColor: 'hsl(var(--border))' }}>
+      {/* Same `viewport-fit=cover` story as the bottom bar: in standalone mode
+          with a translucent status bar, the header rendered under the notch. */}
+      <header className="border-b sticky top-0 z-30 backdrop-blur-md bg-background/92 pt-[env(safe-area-inset-top)]" style={{ borderColor: 'hsl(var(--border))' }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
@@ -837,25 +861,36 @@ export default function App() {
                   <span className="text-muted-foreground">// </span>{teamName.toLowerCase()}
                 </p>
               ) : trainer?.name ? (
-                <p className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden sm:block">
-                  <User size={8} className="inline mr-0.5" /> {trainer.name}
+                <p className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden lg:block">
+                  <User size={10} className="inline mr-0.5" /> {trainer.name}
                 </p>
               ) : (
-                <p className="font-mono text-[9px] text-muted-foreground mt-0.5 hidden sm:block">v5.0 · team analyzer</p>
+                /* Decorative only, and the first thing to give when space is
+                   tight: at 820px with 36px touch buttons it wrapped to three
+                   lines and squeezed the wordmark down to "tr…". Held back
+                   until 1024px, where the row has room to spare. */
+                <p className="font-mono text-[10px] text-muted-foreground mt-0.5 hidden lg:block">v5.0 · team analyzer</p>
               )}
             </div>
           </div>
           <TooltipProvider delayDuration={150}>
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Desktop toolbar: full icon row (≥640px). The test harness runs
-                  at 1280px, so every icon button stays inline + queryable here.
-                  Mobile gets the MoreHorizontal overflow menu instead, so this
-                  row never pushes the document into horizontal scroll. */}
-              <div className="hidden sm:flex items-center gap-1.5">
+              {/* Desktop toolbar: the full icon row, ≥1024px only.
+                  This used to break at 640px, which put all 15 controls on
+                  tablets too. They fit there only because they were 32px and the
+                  wordmark was allowed to collapse — at 768px the cluster measures
+                  705px against a 768px viewport, so the brand truncated to "tr…"
+                  and its subtitle wrapped to three lines. Every overflow test
+                  still passed, because the header absorbed the pressure by
+                  shrinking rather than scrolling.
+                  Tablets now get the same overflow menu phones get: it was
+                  already built, already tested, and reads better than 15 cramped
+                  targets. The full row returns at 1024px where it genuinely fits. */}
+              <div className="hidden lg:flex items-center gap-1.5">
               {undoStack.length > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden sm:flex">
+                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden lg:flex">
                       <RotateCcw size={13} />
                     </Button>
                   </TooltipTrigger>
@@ -896,7 +931,7 @@ export default function App() {
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline" size="icon" onClick={() => setPublishOpen(true)}
-                    className="w-8 h-8 hidden sm:flex"
+                    className="w-8 h-8 hidden lg:flex"
                     aria-label="Publish public profile"
                   >
                     <Globe size={13} />
@@ -1013,11 +1048,14 @@ export default function App() {
 
               {/* Mobile overflow menu (<640px): every secondary action as a
                   labeled item so the header never overflows a phone viewport. */}
-              <div className="flex sm:hidden">
+              <div className="flex lg:hidden">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" className="w-8 h-8" aria-label="More actions">
-                      <MoreHorizontal size={16} />
+                    {/* The collapsed header carries two controls, so this one can
+                        take the full 44px touch target the crowded desktop row
+                        cannot afford. */}
+                    <Button variant="outline" size="icon" className="w-11 h-11" data-testid="more-actions" aria-label="More actions">
+                      <MoreHorizontal size={18} />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56 font-mono text-xs">
@@ -1053,7 +1091,7 @@ export default function App() {
                 className="font-mono text-xs font-bold ml-1"
               >
                 <BarChart3 size={12} className="mr-1.5" />
-                <span className="hidden sm:inline">Analyze</span>
+                <span className="hidden lg:inline">Analyze</span>
               </Button>
             </div>
           </TooltipProvider>
@@ -1068,9 +1106,39 @@ export default function App() {
                  style={{ borderColor: 'hsl(var(--border))', background: 'linear-gradient(180deg, hsl(var(--primary)/0.06), transparent 70%)' }}>
               <div className="font-mono text-[10px] uppercase tracking-wider mb-2 text-primary">// status: awaiting team selection</div>
               <h2 className="font-display text-2xl sm:text-3xl mb-2 leading-tight">build your six</h2>
-              <p className="text-sm text-muted-foreground mb-5 max-w-xl leading-relaxed">
-                Search all {POKEMON_TOTAL} Pokémon — including legendaries, mythicals, Ultra Beasts, and Paradox forms. Pick shinies, customize movesets, check game compatibility, link to TCG cards, and generate shareable posters in 12 art styles. Order it as a T-shirt, hoodie, mug, or poster.
+              {/* Was a 60-word feature dump that ran six lines on a 390px phone and
+                  pushed the first Pokémon card past 1,022px — 1.2 screens of scrolling
+                  before the app showed what it does. The full list still lives in
+                  "How it works", one tap away, which is where someone who wants it looks. */}
+              <p className="text-sm text-muted-foreground mb-4 max-w-xl leading-relaxed">
+                All {POKEMON_TOTAL} Pokémon — every form, shiny and Tera type. Build a six,
+                watch its coverage score live, then turn it into a poster or a shirt.
               </p>
+
+              {/* Journey Mode is the most engaging thing in the app and, on a phone,
+                  it was the hardest to reach: the header collapses to two buttons
+                  under 640px, so starting a run meant tapping "More actions", then
+                  finding it in a 12-item menu. The empty state is the first thing
+                  anyone sees, so the run starts here instead. */}
+              {isEnabled('JOURNEY_MODE') && (
+                <button
+                  type="button"
+                  onClick={() => setJourneyOpen(true)}
+                  data-testid="journey-open-hero"
+                  className="w-full mb-2 flex items-center gap-3 rounded-md border border-primary/60 bg-primary/10 px-3 py-2.5 text-left hover:border-primary hover:bg-primary/15 transition-colors"
+                >
+                  <Compass size={18} className="text-primary shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block font-mono text-xs uppercase tracking-wider text-primary">
+                      {t('journey.title')}
+                    </span>
+                    <span className="block font-mono text-[10px] text-muted-foreground truncate">
+                      // a whole career in 3 minutes
+                    </span>
+                  </span>
+                  <ChevronDown size={16} className="ml-auto shrink-0 -rotate-90 text-primary/70" />
+                </button>
+              )}
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
                 <QuickStart onClick={loadRandom} icon={<Dices size={14} />} label="Random" sub="diverse roll" primary />
@@ -1079,26 +1147,44 @@ export default function App() {
                 <QuickStart onClick={() => setHelp(true)} icon={<HelpCircle size={14} />} label="How it works" sub="quick tour" />
               </div>
 
-              <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// themed presets</div>
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {THEMED_TEAMS.map(s => (
-                  <Button key={s.id} variant="outline" size="sm"
-                          onClick={() => loadStarter(s)}
-                          className="font-mono text-xs hover:border-primary">
-                    {s.label}
-                  </Button>
-                ))}
-              </div>
+              {/* 20 preset chips are a great desktop shortcut and a wall on a phone:
+                  they wrapped to ten rows and buried the search box below the fold.
+                  Collapsed under a single tap at <640px, always open from `sm:` up.
+                  CSS-driven rather than a width check so there is no resize listener
+                  and no flash of the wrong state on first paint. */}
+              <button
+                type="button"
+                onClick={() => setPresetsOpen(v => !v)}
+                aria-expanded={presetsOpen}
+                data-testid="toggle-presets"
+                className="sm:hidden w-full min-h-11 flex items-center justify-between gap-2 rounded-md border px-3 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:border-primary hover:text-primary"
+              >
+                <span>// {THEMED_TEAMS.length + STARTER_TEAMS.length} preset teams</span>
+                <ChevronDown size={14} className={presetsOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+              </button>
 
-              <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// by region</div>
-              <div className="flex flex-wrap gap-1.5">
-                {STARTER_TEAMS.map(s => (
-                  <Button key={s.id} variant="outline" size="sm"
-                          onClick={() => loadStarter(s)}
-                          className="font-mono text-xs hover:border-primary">
-                    {s.label}
-                  </Button>
-                ))}
+              <div className={presetsOpen ? 'block pt-3 sm:pt-0' : 'hidden sm:block'}>
+                <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// themed presets</div>
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {THEMED_TEAMS.map(s => (
+                    <Button key={s.id} variant="outline" size="sm"
+                            onClick={() => loadStarter(s)}
+                            className="font-mono text-xs hover:border-primary">
+                      {s.label}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">// by region</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {STARTER_TEAMS.map(s => (
+                    <Button key={s.id} variant="outline" size="sm"
+                            onClick={() => loadStarter(s)}
+                            className="font-mono text-xs hover:border-primary">
+                      {s.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
           </section>
@@ -1106,23 +1192,29 @@ export default function App() {
 
         {/* ============== SEARCH + FILTERS ============== */}
         <div className="space-y-3">
-          <div className="flex gap-2 items-center">
-            <div className="relative flex-1">
+          {/* Wraps at <640px so the search field gets its own full-width row.
+              Sharing one row with the filter and sort controls squeezed it to
+              ~150px on a 390px phone, which clipped the placeholder mid-word.
+              The `/` hint is dropped on touch, where there is no keyboard to
+              press it on. */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative w-full sm:w-auto sm:flex-1 order-first sm:order-none">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={searchRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="search by name or # · press / to focus"
+                placeholder="search by name or #"
                 className="pl-9 font-mono"
               />
             </div>
             <Button variant="outline" size="sm" onClick={() => setSF(s => !s)}
+                    data-testid="toggle-filters"
                     className={cn('font-mono text-xs', showFilters && 'border-primary text-primary')}>
               <FilterIcon size={12} className="mr-1" />
               <span className="hidden sm:inline">filters</span>
               {(filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)) > 0 && (
-                <span className="ml-1 bg-primary text-primary-foreground rounded-full px-1.5 py-0 text-[9px]">
+                <span className="ml-1 bg-primary text-primary-foreground rounded-full px-1.5 py-0 text-[10px]">
                   {filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)}
                 </span>
               )}
@@ -1247,10 +1339,15 @@ export default function App() {
                   ['gigantamax', 'gigantamax'],
                   ['regional', 'regional'],
                   ['paradox', 'paradox'],
+                  // Label carries the count so the chip is self-explanatory
+                  // when the list is empty — otherwise clicking it just shows
+                  // "0 results" with no hint why.
+                  ['favorites', favorites.size ? `♥ favorites (${favorites.size})` : '♥ favorites'],
                 ] as [CategoryFilter, string][]).map(([c, label]) => {
                   const active = filterCategory === c;
                   return (
                     <button key={c}
+                            data-testid={`cat-${c}`}
                             onClick={() => setFCategory(c)}
                             className={cn(
                               'font-mono text-[10px] px-2 py-1 rounded border transition uppercase tracking-wider',
@@ -1331,6 +1428,8 @@ export default function App() {
               <PokemonCard key={p.id} p={p}
                 onSelect={setSelected}
                 onAdd={addToTeam}
+                onToggleFavorite={toggleFavorite}
+                favorite={favorites.has(p.id)}
                 inTeam={teamIds.has(p.id)}
                 teamFull={teamFull}
                 illegal={legality ? !legality.legal : false}
@@ -1361,7 +1460,12 @@ export default function App() {
       </main>
 
       {/* ============== STICKY TEAM BAR ============== */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-md bg-background/95" style={{ borderColor: 'hsl(var(--border))' }}>
+      {/* index.html sets `viewport-fit=cover`, which extends the page under the
+          iOS home indicator — and nothing in the app compensated for it, so in
+          standalone (installed) mode this bar sat beneath the indicator and the
+          bottom row of slots was awkward to tap. The inset is 0 everywhere that
+          has no notch, so this is safe on every other device. */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t backdrop-blur-md bg-background/95 pb-[env(safe-area-inset-bottom)]" style={{ borderColor: 'hsl(var(--border))' }}>
         <LiveCoverageStrip team={team} />
         {formatActive && !teamLegal.legal && (
           <div data-testid="legality-banner"

@@ -97,7 +97,7 @@ export function PosterStudioDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-4xl p-0 gap-0 max-h-[94vh] overflow-y-auto scroll-y bg-card">
+      <DialogContent className="max-w-4xl p-0 gap-0 max-h-[94dvh] overflow-y-auto scroll-y bg-card">
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -193,7 +193,7 @@ export function PosterStudioDialog({
                       <span className="font-mono text-xs font-semibold">{s.label}</span>
                       {locked && <Lock size={10} className="text-primary shrink-0" />}
                       {!locked && s.premium && (
-                        <span className="text-[8px] font-mono uppercase tracking-wider text-primary">PRO</span>
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-primary">PRO</span>
                       )}
                       {isPicked && !locked && <Check size={11} className="text-primary shrink-0" />}
                     </div>

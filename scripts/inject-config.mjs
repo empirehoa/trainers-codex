@@ -16,9 +16,13 @@
 //   /tmp/tc-deploy/index.html  — bundle with config injected
 //   /tmp/tc-deploy/_headers    — copied from public/
 //   /tmp/tc-deploy/robots.txt
+//   /tmp/tc-deploy/sitemap.xml  — generated, lists every reference page
+//   /tmp/tc-deploy/pokemon/**  — 1,307 static species pages
+//   /tmp/tc-deploy/type/**     — 18 static type pages + the 18x18 chart
 //   /tmp/tc-deploy/favicon.svg
 
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -62,7 +66,15 @@ const injected = bundle.replace(moduleRe, `${injection}\n    <script type="modul
 
 mkdirSync('/tmp/tc-deploy', { recursive: true });
 writeFileSync('/tmp/tc-deploy/index.html', injected);
-const staticAssets = ['_headers', 'robots.txt', 'favicon.svg', 'sitemap.xml', 'legal.html', 'dmca.html'];
+// Everything index.html and the reference pages reference by absolute path.
+// The PWA half of this list (sw.js, the manifest, the icons) was missing, so
+// every deploy shipped an index.html that registered a service worker and
+// advertised a manifest that 404'd.
+const staticAssets = [
+  '_headers', 'robots.txt', 'favicon.svg', 'legal.html', 'dmca.html',
+  'sw.js', 'manifest.webmanifest', 'og-journey.jpg', 'icons.svg',
+  'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
+];
 for (const asset of staticAssets) {
   const src = join(PROJECT_ROOT, 'public', asset);
   try {
@@ -80,6 +92,14 @@ for (const asset of staticAssets) {
 try {
   copyFileSync(join(PROJECT_ROOT, 'deploy/og-image.png'), '/tmp/tc-deploy/og-image.png');
 } catch {}
+
+// The ~1,330 static reference pages under /pokemon/ and /type/, plus the
+// sitemap that lists them. Generated straight into the staging directory rather
+// than copied out of dist/, so a deploy cannot ship the app with a stale (or
+// missing) set of them regardless of when `pnpm build` last ran.
+execFileSync('node', [join(PROJECT_ROOT, 'scripts/gen-seo-pages.ts'), '--out', '/tmp/tc-deploy'], {
+  stdio: 'inherit',
+});
 
 console.log(`✓ Wrote /tmp/tc-deploy/index.html (${(injected.length / 1024).toFixed(1)} KB)`);
 console.log(`  Supabase: ${cfg.supabase.url}`);

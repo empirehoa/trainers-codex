@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight, Copy, Download, Link2, Loader2, RotateCcw, Share2, ShoppingBag, Sparkles, Wrench,
+  ArrowRight, Copy, Download, Film, Link2, Loader2, RotateCcw, Share2, ShoppingBag, Sparkles, Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useI18n } from '@/i18n/useI18n';
 import { isEnabled } from '@/lib/flags';
-import { pixelSprite } from '@/lib/pokemon';
+import { pixelSprite, POKEMON_BY_ID } from '@/lib/pokemon';
 import { rosterCaption } from '@/journey/content';
 import { renderLegendCard } from '@/journey/legend-card';
 import { buildDailyLink, buildSeedLink } from '@/journey/deeplink';
 import { dailyIssueNumber } from '@/journey/prng';
+import { resolveRank, rosterRarity } from '@/journey/ranks';
+import { signed, skillVsLuck } from '@/journey/luck';
+import { AreaMap } from './AreaMap';
+import { canRecordVideo, renderCardVideo } from '@/journey/card-video';
 import {
   buildEmojiSummary, canShareFile, copyImageToClipboard, copyTextToClipboard,
   downloadBlob, fileFromBlob, legendCardFilename, shareLegendCard,
@@ -53,9 +57,23 @@ export function JourneyResult({
         })
   ), [run, isDaily]);
 
+  const rank = useMemo(() => resolveRank(run.score), [run.score]);
+  const rarity = useMemo(() => rosterRarity({
+    legendaryCount: run.roster.filter(m => POKEMON_BY_ID[m.id]?.legendary || POKEMON_BY_ID[m.id]?.mythical).length,
+    shinyCount: run.roster.filter(m => m.shiny).length,
+    eventCount: run.roster.filter(m => m.origin === 'event').length,
+    evolvedCount: run.roster.reduce((n, m) => n + (m.evolved ?? 0), 0),
+    archetype: run.setup.archetype,
+  }), [run.roster, run.setup.archetype]);
+
   const verdictText = t(run.verdict.titleKey, {
     region: String(run.chapters[0]?.vars.region ?? ''),
   });
+
+  // Skill vs luck: four deterministic replays of this seed. Memoised on the run
+  // because the retired beat re-renders on every share-state change and the
+  // replays, while cheap, are not free.
+  const luck = useMemo(() => skillVsLuck(run), [run]);
 
   // Wordle-style emoji strip leads the text share: it's the part that reads as
   // a "result" when pasted into Discord/X, and it stays spoiler-free for the
@@ -169,6 +187,38 @@ export function JourneyResult({
     downloadBlob(blob, filename);
   }, [blob, filename, reportShare]);
 
+  // ---- the 9:16 clip ----
+  // Offered only when the pipeline genuinely works. `canRecordVideo` probes
+  // MediaRecorder, a codec AND captureStream, because each fails independently
+  // and a dead button is worse than no button.
+  const [videoState, setVideoState] = useState<'idle' | 'rendering'>('idle');
+  const [videoPct, setVideoPct] = useState(0);
+  const videoSupported = useMemo(() => canRecordVideo(), []);
+
+  const doVideo = useCallback(async () => {
+    if (videoState === 'rendering') return;
+    setVideoState('rendering');
+    setVideoPct(0);
+    try {
+      const result = await renderCardVideo({
+        run,
+        locale,
+        onProgress: setVideoPct,
+      });
+      reportShare('download');
+      // Same slug as the still, so a clip and its card sort together in a folder.
+      const stem = legendCardFilename(run.setup.trainerName, run.setup.seed).replace(/\.png$/, '');
+      downloadBlob(result.blob, `${stem}.${result.extension}`);
+      toast.success(t('journey.share.videoDone'));
+    } catch {
+      // Encoding can fail mid-way on a browser that reported support — fall
+      // back to the still, which always works.
+      toast.error(t('journey.share.videoFailed'));
+    } finally {
+      setVideoState('idle');
+    }
+  }, [run, locale, videoState, reportShare, t]);
+
   // ============================================================
   // RETIRED — the verdict beat, before the card appears
   // ============================================================
@@ -199,6 +249,64 @@ export function JourneyResult({
           {t('journey.result.scoreLabel')}
         </div>
 
+        {/* Named rank + percentile. People share words, not integers — and the
+            percentile is a REFERENCE distribution, not real players, which the
+            copy says explicitly rather than implying a population we do not
+            have. */}
+        <div className="pt-1 space-y-1" data-testid="journey-rank">
+          <div className="font-mono text-lg font-bold tracking-wide"
+               style={{ color: 'hsl(var(--primary))' }}
+               data-testid="journey-rank-name">
+            {t(rank.nameKey)}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground"
+               data-testid="journey-rank-percentile">
+            {t(rank.lineKey, { pct: 100 - rank.percentile })}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground"
+               data-testid="journey-roster-rarity">
+            {t('journey.rank.rosterRarity', { pct: rarity })}
+          </div>
+        </div>
+
+        {/* Skill vs luck. The question every run-based player asks afterwards
+            and the one thing the game could not answer before: was that me, or
+            the dice? The engine is deterministic, so this is measured by
+            replaying THIS seed four ways, not estimated. NYT sells the same
+            readout (WordleBot) to subscribers; it is free here because it is
+            what makes a second try on the same seed mean something. */}
+        <div className="rounded-md border p-3 text-left space-y-2" data-testid="journey-luck"
+             style={{ borderColor: 'hsl(var(--border))' }}>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-primary">
+            // {t('journey.luck.heading')}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded border px-2.5 py-2" style={{ borderColor: 'hsl(var(--border))' }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{t('journey.luck.dice')}</div>
+              <div className={`font-mono text-xl font-bold ${luck.luck >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
+                   data-testid="journey-luck-dice">{signed(luck.luck)}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">{t('journey.luck.diceSub', { n: signed(luck.luck) })}</div>
+            </div>
+            <div className="rounded border px-2.5 py-2" style={{ borderColor: 'hsl(var(--border))' }}>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{t('journey.luck.choices')}</div>
+              <div className={`font-mono text-xl font-bold ${luck.skill >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}
+                   data-testid="journey-luck-skill">{signed(luck.skill)}</div>
+              <div className="font-mono text-[10px] text-muted-foreground">{t('journey.luck.choicesSub', { n: signed(luck.skill) })}</div>
+            </div>
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground" data-testid="journey-luck-range">
+            {t('journey.luck.range', { worst: luck.worst, best: luck.best, pct: luck.withinSeedPct })}
+          </div>
+          <div className="font-mono text-[10px] text-muted-foreground/70">{t('journey.luck.note')}</div>
+        </div>
+
+        {/* The road walked. Open by default here — mid-run the map is a
+            reference you consult, but on the retired beat it is part of the
+            artifact, and hiding it behind a tap loses the moment. */}
+        <div className="text-left">
+          <AreaMap seed={run.setup.seed} region={run.region} defaultOpen />
+        </div>
+
         <Button onClick={onRevealCard} className="w-full font-mono text-xs font-bold h-11"
                 data-testid="journey-reveal-card">
           <Sparkles size={13} className="mr-1.5" />
@@ -213,7 +321,7 @@ export function JourneyResult({
   // CARD — the shareable result screen
   // ============================================================
   return (
-    <div className="p-4 space-y-4" data-testid="journey-card-screen">
+    <div className="p-4 space-y-4 min-w-0 overflow-x-hidden" data-testid="journey-card-screen">
       {/* ---- card preview ---- */}
       <div className="aspect-[4/5] w-full max-w-sm mx-auto rounded-md border overflow-hidden flex items-center justify-center"
            style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--muted))' }}>
@@ -261,6 +369,32 @@ export function JourneyResult({
               <Download size={11} className="mr-1" />
               {t('journey.share.download')}
             </Button>
+            {/* placeholder kept for grid flow */}
+            {videoSupported && (
+              <Button variant="outline" onClick={doVideo}
+                      disabled={videoState === 'rendering'}
+                      className="font-mono text-[10px]"
+                      data-testid="journey-share-video">
+                {videoState === 'rendering'
+                  ? <Loader2 size={11} className="mr-1 animate-spin" />
+                  : <Film size={11} className="mr-1" />}
+                {videoState === 'rendering'
+                  ? t('journey.share.videoRendering', { pct: Math.round(videoPct * 100) })
+                  : t('journey.share.video')}
+              </Button>
+            )}
+          </div>
+          {/* The text artifact, visible. Only ~5% of Wordle players ever posted
+              a grid publicly; the format carried the game by being pasted into
+              private chats, legible with no image and no context. Ours existed
+              but was hidden behind a button called "Copy link" — so nobody knew
+              there was a grid to paste. */}
+          <div className="rounded-md border p-2.5" style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--muted)/0.4)' }}>
+            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
+              // {t('journey.share.preview')}
+            </div>
+            <pre className="font-mono text-[10px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] min-w-0 max-w-full text-foreground/90 m-0"
+                 data-testid="journey-share-preview">{shareText}</pre>
           </div>
         </div>
       )}
@@ -316,7 +450,7 @@ export function JourneyResult({
           <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             // {t('journey.result.roster')}
           </div>
-          <div className="text-[9px] font-mono text-muted-foreground" data-testid="journey-result-dex">
+          <div className="text-[10px] font-mono text-muted-foreground" data-testid="journey-result-dex">
             {t('journey.party.dexCount', { caught: run.dex.caught.length, seen: run.dex.seen.length })}
           </div>
         </div>
@@ -326,7 +460,7 @@ export function JourneyResult({
                  style={{ borderColor: i === 0 ? 'hsl(var(--primary))' : 'hsl(var(--border))' }}>
               <img src={pixelSprite(entry.id, entry.shiny)} alt="" width={40} height={40}
                    className="pixelated mx-auto" loading="lazy" />
-              <div className="font-mono text-[8px] truncate text-muted-foreground">
+              <div className="font-mono text-[10px] truncate text-muted-foreground">
                 {rosterCaption(entry.id)}{entry.shiny ? ' ★' : ''}
               </div>
             </div>

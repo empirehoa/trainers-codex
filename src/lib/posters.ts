@@ -124,7 +124,7 @@ async function drawTrainerPill(ctx: CanvasRenderingContext2D, trainer: TrainerPr
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(x + r, y + r, r, 0, Math.PI * 2); ctx.stroke();
       x += r * 2 + 16;
-    } catch {}
+    } catch { /* decorative badge row — skip one rather than abandon the poster */ }
   }
   ctx.fillStyle = c;
   ctx.font = 'bold 30px "Sora", system-ui';

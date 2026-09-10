@@ -32,7 +32,7 @@ export function PokemonDetailDialog({ pokemon, open, onClose, onAdd, onViewTCG, 
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md p-0 gap-0 border bg-card max-h-[94vh] overflow-y-auto scroll-y">
+      <DialogContent className="max-w-md p-0 gap-0 border bg-card max-h-[94dvh] overflow-y-auto scroll-y">
         <DialogHeader className="px-4 py-3 border-b border-border sticky top-0 bg-card z-10">
           {/* v6: explicit close button — the default shadcn X is too small to
               tap reliably on mobile and was sometimes hidden behind the iOS
@@ -51,13 +51,13 @@ export function PokemonDetailDialog({ pokemon, open, onClose, onAdd, onViewTCG, 
             </DialogTitle>
             <span className="font-mono text-[10px] text-muted-foreground">{padId(pokemon.id)}</span>
             {pokemon.legendary && (
-              <span className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border"
+              <span className="text-[10px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border"
                     style={{ borderColor: '#fde047', color: '#fde047', background: 'rgba(253,224,71,0.1)' }}>
                 <Star size={8} className="inline mr-0.5" /> legendary
               </span>
             )}
             {pokemon.mythical && (
-              <span className="text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border"
+              <span className="text-[10px] font-mono uppercase tracking-widest px-1.5 py-0.5 rounded border"
                     style={{ borderColor: '#a78bfa', color: '#a78bfa', background: 'rgba(167,139,250,0.1)' }}>
                 <Sparkles size={8} className="inline mr-0.5" /> mythical
               </span>
@@ -115,7 +115,7 @@ export function PokemonDetailDialog({ pokemon, open, onClose, onAdd, onViewTCG, 
           <div className="flex flex-wrap gap-1.5">
             {pokemon.types.map(t => <TypePill key={t} type={t} />)}
             {pokemon.roles.map(r => (
-              <span key={r} className="text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase tracking-wider"
+              <span key={r} className="text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase tracking-wider"
                     style={{ borderColor: 'hsl(var(--border))', color: 'hsl(var(--muted-foreground))' }}>
                 {r}
               </span>

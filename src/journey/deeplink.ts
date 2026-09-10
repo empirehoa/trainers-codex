@@ -16,8 +16,10 @@
 // outcome for someone who just clicked a link.
 
 import { coerceSeed, dailySeed, isValidDateString, localDateString } from './prng';
+import { dateForIssue } from './archive';
 import { ARCHETYPES, JOURNEY_REGIONS, PACES, getRegion } from './content';
-import type { Archetype, Pace, RunSource } from './types';
+import { CAMPAIGNS } from './campaign';
+import type { Archetype, Campaign, Pace, RunSource } from './types';
 
 /** The path Journey Mode lives at. See public/_redirects for the SPA rewrite. */
 export const JOURNEY_PATH = '/journey';
@@ -28,6 +30,8 @@ export interface ParsedJourneyLink {
   archetype: Archetype | null;
   regionId: string | null;
   starterId: number | null;
+  /** Campaign length carried by a seed link. Null means the 'short' default. */
+  campaign: Campaign | null;
   /** Set when ?daily=YYYY-MM-DD was present and valid. */
   dailyDate: string | null;
   source: RunSource;
@@ -43,8 +47,16 @@ export interface ParsedJourneyLink {
 
 const EMPTY: ParsedJourneyLink = {
   seed: null, pace: null, archetype: null, regionId: null, starterId: null,
-  dailyDate: null, source: 'fresh', hadInvalidParams: false, isJourneyRoute: false,
+  campaign: null, dailyDate: null, source: 'fresh', hadInvalidParams: false,
+  isJourneyRoute: false,
 };
+
+/** Unknown or absent campaign resolves to null, i.e. the 'short' default. */
+function coerceCampaign(v: string | null): Campaign | null {
+  if (!v) return null;
+  const found = CAMPAIGNS.find(c => c.id === v.toLowerCase());
+  return found ? found.id : null;
+}
 
 function coercePace(v: string | null): Pace | null {
   if (!v) return null;
@@ -84,6 +96,30 @@ export function parseJourneyLink(search: string, pathname = ''): ParsedJourneyLi
 
   const rawDaily = params.get('daily');
   const rawSeed = params.get('seed');
+  const rawIssue = params.get('issue');
+
+  // ?issue=N — the archive's shareable form. Resolved to the date it belongs to
+  // and then treated exactly like ?daily=, so an issue link and a daily link
+  // for the same day are the same run. Ranked ABOVE ?daily because an issue
+  // number is the more specific statement ("this puzzle", not "the puzzle").
+  if (rawIssue !== null) {
+    const n = Number(rawIssue);
+    const date = Number.isFinite(n) ? dateForIssue(Math.trunc(n)) : null;
+    if (date === null) {
+      // A future or malformed issue fails soft to a fresh run, flagged — the
+      // same contract every other bad param honours. Never an error screen.
+      return { ...EMPTY, isJourneyRoute, hadInvalidParams: true };
+    }
+    return {
+      ...EMPTY,
+      isJourneyRoute,
+      seed: dailySeed(date),
+      dailyDate: date,
+      source: 'daily',
+      pace: coercePace(params.get('pace')),
+      archetype: coerceArchetype(params.get('archetype')),
+    };
+  }
 
   // ?daily wins over ?seed — a daily link is a stronger statement of intent,
   // and a link carrying both is almost certainly a hand-edited URL.
@@ -116,6 +152,7 @@ export function parseJourneyLink(search: string, pathname = ''): ParsedJourneyLi
       archetype: coerceArchetype(params.get('archetype')),
       regionId,
       starterId: coerceStarter(params.get('starter'), regionId),
+      campaign: coerceCampaign(params.get('campaign')),
     };
   }
 
@@ -138,6 +175,8 @@ export interface BuildLinkOptions {
   archetype?: Archetype;
   regionId?: string;
   starterId?: number;
+  /** Campaign length. Omitted from the URL for 'short', which is the default. */
+  campaign?: Campaign;
   /** Origin override — the renderers need this without a window. */
   origin?: string;
 }
@@ -174,12 +213,27 @@ export function buildSeedLink(opts: BuildLinkOptions): string {
   if (opts.archetype) params.set('archetype', opts.archetype);
   if (opts.regionId) params.set('region', opts.regionId);
   if (opts.starterId !== undefined) params.set('starter', String(opts.starterId));
+  // Without this a shared saga replayed as a 12-20 chapter short run — the same
+  // seed, a different game. Campaign is part of a run's identity, not a
+  // preference the recipient re-picks.
+  if (opts.campaign && opts.campaign !== 'short') params.set('campaign', opts.campaign);
   return `${resolveOrigin(opts.origin)}${JOURNEY_PATH}?${params.toString()}`;
 }
 
 /** Canonical link for a Daily Journey, so friends land on the same seed. */
 export function buildDailyLink(dateStr = localDateString(), origin?: string): string {
   return `${resolveOrigin(origin)}${JOURNEY_PATH}?daily=${dateStr}`;
+}
+
+/**
+ * Link to an archive issue by number.
+ *
+ * Preferred over `buildDailyLink` for anything shared publicly: "issue 41"
+ * survives being read aloud and stays meaningful in a headline, where
+ * `daily=2026-10-06` does not.
+ */
+export function buildIssueLink(issue: number, origin?: string): string {
+  return `${resolveOrigin(origin)}${JOURNEY_PATH}?issue=${issue}`;
 }
 
 /**

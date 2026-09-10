@@ -11,6 +11,14 @@ export interface StorageShape {
   current: CurrentTeamState | null;
   trainer: TrainerProfile | null;
   premium?: boolean;
+  /**
+   * Favourited Pokémon ids.
+   *
+   * Stored as an array rather than a Set because this shape is JSON round-
+   * tripped; the app holds it as a Set. Absent in every pre-existing payload,
+   * so `loadStorage` defaults it — no migration step and no version bump.
+   */
+  favorites?: number[];
 }
 
 const LEGACY_KEY = 'trainerscodex.v1';
@@ -54,9 +62,12 @@ export function loadStorage(): StorageShape {
         current,
         trainer: parsed.trainer || null,
         premium: parsed.premium === true,
+        favorites: Array.isArray(parsed.favorites)
+          ? parsed.favorites.filter((n: unknown) => typeof n === 'number')
+          : [],
       };
     }
-  } catch {}
+  } catch { /* unreadable v2 payload — fall through to the legacy read below */ }
 
   try {
     const legacy = localStorage.getItem(LEGACY_KEY);
@@ -71,11 +82,11 @@ export function loadStorage(): StorageShape {
         while (members.length < 6) members.push(null);
         current = { members, name: parsed.current.name || '' };
       }
-      return { teams, current, trainer: null };
+      return { teams, current, trainer: null, favorites: [] };
     }
-  } catch {}
+  } catch { /* unreadable legacy payload — fall through to an empty store */ }
 
-  return { teams: [], current: null, trainer: null };
+  return { teams: [], current: null, trainer: null, favorites: [] };
 }
 
 // 4 MB cap — below the 5 MB localStorage quota most browsers enforce, with
@@ -94,7 +105,7 @@ export function saveStorage(data: StorageShape): void {
       return;
     }
     localStorage.setItem(STORAGE_KEY, json);
-  } catch {}
+  } catch { /* quota or private mode — losing a save must not break the app */ }
 }
 
 export function genId(): string {

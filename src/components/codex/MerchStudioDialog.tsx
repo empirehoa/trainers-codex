@@ -227,7 +227,7 @@ export function MerchStudioDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
@@ -342,7 +342,7 @@ export function MerchStudioDialog({
                 <div className="space-y-3 max-h-64 overflow-y-auto pr-1 scroll-y">
                   {Object.entries(productsByCategory).map(([cat, items]) => (
                     <div key={cat}>
-                      <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground mb-1">— {cat}</div>
+                      <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">— {cat}</div>
                       <div className="space-y-1">
                         {items.map(p => {
                           const active = selectedProduct.id === p.id;
@@ -359,7 +359,7 @@ export function MerchStudioDialog({
                                 <span className="font-mono text-[11px] font-semibold">{p.label}</span>
                                 <span className="font-mono text-[10px] text-emerald-500">${p.defaultRetailUSD.toFixed(2)}</span>
                               </div>
-                              <div className="font-mono text-[9px] text-muted-foreground">base ${p.baseCostUSD.toFixed(2)} · {p.vendor}</div>
+                              <div className="font-mono text-[10px] text-muted-foreground">base ${p.baseCostUSD.toFixed(2)} · {p.vendor}</div>
                             </button>
                           );
                         })}
@@ -390,7 +390,7 @@ export function MerchStudioDialog({
                         <div className="font-mono text-[11px] font-semibold flex items-center gap-1">
                           {d.label}
                         </div>
-                        <div className="font-mono text-[9px] text-muted-foreground leading-tight mt-0.5">{d.desc}</div>
+                        <div className="font-mono text-[10px] text-muted-foreground leading-tight mt-0.5">{d.desc}</div>
                       </button>
                     );
                   })}
@@ -442,7 +442,7 @@ export function MerchStudioDialog({
                       <button
                         key={s.id}
                         onClick={() => setBadgeText(s.text)}
-                        className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
+                        className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
                       >
                         {s.label}
                       </button>
@@ -473,7 +473,7 @@ export function MerchStudioDialog({
                             key={r.id}
                             onClick={() => { setBadgeRegion(r.id); setBadges([]); }}
                             className={cn(
-                              'font-mono text-[9px] px-1.5 py-0.5 rounded border transition',
+                              'font-mono text-[10px] px-1.5 py-0.5 rounded border transition',
                               active ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary/60'
                             )}
                           >
@@ -484,15 +484,15 @@ export function MerchStudioDialog({
                     </div>
 
                     <div className="flex items-center justify-between mt-2 mb-1">
-                      <span className="font-mono text-[9px] text-muted-foreground">tap badges you've earned</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">tap badges you've earned</span>
                       <div className="flex gap-1">
                         <button
                           onClick={() => setBadges(badgesForRegion(badgeRegion).map(b => b.id))}
-                          className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
+                          className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
                         >all</button>
                         <button
                           onClick={() => setBadges([])}
-                          className="font-mono text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
+                          className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:border-primary hover:text-primary transition"
                         >none</button>
                       </div>
                     </div>
@@ -515,7 +515,7 @@ export function MerchStudioDialog({
                             />
                             <span className="min-w-0">
                               <span className="font-mono text-[10px] font-semibold block truncate">{b.label.split(' · ')[0]}</span>
-                              <span className="font-mono text-[8px] text-muted-foreground block truncate">{b.label.split(' · ')[1] || ''}</span>
+                              <span className="font-mono text-[10px] text-muted-foreground block truncate">{b.label.split(' · ')[1] || ''}</span>
                             </span>
                           </button>
                         );

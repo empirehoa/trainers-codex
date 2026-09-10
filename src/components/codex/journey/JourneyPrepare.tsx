@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Wand2, Star, ChevronDown, ChevronUp, Undo2, Heart, Leaf, Candy, Gem, Link2,
-  Share2, ArrowLeftRight, Lock, Pencil,
+  Share2, ArrowLeftRight, Lock, Pencil, Dices, Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
@@ -13,13 +13,15 @@ import {
   ITEMS, ITEM_IDS, inventoryCount, type ItemId, type Inventory,
 } from '@/journey/items';
 import { cn } from '@/lib/utils';
-import type { PrepareAction, PrepareAvailability, RosterEntry } from '@/journey/types';
+import type { CareerStats, PrepareAction, PrepareAvailability, RosterEntry } from '@/journey/types';
 
 interface Props {
   chapterIndex: number;
   roster: RosterEntry[];
   prepare: PrepareAvailability;
   inventory: Inventory;
+  /** Career stats — the prepare step needs `money` to price the reroll. */
+  stats: CareerStats;
   actionsThisChapter: number;
   onAction: (action: PrepareAction) => void;
   onUndoPrep: () => void;
@@ -40,7 +42,7 @@ const ITEM_ICON: Record<ItemId, typeof Heart> = {
  * ace promotion, and swapping a member out for anything in the box.
  */
 export function JourneyPrepare({
-  chapterIndex, roster, prepare, inventory, actionsThisChapter, onAction, onUndoPrep,
+  chapterIndex, roster, prepare, inventory, stats, actionsThisChapter, onAction, onUndoPrep,
 }: Props) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -65,22 +67,56 @@ export function JourneyPrepare({
         </span>
         <span className="flex items-center gap-2">
           {items > 0 && (
-            <span className="font-mono text-[9px] text-muted-foreground">
+            <span className="font-mono text-[10px] text-muted-foreground">
               {t('journey.prepare.items')}: {items}
             </span>
           )}
           {box.length > 0 && (
-            <span className="font-mono text-[9px] text-muted-foreground">
+            <span className="font-mono text-[10px] text-muted-foreground">
               {t('journey.prepare.box')}: {box.length}
             </span>
           )}
+          <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400"
+                data-testid="journey-money">
+            {t('journey.prepare.money', { n: stats.money })}
+          </span>
           {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </span>
       </button>
 
       {open && (
+        <>
+        {/* Reroll. Nothing in a run used to cost anything, so nothing was a
+            trade-off. First reroll of the RUN is free — that makes the mechanic
+            discoverable without a tutorial — then the price escalates so the
+            second and third are real decisions rather than a habit. */}
+        <div className="px-3 pt-2 flex items-center justify-between gap-2">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {prepare.rerollCost === 0
+              ? t('journey.prepare.rerollFree')
+              : t('journey.prepare.rerollCost', { n: prepare.rerollCost })}
+          </span>
+          <button
+            disabled={!prepare.canAffordReroll}
+            onClick={() => onAction({ type: 'reroll', chapterIndex })}
+            data-testid="journey-reroll"
+            className={cn(
+              'font-mono text-[10px] px-2 py-1 rounded border transition flex items-center gap-1',
+              prepare.canAffordReroll
+                ? 'border-amber-500/60 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
+                : 'opacity-50 cursor-not-allowed border-border text-muted-foreground',
+            )}
+            title={prepare.canAffordReroll
+              ? t('journey.prepare.rerollTitle')
+              : t('journey.prepare.rerollBroke')}
+          >
+            <Dices size={9} />
+            {t('journey.prepare.reroll')}
+          </button>
+        </div>
+
         <div className="px-3 pb-3 space-y-2">
-          <p className="font-mono text-[9px] text-muted-foreground">{t('journey.prepare.subtitle')}</p>
+          <p className="font-mono text-[10px] text-muted-foreground">{t('journey.prepare.subtitle')}</p>
 
           {roster.map((m, i) => {
             const offer = evolveById.get(m.id);
@@ -112,7 +148,7 @@ export function JourneyPrepare({
                       >
                         <Pencil size={9} />
                       </button>
-                      <span className="font-mono text-[9px] text-primary shrink-0"
+                      <span className="font-mono text-[10px] text-primary shrink-0"
                             data-testid={`journey-level-${m.id}`}>
                         {t('journey.prepare.lv', { n: prog.level })}
                       </span>
@@ -123,7 +159,7 @@ export function JourneyPrepare({
                     </div>
                   </div>
                   {i === 0 ? (
-                    <span className="font-mono text-[9px] text-primary flex items-center gap-0.5 shrink-0">
+                    <span className="font-mono text-[10px] text-primary flex items-center gap-0.5 shrink-0">
                       <Star size={9} fill="currentColor" /> {t('journey.prepare.isAce')}
                     </span>
                   ) : (
@@ -131,7 +167,7 @@ export function JourneyPrepare({
                       variant="ghost" size="sm"
                       onClick={() => onAction({ type: 'ace', chapterIndex, id: m.id })}
                       data-testid={`journey-setace-${m.id}`}
-                      className="h-6 px-2 font-mono text-[9px] shrink-0"
+                      className="h-6 px-2 font-mono text-[10px] shrink-0"
                     >
                       <Star size={9} className="mr-1" />{t('journey.prepare.setAce')}
                     </Button>
@@ -151,7 +187,7 @@ export function JourneyPrepare({
                         })}
                         data-testid={`journey-evolve-${m.id}-${opt.id}`}
                         className={cn(
-                          'font-mono text-[9px] px-2 py-1 rounded border transition flex items-center gap-1',
+                          'font-mono text-[10px] px-2 py-1 rounded border transition flex items-center gap-1',
                           opt.ready
                             ? 'border-emerald-500/60 text-emerald-500 hover:bg-emerald-500/10'
                             : 'opacity-50 cursor-not-allowed border-border text-muted-foreground',
@@ -169,10 +205,44 @@ export function JourneyPrepare({
                         )}
                       </button>
                     ))}
+                    {/* Carry-forward. A level-gated evolution used to mean
+                        reopening this panel every chapter to check — busywork,
+                        not a decision. Queue it once and the run fires it the
+                        moment the gate clears. */}
+                    {offer.options.some(o => !o.ready) && (() => {
+                      const q = prepare.queued.find(x => x.fromId === m.id);
+                      const target = offer.options.find(o => !o.ready);
+                      if (!target) return null;
+                      return q ? (
+                        <button
+                          onClick={() => onAction({ type: 'unqueue-evolve', chapterIndex, fromId: m.id })}
+                          data-testid={`journey-unqueue-${m.id}`}
+                          className="font-mono text-[10px] px-2 py-1 rounded border transition flex items-center gap-1
+                                     border-amber-500/60 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                          title={t('journey.prepare.queuedTitle')}
+                        >
+                          <Clock size={9} />
+                          {t('journey.prepare.queued', { n: q.needLevel ?? 0 })}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onAction({
+                            type: 'queue-evolve', chapterIndex, fromId: m.id, toId: target.id,
+                          })}
+                          data-testid={`journey-queue-${m.id}`}
+                          className="font-mono text-[10px] px-2 py-1 rounded border transition flex items-center gap-1
+                                     border-border text-muted-foreground hover:border-primary/60 hover:text-primary"
+                          title={t('journey.prepare.queueTitle')}
+                        >
+                          <Clock size={9} />
+                          {t('journey.prepare.queue')}
+                        </button>
+                      );
+                    })()}
                   </div>
                 )}
                 {!offer && fullyEvolved && (
-                  <div className="font-mono text-[9px] text-muted-foreground mt-1">
+                  <div className="font-mono text-[10px] text-muted-foreground mt-1">
                     {t('journey.prepare.fullyEvolved')}
                   </div>
                 )}
@@ -194,11 +264,11 @@ export function JourneyPrepare({
                       autoFocus
                       placeholder={rosterCaption(m.id)}
                       data-testid={`journey-nick-input-${m.id}`}
-                      className="flex-1 min-w-0 font-mono text-[10px] px-2 py-1 rounded border bg-transparent"
+                      className="flex-1 min-w-0 font-mono text-base sm:text-xs px-2 py-1 rounded border bg-transparent"
                       style={{ borderColor: 'hsl(var(--border))' }}
                     />
                     <button type="submit" data-testid={`journey-nick-save-${m.id}`}
-                            className="font-mono text-[9px] px-2 py-1 rounded border border-primary/50 text-primary hover:bg-primary/10">
+                            className="font-mono text-[10px] px-2 py-1 rounded border border-primary/50 text-primary hover:bg-primary/10">
                       {t('journey.prepare.nickSave')}
                     </button>
                   </form>
@@ -210,7 +280,7 @@ export function JourneyPrepare({
                     <button
                       onClick={() => setSwapFor(swapFor === m.id ? null : m.id)}
                       data-testid={`journey-swap-open-${m.id}`}
-                      className="font-mono text-[9px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary/50 flex items-center gap-1"
+                      className="font-mono text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary/50 flex items-center gap-1"
                     >
                       <ArrowLeftRight size={9} />
                       {t('journey.prepare.swap')}
@@ -232,7 +302,7 @@ export function JourneyPrepare({
                           >
                             <img src={pixelSprite(b.id, b.shiny)} alt={rosterCaption(b.id)}
                                  width={26} height={26} className="pixelated" loading="lazy" />
-                            <span className="font-mono text-[8px] text-muted-foreground">
+                            <span className="font-mono text-[10px] text-muted-foreground">
                               {xpProgress(b.xp).level}
                             </span>
                           </button>
@@ -247,11 +317,11 @@ export function JourneyPrepare({
 
           {/* Items */}
           <div className="pt-1">
-            <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground mb-1">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
               {t('journey.prepare.items')}
             </div>
             {items === 0 ? (
-              <p className="font-mono text-[9px] text-muted-foreground">{t('journey.prepare.noItems')}</p>
+              <p className="font-mono text-[10px] text-muted-foreground">{t('journey.prepare.noItems')}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {ITEM_IDS.filter(id => (inventory[id] ?? 0) > 0).map(id => {
@@ -262,7 +332,7 @@ export function JourneyPrepare({
                   if (passive) {
                     return (
                       <span key={id}
-                            className="font-mono text-[9px] px-2 py-1 rounded border border-dashed border-border text-muted-foreground flex items-center gap-1"
+                            className="font-mono text-[10px] px-2 py-1 rounded border border-dashed border-border text-muted-foreground flex items-center gap-1"
                             title={t(ITEMS[id].descKey)}>
                         <Icon size={10} />{t(ITEMS[id].nameKey)} ×{inventory[id]}
                       </span>
@@ -276,7 +346,7 @@ export function JourneyPrepare({
                         targetId: ITEMS[id].targeted ? roster[0]?.id : undefined,
                       })}
                       data-testid={`journey-item-${id}`}
-                      className="font-mono text-[9px] px-2 py-1 rounded border border-primary/50 text-primary hover:bg-primary/10 flex items-center gap-1"
+                      className="font-mono text-[10px] px-2 py-1 rounded border border-primary/50 text-primary hover:bg-primary/10 flex items-center gap-1"
                       title={t(ITEMS[id].descKey)}
                     >
                       <Icon size={10} />
@@ -291,12 +361,13 @@ export function JourneyPrepare({
           {actionsThisChapter > 0 && (
             <Button variant="ghost" size="sm" onClick={onUndoPrep}
                     data-testid="journey-undo-prep"
-                    className="w-full h-7 font-mono text-[9px] text-muted-foreground hover:text-primary">
+                    className="w-full h-7 font-mono text-[10px] text-muted-foreground hover:text-primary">
               <Undo2 size={10} className="mr-1.5" />
               {t('journey.prepare.undoPrep')}
             </Button>
           )}
         </div>
+        </>
       )}
     </div>
   );

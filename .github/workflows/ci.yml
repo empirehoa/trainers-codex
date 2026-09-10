@@ -1,0 +1,119 @@
+# CI for Trainer's Codex.
+#
+# The repo had no workflows at all, which meant its ~470 tests only ran when
+# someone remembered to run them. Everything below already existed as a script;
+# this just makes something run it on every push and pull request.
+#
+# The three test layers are deliberately kept in one job because they share an
+# artifact: the Puppeteer suite drives the built `bundle.html`, so it cannot run
+# without the build step that produces it.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Manual trigger, so the workflow can be exercised once without waiting for a
+  # push. NOTE: GitHub only registers a workflow from the DEFAULT branch, so
+  # neither this nor the Actions tab will show it until this file reaches main.
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches local dev. Node 22 strips TypeScript types natively, which
+          # is what lets the worker suite run its .ts tests with no build and no
+          # dependencies installed.
+          node-version: 22
+          cache: pnpm
+
+      # Puppeteer's own postinstall is skipped and the browser fetched
+      # explicitly afterwards. pnpm 10 blocks dependency build scripts by
+      # default, so relying on the postinstall would silently leave no browser
+      # and fail later with a confusing "Could not find Chrome".
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: '1'
+
+      - name: Install Chrome for Puppeteer
+        run: pnpm exec puppeteer browsers install chrome
+
+      - name: Build
+        run: pnpm build
+
+      # The Puppeteer suite drives this file, not the dev server.
+      - name: Inline the single-file bundle
+        run: node inline.mjs
+
+      - name: Unit tests (vitest)
+        run: pnpm test:unit
+
+      # The harness blocks every non-file:// request, so this doubles as the
+      # offline-path check.
+      - name: Browser tests (puppeteer)
+        run: pnpm test:browser
+
+      # No install step: these are node:test suites and Node 22 runs the
+      # TypeScript directly.
+      - name: Worker tests
+        working-directory: worker
+        run: node --test 'test/*.test.ts'
+
+      - name: Upload bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: bundle.html
+          if-no-files-found: error
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # A real gate: `pnpm lint` exits 0 on a clean tree, so any newly introduced
+    # eslint ERROR fails this job.
+    #
+    # It was briefly `continue-on-error: true` with 46 pre-existing errors, on
+    # the theory that an advisory job surfaces the number without blocking. That
+    # was wrong in a way only visible once it ran: continue-on-error stops the
+    # WORKFLOW failing, but the check run still reports failure, so the PR shows
+    # a permanently red check — precisely the "CI is always red, ignore it"
+    # outcome it was meant to avoid.
+    #
+    # 26 of those errors were mechanical and are now fixed. The remaining 22 are
+    # react-hooks/react-refresh rules on pre-existing components, set to 'warn'
+    # in eslint.config.js with the rationale and the count to drive down.
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: '1'
+      - run: pnpm lint

@@ -77,7 +77,7 @@ export function stampProvenance(): void {
     if (!isAuthorizedHost()) {
       // Visible in the console of any mirror, and a hook for support tickets
       // that turn out to be about someone else's copy.
-      // eslint-disable-next-line no-console
+       
       console.warn(
         `${COPYRIGHT}\nThis appears to be an unauthorized copy served from `
         + `${window.location.hostname}. The official app is https://trainerscodex.com`,

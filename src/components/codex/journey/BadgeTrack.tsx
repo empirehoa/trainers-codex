@@ -31,7 +31,7 @@ export function BadgeTrack({ badges, region, stakes, score }: Props) {
          style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--card))' }}
          data-testid="journey-badges">
       <div className="flex items-center justify-between mb-1.5 gap-2">
-        <span className="font-mono text-[9px] uppercase tracking-wider text-primary truncate">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-primary truncate">
           {regionLabel}
           {multiRegion && (
             <span className="text-muted-foreground ml-1">
@@ -39,7 +39,7 @@ export function BadgeTrack({ badges, region, stakes, score }: Props) {
             </span>
           )}
         </span>
-        <span className="font-mono text-[9px] text-muted-foreground shrink-0"
+        <span className="font-mono text-[10px] text-muted-foreground shrink-0"
               data-testid="journey-badge-count">
           {t('journey.region.badges', { n: here, total: BADGES_PER_REGION })}
         </span>
@@ -61,7 +61,7 @@ export function BadgeTrack({ badges, region, stakes, score }: Props) {
       </div>
 
       {ante && (
-        <div className="flex items-center justify-between mt-1.5 font-mono text-[9px]">
+        <div className="flex items-center justify-between mt-1.5 font-mono text-[10px]">
           <span className="text-muted-foreground" data-testid="journey-ante">
             {t('journey.stake.ante', { n: ante.ante })}
           </span>

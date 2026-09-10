@@ -58,6 +58,15 @@ export interface CareerStats {
   /** Rival encounters resolved in the trainer's favour. */
   rivalWins: number;
   rivalLosses: number;
+  /**
+   * Prize money, the run's only spendable resource.
+   *
+   * Nothing in Journey Mode used to COST anything, so nothing in it was a
+   * trade-off — every prepare action was free and therefore obvious. Money is
+   * earned from battles won and milestones cleared, and spent on rerolling a
+   * decision you do not want. See REROLL_COSTS in engine.ts.
+   */
+  money: number;
 }
 
 export type ChapterPhase =
@@ -86,9 +95,23 @@ export interface ChapterResult {
   delta: StatDelta;
   /** Snapshot of the career AFTER this chapter resolved. */
   stats: CareerStats;
+  /** True when this chapter's risky pick landed and its payoff was granted. */
+  landed?: boolean;
   /** Set when this chapter added a Pokémon to the roster. */
   recruitedId?: number;
   recruitedShiny?: boolean;
+  /**
+   * The named fights this chapter resolved, in order.
+   *
+   * Carried on the chapter (not just on the run) so the recap can show the
+   * result while it is still the thing that just happened. Without this, the
+   * player earned or lost a badge and the only trace was a number moving in
+   * the stat strip.
+   */
+  battles?: OpponentResult[];
+  /** Event Pokémon this chapter granted, for the recap's event line. */
+  eventMonId?: number;
+  eventMonShiny?: boolean;
   /** Tournament placement, when the chapter was a tournament. */
   placement?: number;
 }
@@ -110,6 +133,36 @@ export interface DecisionOptionSpec {
    * Values above 1 raise both the upside and the variance.
    */
   riskMultiplier?: number;
+  /**
+   * Durable reward granted when a risky pick LANDS — when the chapter's own
+   * dice roll comes up positive. Absent on safe options.
+   *
+   * Why this exists: before payoffs, a risky option bought a one-chapter mean
+   * shift of `(risk - 1) * 0.05` while its `+fatigue` compounded through
+   * `fatiguePenalty` for the rest of the run, and safe options' `-fatigue` /
+   * `+bond` compounded the other way. Measured over 150 seeds × 5 archetypes,
+   * always-min-risk beat always-max-risk by 26–74 points for EVERY archetype
+   * and earned more prize money too. The dice outweighed every decision in a
+   * run combined (decision spread 35–88 vs seed SD 83–107). Risk was not a
+   * choice; it was a tax.
+   *
+   * A payoff makes the gamble real: lose the roll and you still ate the
+   * fatigue; win it and you keep something that outlasts the chapter — money
+   * for the prepare step, an item, a rare partner, or the fatigue refunded
+   * because it worked. Same seed, different choice, genuinely different run.
+   */
+  payoff?: Payoff;
+}
+
+/**
+ * What a landed gamble leaves behind. The StatDelta part is applied to the
+ * career on the spot (money, fatigue refund, fame); `item` lands in the
+ * inventory for the next prepare step; `recruit` forces this chapter's
+ * recruitment to fire from the named pool instead of rolling for it.
+ */
+export interface Payoff extends StatDelta {
+  item?: ItemId;
+  recruit?: 'rare' | 'legendary';
 }
 
 export interface DecisionCardSpec {
@@ -159,7 +212,27 @@ export type PrepareAction =
   /** Give a party member a nickname (empty string clears it). */
   | { type: 'nickname'; chapterIndex: number; id: number; name: string }
   /** Choose the next region on the tour ("go international"). */
-  | { type: 'travel'; chapterIndex: number; regionId: string };
+  | { type: 'travel'; chapterIndex: number; regionId: string }
+  /**
+   * Discard this chapter's decision card and draw another. Costs money after
+   * the first one of the run.
+   *
+   * Recorded rather than applied, because the card shown is a pure function of
+   * (seed, chapterIndex, rerollCount) — so a replay reproduces the rerolled
+   * card exactly, and a `?seed=` link still reproduces the whole career.
+   */
+  | { type: 'reroll'; chapterIndex: number }
+  /**
+   * Queue an evolution to fire the moment its gate clears.
+   *
+   * The carry-forward mechanic. Without it, an evolution that needs level 36 on
+   * a level-34 member means opening the prepare step every chapter to check —
+   * which is busywork, not a decision. Queuing turns it into a plan the run
+   * executes for you.
+   */
+  | { type: 'queue-evolve'; chapterIndex: number; fromId: number; toId: number }
+  /** Cancel a queued evolution. */
+  | { type: 'unqueue-evolve'; chapterIndex: number; fromId: number };
 
 // ============================================================
 // POKÉDEX
@@ -197,6 +270,16 @@ export interface RegionProgress {
   tourIndex: number;
   /** Badges earned in the CURRENT region. */
   regionBadges: number;
+  /**
+   * Chapters completed within the current region, and how many it spans.
+   *
+   * The engine has always known these (`regionAt` returns them) but never
+   * surfaced them. The area map needs them: position on the road comes from
+   * progress through the REGION, not from the badge count, so that losing a gym
+   * still moves the trainer along instead of freezing the map.
+   */
+  localIndex: number;
+  localCount: number;
 }
 
 // ============================================================
@@ -256,6 +339,17 @@ export interface OpponentResult {
   won: boolean;
   /** Party advantage at the time, -1..+1. */
   advantage: number;
+  /** Badges this battle awarded (gym wins only). */
+  badgeAwarded?: number;
+  /**
+   * True when this is a second attempt at an opponent a previous chapter lost
+   * to. Rematches are what stop a gym loss from being a dead end.
+   */
+  rematch?: boolean;
+  /** Party ids that hit the specialty super-effectively. */
+  strongPicks?: number[];
+  /** Party ids the specialty hits super-effectively. */
+  weakPicks?: number[];
 }
 
 // ============================================================
@@ -294,15 +388,32 @@ export interface JourneyEvent {
   mult?: number;
   /** Species this event granted, if any. */
   grantedId?: number;
+  /** The granted species arrives shiny (SHINY FLASH and friends). */
+  grantedShiny?: boolean;
 }
 
 // ============================================================
 // RESULT
 // ============================================================
 
+/**
+ * How a Pokémon came to be on the team. Independent of `shiny` — a mon can be
+ * an event grant AND shiny, or either alone.
+ *
+ * These were previously conflated: an event grant was marked `shiny` when the
+ * event's rarity was 'legendary', which made "shiny" mean two unrelated things
+ * and left the player unable to tell a genuinely shiny catch from a legendary
+ * encounter.
+ */
+export type MonOrigin = 'starter' | 'wild' | 'event' | 'gift';
+
 export interface RosterEntry {
   id: number;
   shiny: boolean;
+  /** Where this member came from. Absent is treated as 'wild'. */
+  origin?: MonOrigin;
+  /** For `origin: 'event'`, the event id that granted it — drives the badge. */
+  eventId?: string;
   /** Chapter index the Pokémon joined at. Starter is -1, dex-pad is -2. */
   joinedAt: number;
   /** Current types — updated when the member evolves. */
@@ -319,6 +430,10 @@ export interface RosterEntry {
 export interface BoxEntry {
   id: number;
   shiny: boolean;
+  /** Where this one came from. Absent is treated as 'wild'. */
+  origin?: MonOrigin;
+  /** For `origin: 'event'`, the event id that granted it. */
+  eventId?: string;
   xp: number;
   /** Chapter it was caught at. */
   caughtAt: number;
@@ -404,6 +519,24 @@ export interface PrepareAvailability {
   box: BoxEntry[];
   /** Regions the player may travel to next (empty unless at a crossroads). */
   travelOptions?: TravelOption[];
+  /** Cost of rerolling this chapter's decision. 0 = the free one. */
+  rerollCost: number;
+  /** Whether the trainer can afford it. */
+  canAffordReroll: boolean;
+  /** Rerolls already spent this run. */
+  rerollsUsed: number;
+  /** Evolutions queued and waiting on their gate, keyed by current species. */
+  queued: QueuedEvolve[];
+}
+
+/** An evolution the player has queued for when its gate clears. */
+export interface QueuedEvolve {
+  fromId: number;
+  toId: number;
+  /** Why it has not fired yet, for the UI to explain the wait. */
+  reason: 'level' | 'friendship' | 'item' | 'trade';
+  /** Level required, when `reason` is 'level'. */
+  needLevel?: number;
 }
 
 /** A candidate next region, with what makes it worth choosing. */

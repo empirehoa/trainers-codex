@@ -49,6 +49,18 @@
 /
   Cache-Control: public, max-age=0, must-revalidate
 
+# Static reference pages (scripts/gen-seo-pages.ts). These change only when the
+# Pokemon dataset does, so an hour at the edge with a day of stale-while-
+# revalidate keeps them fast for crawlers without pinning a wrong page after a
+# data update.
+/pokemon/*
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+/type/*
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+/sitemap.xml
+  Cache-Control: public, max-age=3600
+  Content-Type: application/xml; charset=utf-8
+
 # PWA service worker: never long-cache, or clients get stuck on a stale SW and
 # never pick up a new shell. Browsers revalidate the SW script on every update
 # check; this keeps the HTTP layer from getting in the way.

@@ -134,8 +134,20 @@ function buildGymLeaders(seed: number, regionId: string): Opponent[] {
   for (let i = 0; i < 8; i++) {
     const r = namedRng(seed, `gym-${regionId}-${i}`);
     const specialty = specialties[i] ?? ALL_TYPES[i % ALL_TYPES.length];
-    // Levels climb across the circuit: ~12 at gym 1 to ~52 at gym 8.
-    const level = 12 + i * 6 + randInt(r, -2, 2);
+    // Levels climb across the circuit: ~14 at gym 1 to ~35 at gym 8.
+    //
+    // EVERY ladder in this file is set against the MEASURED party curve, and
+    // that curve is owned by XP_RATE in levels.ts — the two are one number in
+    // two places. Measured party level by the phase it is played in:
+    //
+    //   gym-circuit 19-32 · elite-four 32-38 · regional 36-41
+    //   national 39-44 · worlds 41-47 · world-cup 43-49 · end 48 (starter 55)
+    //
+    // `matchupFor` prices level gap as `levelGap / 20` CLAMPED to ±1, so a
+    // ladder more than 20 levels off the party stops being a variable at all —
+    // it pins at the floor and no win-rate tuning can move it. Keep every gap
+    // inside that band so preparing for a fight actually changes the odds.
+    const level = 14 + i * 3 + randInt(r, -1, 1);
     out.push({
       kind: 'gym',
       name: makeName(r),
@@ -171,7 +183,8 @@ function buildEliteFour(seed: number, regionId: string): Opponent[] {
       title: E4_TITLE,
       specialty,
       index: i + 1,
-      level: 58 + i * 4 + randInt(r, -2, 2),
+      // Party is ~32-38 through the Elite Four phase. See buildGymLeaders.
+      level: 38 + i * 3 + randInt(r, -1, 1),
       teamIds: teamOfType(r, regionId, specialty, 5, true),
       regionId,
     };
@@ -197,7 +210,9 @@ function buildChampion(seed: number, regionId: string): Opponent {
     title: CHAMP_TITLE,
     specialty,
     index: 1,
-    level: 76 + randInt(r, -3, 4),
+    // The region's wall. Clearly above the Elite Four, still inside the ±20
+    // band where the level term is live.
+    level: 50 + randInt(r, -2, 3),
     teamIds: teamOfType(r, regionId, specialty, 6, true),
     regionId,
   };
@@ -222,7 +237,8 @@ function buildSyndicate(seed: number, regionId: string): Opponent {
     title: 'Syndicate Operation',
     specialty: s.motif,
     index: 1,
-    level: 40 + randInt(r, -6, 12),
+    // Syndicate shows up mid gym-circuit, so it sits just above those gyms.
+    level: 26 + randInt(r, -2, 4),
     teamIds: teamOfType(r, regionId, s.motif, 4, false),
     regionId,
   };
@@ -232,9 +248,16 @@ function buildSyndicate(seed: number, regionId: string): Opponent {
 // TYPE MATCHUP — the payoff for team-building
 // ============================================================
 
-/** Best offensive multiplier any of `attackerTypes` gets against `defender`. */
+/**
+ * Best offensive multiplier any of `attackerTypes` gets against `defender`.
+ *
+ * Seeded at 0, not 1. The first version started at 1 and only ever accepted a
+ * larger value, so a party whose every type is resisted by the specialty still
+ * reported neutral — which is what made the `off <= 0.5` arm of `matchupFor`
+ * unreachable. Bringing a bad answer now costs you something.
+ */
 function bestAgainst(attackerTypes: PokemonType[], defender: PokemonType): number {
-  let best = 1;
+  let best = 0;
   for (const a of attackerTypes) {
     const m = TYPE_CHART[a]?.[defender] ?? 1;
     if (m > best) best = m;
@@ -242,14 +265,27 @@ function bestAgainst(attackerTypes: PokemonType[], defender: PokemonType): numbe
   return best;
 }
 
-/** Worst multiplier the defender's type lands on any of `defenderTypes`. */
-function worstFrom(attacker: PokemonType, defenderTypes: PokemonType[]): number {
-  let worst = 1;
-  for (const d of defenderTypes) {
-    const m = TYPE_CHART[attacker]?.[d] ?? 1;
-    if (m > worst) worst = m;
-  }
-  return worst;
+/**
+ * What an `attacker`-type move does to a Pokémon of `defenderTypes`.
+ *
+ * Effectiveness against a dual type is the PRODUCT of the two lookups, never
+ * the larger of them. This function used to take the max from a floor of 1,
+ * which inverted the two cases team-building is actually about:
+ *
+ *   Charizard (Fire/Flying) vs a Ground specialist → reported 2, a weakness.
+ *     Ground is 2x on Fire and 0x on Flying, so the real answer is 0: immune.
+ *   Gengar (Ghost/Poison) vs a Normal specialist  → reported 1, neutral.
+ *     Normal cannot touch a Ghost at all.
+ *
+ * Every resistance and every immunity in the game read as neutral-or-worse, so
+ * the `def <= 0.5` arm of `matchupFor` never fired and the defensive half of a
+ * matchup contributed nothing. Same rule as `lib/analysis.ts` `eff`, kept local
+ * so the journey sim stays off the team-analysis module graph.
+ */
+function incomingOn(attacker: PokemonType, defenderTypes: PokemonType[]): number {
+  let m = 1;
+  for (const d of defenderTypes) m *= TYPE_CHART[attacker]?.[d] ?? 1;
+  return m;
 }
 
 export interface Matchup {
@@ -282,7 +318,7 @@ export function matchupFor(
 
   for (const m of roster) {
     const off = bestAgainst(m.types, opponent.specialty);
-    const def = worstFrom(opponent.specialty, m.types);
+    const def = incomingOn(opponent.specialty, m.types);
     if (off >= 2) strongPicks.push(m.id);
     if (def >= 2) weakPicks.push(m.id);
     offense += off >= 2 ? 1 : off <= 0.5 ? -0.6 : 0;
@@ -320,8 +356,17 @@ export function worldCupField(
   size = 8,
 ): Opponent[] {
   const field: Opponent[] = [];
-  for (const regionId of tour) field.push(regionChampion(seed, regionId));
-  field.push(...ghosts);
+  // Region champions enter the World Cup as COMPETITORS, so they are re-tagged
+  // `world-cup`. Leaving them as `kind: 'champion'` meant that on a
+  // single-region tour the World Cup's opening match — the only one most runs
+  // ever reach — was recorded as a champion fight. No battle in a 6,000-run
+  // sweep carried the `world-cup` kind at all, and beating one spuriously
+  // "crowned" a region the player had already crowned in the Elite Four.
+  for (const regionId of tour) {
+    const champ = regionChampion(seed, regionId);
+    field.push({ ...champ, kind: 'world-cup', title: `${champ.title} · ${getRegion(regionId).label}` });
+  }
+  field.push(...ghosts.map(g => ({ ...g, kind: 'world-cup' as const })));
   for (const regionId of tour) {
     const leaders = gymLeaders(seed, regionId);
     const top = leaders[leaders.length - 1];
@@ -338,7 +383,8 @@ export function worldCupField(
       title: 'International Challenger',
       specialty: pick(r, ALL_TYPES),
       index: field.length + 1,
-      level: 70 + randInt(r, -4, 8),
+      // World Cup is late — party is ~43-49 by then.
+      level: 53 + randInt(r, -2, 4),
       teamIds: teamOfType(r, regionId, pick(r, ALL_TYPES), 6, true),
       regionId,
     });
