@@ -189,12 +189,15 @@ async function siteChecks() {
     return ct;
   });
 
+  // Workers Assets `html_handling` 307s `/legal.html` → `/legal` (verified live
+  // 2026-09-10); the app links the `.html` form, so follow the chain and accept
+  // either shape as long as the final answer is the HTML page.
   for (const path of ['/legal.html', '/dmca.html']) {
-    await check(`GET ${path} → 200`, async () => {
-      const res = await fetchSlow(`${SITE}${path}`);
-      expect(res.status === 200, `status ${res.status}`);
+    await check(`GET ${path} → 200 (redirects followed)`, async () => {
+      const { res, chain } = await fetchChain(`${SITE}${path}`);
+      expect(res.status === 200, `final status ${res.status}`);
       expect((res.headers.get('content-type') || '').startsWith('text/html'), 'not html');
-      return 'ok';
+      return chain.map(c => `${c.status} ${new URL(c.url).pathname}`).join(' → ');
     });
   }
 

@@ -17,7 +17,7 @@ source; anything that could not be verified from the audit sandbox says so.
 | 4 | Google Search Console property + sitemap | 1,330 URLs are live but unsubmitted. | `launch/search-console.md` (15 min; TXT record in Cloudflare DNS, submit `sitemap.xml`, expect 1,330 discovered). |
 | 5 | Founding Trainer $29 annual coupon | Marketing hook for the launch posts. | **Code side is done**: the premium Checkout already sends `allow_promotion_codes=true` (verified by `worker/test/promo-codes.test.ts`; it was also removed from the credits checkout so an amount-off coupon can't zero a $1.99 pack). Owner: Stripe Dashboard → Products → Coupons → amount-off $10 restricted to the $39/yr price, duration `once`, redeem-by launch + 14d → Promotion Code `FOUNDING`. Nothing to deploy. |
 | 6 | **DMCA designated-agent registration** (`public/dmca.html` says "in progress") and the registered address/venue (Pembroke Pines / S.D. Fla. vs. EMG's Kissimmee HQ) | §512(c) safe harbour depends on the registration. | copyright.gov/dmca-directory → register → edit `public/dmca.html` to remove "in progress"; confirm the address + venue with counsel; confirm `legal@ / billing@ / privacy@trainerscodex.com` mailboxes exist (not verifiable from here). |
-| 7 | **Push + deploy this build** | The hardened build is merged and tagged but the sandbox's git proxy does not authorise `empirehoa/trainers-codex` and the Mac (wrangler OAuth + GitHub creds) was unreachable/flapping both times the release was cut. | One command on the Mac: `scripts/release.sh --bundle ~/Downloads/trainers-codex-v1.0-launch.bundle --all` (fetch → ff → push → build → inject → deploy API then site → `scripts/smoke-live.mjs` 21 checks). Details §4. Until then, production still runs `fcc2ef9` — including the `?unlock=premium` bypass (A-1). **Deploy before any marketing post.** |
+| 7 | ~~Push + deploy this build~~ **DEPLOYED 2026-09-10 13:26 UTC from the Mac** — API worker version `4a4d9a12` (carries `MERCH_CHECKOUT="0"`), site version `c4b204b2`. `scripts/smoke-live.mjs --browser` against production: 21/21 after the legal/dmca check learned to follow Workers-Assets' `.html` → extensionless 307 (19/21 on first run; both pages serve 200 at `/legal`, `/dmca`). Verified live: `?unlock=premium` inert (6 locked styles, no flag), zero console errors on boot, lazy calc chunk present, `/merch/checkout` → 503 `merch_disabled`, sitemap 1330, `/health` ok. | Push of the branches + tag to origin was blocked by the Mac's `gh` token lacking the `workflow` scope (we changed `.github/workflows/ci.yml`); `gh auth refresh -s workflow` was started — approve the device code, then `git push origin claude/monetization-v1 claude/journey-mode-trainer-sim-1r2yvp v1.0-launch`. |
 
 ---
 
@@ -38,9 +38,9 @@ source; anything that could not be verified from the audit sandbox says so.
 | Security (worker) | **GO** — 1 HIGH + 3 MEDIUM + 6 LOW fixed; 0 open CRITICAL/HIGH | §2 B-* |
 | Security (client) | **GO** — CRITICAL A-1 fixed; 0 open CRITICAL/HIGH | §2 A-1, C-* |
 | Legal / IP bright lines | **GO on code; counsel items open** | §2 D-*; §5 |
-| Deployed live | **PENDING** — see blocker 7 (`scripts/release.sh --all`) | §4 |
+| Deployed live | **GO** — deployed 2026-09-10, smoke 21/21 | blocker 7 row; `scripts/smoke-live.mjs --browser` output |
 
-**Verdict: GO to deploy and tag; GO to market once blockers 1, 4, 7 are done (5 is a nice-to-have; 2, 3, 6 gate merch, not launch).**
+**Verdict: DEPLOYED. GO to market once blockers 1 (Stripe live keys) and 4 (Search Console) are done and the branches are pushed (7); 5 is a nice-to-have; 2, 3, 6 gate merch, not launch.**
 
 ---
 

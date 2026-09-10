@@ -46,3 +46,7 @@ tests/_screenshots/
 worker/pnpm-lock.yaml
 worker/pnpm-workspace.yaml
 tmp-responsive/
+
+# pnpm 11 writes this at the root on every install (build-script allow list).
+# Never commit it — a committed workspace file broke pnpm 9 (CLAUDE.md gotcha 19).
+/pnpm-workspace.yaml
