@@ -146,6 +146,13 @@ See `public/_headers` for the full policy. Cloudflare Pages picks it up automati
 
 ### Inline-hash upgrade path (future hardening)
 
+`script-src` also carries `blob:`. The lazily loaded `@smogon/calc` chunk ships
+inside `bundle.html` as an inert `<script type="text/plain" data-chunk>` block
+and is imported as a Blob-URL module on first matchup (`inline.mjs`,
+`src/lib/calc-loader.ts`). `blob:` is not a network source — only same-document
+script can mint one — so it widens nothing beyond what `'unsafe-inline'` already
+concedes; without it the matchup preview never loads on the live origin.
+
 When this project is ready to drop `'unsafe-inline'`, modify `inline.mjs` to compute the SHA-384 of the inline `<script>` content during the inline step, and emit a companion `_headers` file with `script-src 'self' 'sha384-XXX'`. The hash must be regenerated on every build. This is a ~30-line change but adds operational complexity (header drift detection) — deferred until a clear threat justifies it.
 
 ---
