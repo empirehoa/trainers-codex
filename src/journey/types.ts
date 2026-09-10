@@ -9,8 +9,15 @@ export type Pace = 'express' | 'normal' | 'intense';
 
 export type Archetype = 'aggro' | 'stall' | 'balance' | 'collector' | 'shiny-hunter';
 
-/** Where this run came from — reported as `source` on the run_started event. */
-export type RunSource = 'fresh' | 'seed-link' | 'daily';
+/**
+ * Where this run came from — reported as `source` on the run_started event.
+ * `seo` is a fresh run started in a session that entered the app through a
+ * `?q=` link from one of the static reference pages (lib/search-param.ts);
+ * it exists so the 1,330-page funnel is measurable inside Journey rather than
+ * only from Search Console. Not a DB-constrained value: the only CHECK on
+ * `journey_events` is on `event` (docs/JOURNEY_MODE.md § Table DDL).
+ */
+export type RunSource = 'fresh' | 'seed-link' | 'daily' | 'seo';
 
 /**
  * Campaign length. `short` is the original 3-minute single-region run;

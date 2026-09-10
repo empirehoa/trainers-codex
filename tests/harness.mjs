@@ -88,6 +88,16 @@ async function getBrowser() {
  *                                  boot only reaches render-time reads.
  * @param {Record<string,string>} [opts.storage] localStorage entries seeded
  *                                  before boot (saves, flags, licenses).
+ * @param {(req: import('puppeteer').HTTPRequest) => boolean} [opts.onRequest]
+ *                                  Runs before the default network block for
+ *                                  every request. Return true after calling
+ *                                  `req.respond(...)` / `req.continue()` to
+ *                                  take the request over; anything else falls
+ *                                  through to the block. This is how a test
+ *                                  observes a cross-origin POST body: the
+ *                                  browser sends a CORS preflight first, and a
+ *                                  blocked preflight means the POST never
+ *                                  leaves the page.
  * @param {number} [opts.timezone]  Unused placeholder kept out on purpose —
  *                                  timezone shifts are emulated per-test via
  *                                  page.emulateTimezone.
@@ -108,6 +118,7 @@ export async function newPage(opts = {}) {
   });
   await page.setRequestInterception(true);
   page.on('request', (req) => {
+    if (opts.onRequest && opts.onRequest(req)) return;
     const url = req.url();
     if (url.startsWith('file://') || url.startsWith('data:') || url.startsWith('blob:')) {
       req.continue();
