@@ -19,6 +19,7 @@ const SUITES = [
   'test-showdown.mjs',
   'test-champions.mjs',
   'test-matchup.mjs',
+  'test-bundle-shape.mjs',
   'test-profiles.mjs',
   'test-merch-legal.mjs',
   'test-responsive.mjs',

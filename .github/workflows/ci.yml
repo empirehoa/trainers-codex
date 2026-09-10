@@ -68,8 +68,11 @@ jobs:
       # small enough to drop on any host and boot on a phone; growth had been
       # invisible because nothing measured it. 2,150,400 bytes (2,100 KiB) is
       # the launch cap; the 2026-09-09 v1.0-launch build is 2,137,758 B (~2,088 KB), gzip-able
-      # to ~530 KB. If @smogon/calc (463 KB, matchup preview only) moves out of
-      # the critical script, tighten this to 1.8 MB.
+      # to ~530 KB. @smogon/calc (474 KB, matchup preview only) has since moved
+      # out of the critical module script into a lazy text/plain chunk — the
+      # file is the same size, but tests/test-bundle-shape.mjs pins the module
+      # script itself at 1.6 MB. Tightening this cap now needs the ES/PT/JA
+      # strings (72 KB) to go lazy the same way.
       - name: Bundle size gate
         run: |
           size=$(stat -c %s bundle.html)

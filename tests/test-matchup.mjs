@@ -5,6 +5,10 @@
 // range of each move and the speed comparison. These tests exercise the shipped
 // bundle via window.__tc (real compiled logic, not a mirror) plus one UI flow.
 //
+// @smogon/calc is a lazily loaded chunk (src/lib/calc-loader.ts), so
+// computeMatchup() is async: every call below awaits it, which also makes this
+// suite the offline proof that the Blob-URL chunk revives from file://.
+//
 // Move IDs are obtained by round-tripping a PokePaste through parsePokePaste,
 // so we never hard-code internal move numbering — the test stays valid as data
 // regenerates.
@@ -45,10 +49,10 @@ const tests = [
   {
     name: 'computeMatchup returns damage ranges + speed verdict for a known attacker',
     async fn(page) {
-      const mu = await page.evaluate((paste, defId) => {
+      const mu = await page.evaluate(async (paste, defId) => {
         const tc = window.__tc;
         const [member] = tc.parsePokePaste(paste);
-        return tc.computeMatchup(member, defId);
+        return await tc.computeMatchup(member, defId);
       }, LANDO_PASTE, SNORLAX_ID);
 
       assert(mu.supported, 'Landorus-Therian should be modeled by @smogon/calc');
@@ -68,9 +72,9 @@ const tests = [
   {
     name: 'a fast attacker outspeeds a slow defender',
     async fn(page) {
-      const mu = await page.evaluate((paste, defId) => {
+      const mu = await page.evaluate(async (paste, defId) => {
         const [member] = window.__tc.parsePokePaste(paste);
-        return window.__tc.computeMatchup(member, defId);
+        return await window.__tc.computeMatchup(member, defId);
       }, LANDO_PASTE, SNORLAX_ID);
       assert(mu.attackerSpe > mu.defenderSpe,
         `252 Spe Jolly Lando-T (${mu.attackerSpe}) should outspeed Snorlax (${mu.defenderSpe})`);
@@ -80,10 +84,10 @@ const tests = [
   {
     name: 'bestMove picks the highest max% damaging move',
     async fn(page) {
-      const { best, maxOfAll } = await page.evaluate((paste, defId) => {
+      const { best, maxOfAll } = await page.evaluate(async (paste, defId) => {
         const tc = window.__tc;
         const [member] = tc.parsePokePaste(paste);
-        const mu = tc.computeMatchup(member, defId);
+        const mu = await tc.computeMatchup(member, defId);
         const best = tc.bestMove(mu);
         const maxOfAll = Math.max(...mu.moves.map(m => m.maxPct));
         return { best, maxOfAll };
@@ -95,10 +99,10 @@ const tests = [
   {
     name: 'a Champions Mega attacker is modeled by calc with correct STAB damage',
     async fn(page) {
-      const mu = await page.evaluate((paste, defId) => {
+      const mu = await page.evaluate(async (paste, defId) => {
         const tc = window.__tc;
         const [member] = tc.parsePokePaste(paste);
-        return { id: member.id, mu: tc.computeMatchup(member, defId) };
+        return { id: member.id, mu: await tc.computeMatchup(member, defId) };
       }, MEGA_MEGANIUM_PASTE, SWAMPERT_ID);
       assertEq(mu.id, 10282, 'paste should resolve to Mega Meganium (10282)');
       assert(mu.mu.supported, 'Champions Mega Meganium should be modeled by @smogon/calc');
@@ -112,9 +116,9 @@ const tests = [
   {
     name: 'an unknown defender id degrades to unsupported (no throw)',
     async fn(page) {
-      const mu = await page.evaluate((paste) => {
+      const mu = await page.evaluate(async (paste) => {
         const [member] = window.__tc.parsePokePaste(paste);
-        return window.__tc.computeMatchup(member, 999999);
+        return await window.__tc.computeMatchup(member, 999999);
       }, LANDO_PASTE);
       assertEq(mu.supported, false, 'a non-existent defender id → unsupported');
     },
@@ -167,7 +171,13 @@ const tests = [
         return false;
       });
       assert(clicked, 'a Snorlax result should appear in the opponent picker');
-      await sleep(400);
+      // The calc chunk is lazy: wait for the "loading calc…" line to give way
+      // to the per-member rows instead of racing it with a fixed sleep.
+      await page.waitForFunction(
+        () => !document.querySelector('[data-testid="matchup-loading"]') && /vs\s+Snorlax/i.test(document.body.innerText),
+        { timeout: 10000 },
+      );
+      await sleep(100);
 
       const bodyAfter = await page.evaluate(() => document.body.innerText);
       assert(/vs\s+Snorlax/i.test(bodyAfter), 'selected opponent header should read "vs Snorlax"');

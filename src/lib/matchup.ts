@@ -28,14 +28,34 @@
 //   - Level defaults to 50 — the VGC / Pokémon Champions / Worlds format. Damage
 //     percentages are what matter and are near-level-invariant anyway.
 
-import { Generations, Pokemon, Move, calculate } from '@smogon/calc';
+//   - The package is NOT imported statically here. It is 463 KB and only this
+//     preview needs it, so it arrives through loadCalc() (src/lib/calc-loader.ts)
+//     as a separate chunk that inline.mjs embeds in bundle.html and revives as a
+//     Blob-URL module on first use. `computeMatchupWith(calc, …)` is the pure
+//     synchronous core; `computeMatchup(…)` awaits the loader and calls it.
+
+import type { Pokemon as CalcPokemon } from '@smogon/calc';
+import { loadCalc, type CalcModule } from './calc-loader';
 import { POKEMON_BY_ID, MOVES_BY_ID } from './pokemon';
 import { HELD_ITEMS } from './constants';
 import { speciesToken } from './showdown';
 import type { TeamMember } from './types';
 
-const GEN = Generations.get(9);
 const DEFAULT_LEVEL = 50;
+
+type Generation = ReturnType<CalcModule['Generations']['get']>;
+
+// Generations.get(9) is looked up once per calc module instance (there is only
+// ever one, but a WeakMap keeps the cache honest rather than global).
+const GEN_CACHE = new WeakMap<CalcModule, Generation>();
+function genFor(calc: CalcModule): Generation {
+  let g = GEN_CACHE.get(calc);
+  if (!g) {
+    g = calc.Generations.get(9);
+    GEN_CACHE.set(calc, g);
+  }
+  return g;
+}
 
 const ITEM_LABEL = new Map<string, string>(HELD_ITEMS.map(it => [it.id, it.label]));
 
@@ -60,9 +80,10 @@ function calcSpecies(id: number): string | null {
   return speciesToken(p.name);
 }
 
-function buildPokemon(member: TeamMember): Pokemon | null {
+function buildPokemon(calc: CalcModule, member: TeamMember): CalcPokemon | null {
   const name = calcSpecies(member.id);
   if (!name) return null;
+  const GEN = genFor(calc);
   const opts: Record<string, unknown> = { level: DEFAULT_LEVEL };
   if (member.nature) opts.nature = member.nature;
   if (member.ability) opts.ability = member.ability;
@@ -73,7 +94,7 @@ function buildPokemon(member: TeamMember): Pokemon | null {
     opts.teraType = member.teraType[0].toUpperCase() + member.teraType.slice(1);
   }
   try {
-    return new Pokemon(GEN, name, opts);
+    return new calc.Pokemon(GEN, name, opts);
   } catch {
     // Unknown species/options for this gen (e.g. a brand-new Champions Mega).
     return null;
@@ -82,11 +103,11 @@ function buildPokemon(member: TeamMember): Pokemon | null {
 
 // A plain defender from a bare species id — used when the opponent is picked
 // from the dex with no custom spread. Neutral nature, 0 EVs: the calc default.
-function buildDefender(id: number): Pokemon | null {
+function buildDefender(calc: CalcModule, id: number): CalcPokemon | null {
   const name = calcSpecies(id);
   if (!name) return null;
   try {
-    return new Pokemon(GEN, name, { level: DEFAULT_LEVEL });
+    return new calc.Pokemon(genFor(calc), name, { level: DEFAULT_LEVEL });
   } catch {
     return null;
   }
@@ -100,13 +121,16 @@ function speedNote(atk: number, def: number): string {
 
 /**
  * Compute the offensive matchup of `attacker` (one of our TeamMembers, full
- * spread) into `defenderId` (a dex species, default spread). Returns damage
- * ranges per damaging move plus the speed comparison, or an unsupported result
- * when @smogon/calc can't model the attacker.
+ * spread) into `defenderId` (a dex species, default spread) with an already
+ * loaded calc module. Returns damage ranges per damaging move plus the speed
+ * comparison, or an unsupported result when @smogon/calc can't model the
+ * attacker. Synchronous — React render paths call this once loadCalc() has
+ * resolved (see MatchupSection).
  */
-export function computeMatchup(attacker: TeamMember, defenderId: number): Matchup {
-  const atk = buildPokemon(attacker);
-  const def = buildDefender(defenderId);
+export function computeMatchupWith(calc: CalcModule, attacker: TeamMember, defenderId: number): Matchup {
+  const GEN = genFor(calc);
+  const atk = buildPokemon(calc, attacker);
+  const def = buildDefender(calc, defenderId);
   if (!atk || !def) {
     return { attackerSpe: 0, defenderSpe: 0, speedNote: 'speed ties', moves: [], supported: false };
   }
@@ -118,7 +142,7 @@ export function computeMatchup(attacker: TeamMember, defenderId: number): Matchu
     if (!mv) continue;
     let result;
     try {
-      result = calculate(GEN, atk, def, new Move(GEN, mv.display));
+      result = calc.calculate(GEN, atk, def, new calc.Move(GEN, mv.display));
     } catch {
       continue; // move not in this gen's calc dex
     }
@@ -140,6 +164,11 @@ export function computeMatchup(attacker: TeamMember, defenderId: number): Matchu
     moves,
     supported: true,
   };
+}
+
+/** Async form: loads @smogon/calc on first call, then delegates to computeMatchupWith. */
+export async function computeMatchup(attacker: TeamMember, defenderId: number): Promise<Matchup> {
+  return computeMatchupWith(await loadCalc(), attacker, defenderId);
 }
 
 /** Best (highest max%) damaging move name + range for a quick one-line summary. */

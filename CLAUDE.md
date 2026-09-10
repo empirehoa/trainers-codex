@@ -114,7 +114,9 @@ src/
     analysis.ts                    ← defensive matrix, offensive coverage, threats, counter team, sharecode
     auth.ts                        ← v5 — Supabase adapter loaded from CDN only if config present
     compatibility.ts               ← form-aware game compat (megas excluded from Switch-era, etc.)
+    calc-loader.ts                 ← the ONLY import of @smogon/calc — memoised dynamic import (lazy chunk)
     constants.ts                   ← TYPES, TYPE_COLORS, TYPE_CHART, ART_STYLES (12), GAMES, GENERATIONS
+    matchup.ts                     ← computeMatchupWith(calc, …) pure core + async computeMatchup() via the loader
     merch.ts                       ← v5 — 12-product POD catalog + Printful/Printify URL builders
     merch-renderers.ts             ← v5 — print-ready PNGs at 300 DPI (5 designs); derived silhouettes only, never official art
     silhouette.ts                  ← bounded sprite load → alpha-mask silhouette → type glyph fallback (shared by Legend Card + merch)
@@ -145,7 +147,8 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 24 suites, 290 tests (a11y, robustness, premium-gate added 2026-09-09)
+  test-*.mjs                       ← 25 suites, 294 tests (a11y, robustness, premium-gate added 2026-09-09;
+                                     bundle-shape 2026-09-10 — lazy calc chunk)
 ```
 
 ## Build + bundle workflow
@@ -163,6 +166,16 @@ node inline.mjs                    # → bundle.html (inlines CSS + JS from dist
 reads `dist/index.html`, swaps the `<link>` and `<script>` tags for inline
 `<style>` and `<script>` blocks pulling from `dist/assets/`, and writes
 `bundle.html`. The result drops onto any static host.
+
+Lazy chunks stay inside that one file. `@smogon/calc` (474 KB, matchup preview
+only) is reached solely through `src/lib/calc-loader.ts`'s dynamic import, so
+rolldown emits it as `assets/calc-<hash>.js`; `inline.mjs` embeds it as an inert
+`<script type="text/plain" data-chunk>` block and a tiny classic script defines
+`globalThis.__TC_CHUNK(name)`, which turns the block into a Blob-URL module the
+first time the entry's rewritten `import(globalThis.__TC_CHUNK("assets/calc-…"))`
+asks for it. The parse/compile cost moves from every boot to the first
+matchup; `tests/test-bundle-shape.mjs` pins the shape. The CSP therefore
+carries `blob:` in `script-src`.
 
 ## Static reference pages (v12)
 
@@ -518,6 +531,24 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     once. The chain only works because every module it reaches is pure or
     type-only — routing it through something that imports `./constants`
     extensionless breaks it at runtime with no compile-time warning.
+
+43. **Never import `@smogon/calc` statically; it goes through
+    `lib/calc-loader.ts`.** The package is 474 KB minified and was 22 % of the
+    module script, parsed on every boot for a preview most sessions never open.
+    A static import anywhere pulls it back onto the boot path silently — the
+    build still succeeds and the file grows by nothing visible (the chunk merely
+    merges back into the entry). `tests/test-bundle-shape.mjs` asserts the entry
+    carries none of the calc's dex markers, so the regression fails loudly.
+    Two things make the lazy chunk work from a single `file://` HTML and both
+    live in `inline.mjs`: rolldown quotes the dynamic specifier as a template
+    literal (``import(`./calc-x.js`)``), and the chunk imports one runtime
+    helper back from the entry (`import{t as e}from"./index-x.js"`), which has
+    no URL — so the entry publishes its export list on `globalThis.__TC_SHARED`
+    and the chunk destructures it. `inline.mjs` throws on any shape it does not
+    recognise rather than emitting a bundle whose lazy path breaks at runtime.
+    A `codeSplitting.groups` config is NOT the fix for the shared helper: it
+    hoists rolldown's runtime into a third chunk that the entry imports
+    statically, which an inline module script cannot do.
 
 ## Code style conventions
 
