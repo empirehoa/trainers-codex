@@ -29,10 +29,14 @@
 #       it stops the console error on every page load. The owner may instead
 #       disable Web Analytics for the zone in the Cloudflare dashboard, in which
 #       case both hosts can be dropped again.
+  #   - blob: in script-src — the lazily loaded @smogon/calc chunk ships inside
+  #       bundle.html as an inert text block and is imported as a Blob-URL module
+  #       on first matchup (inline.mjs). Without blob: the matchup preview never
+  #       loads on the live origin; it is not a network source.
   #   - https://trainers-codex-api.jrriestra.workers.dev — API Worker (Stripe Checkout session,
   #       license verify, Printful submit). REQUIRED in connect-src or the browser blocks the
   #       checkout fetch and no purchase can complete. api.trainerscodex.com is the future alias.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh https://js.stripe.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://raw.githubusercontent.com https://images.pokemontcg.io https://*.supabase.co https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.discordapp.com https://platform-lookaside.fbsbx.com; connect-src 'self' https://esm.sh https://*.supabase.co https://api.pokemontcg.io https://raw.githubusercontent.com https://api.stripe.com https://checkout.stripe.com https://plausible.io https://trainers-codex-api.jrriestra.workers.dev https://api.trainerscodex.com https://pokepast.es https://pokebin.com https://teams.pokemonshowdown.com https://cloudflareinsights.com; frame-src https://checkout.stripe.com https://js.stripe.com; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' blob: https://esm.sh https://js.stripe.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://raw.githubusercontent.com https://images.pokemontcg.io https://*.supabase.co https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://cdn.discordapp.com https://platform-lookaside.fbsbx.com; connect-src 'self' https://esm.sh https://*.supabase.co https://api.pokemontcg.io https://raw.githubusercontent.com https://api.stripe.com https://checkout.stripe.com https://plausible.io https://trainers-codex-api.jrriestra.workers.dev https://api.trainerscodex.com https://pokepast.es https://pokebin.com https://teams.pokemonshowdown.com https://cloudflareinsights.com; frame-src https://checkout.stripe.com https://js.stripe.com; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'; upgrade-insecure-requests
   # Click-jacking protection (belt + suspenders with frame-ancestors above).
   X-Frame-Options: DENY
   # Block MIME-sniffing so a .png can't be served as text/html.
