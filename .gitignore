@@ -35,6 +35,7 @@ tests/_screenshots/
 # Sensitive — never commit
 .env
 .env.local
+.env.deploy
 .dev.vars
 *.pem
 .supabase-db-password
