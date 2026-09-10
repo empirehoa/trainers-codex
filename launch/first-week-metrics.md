@@ -100,13 +100,14 @@ the return-redirect/verify path is losing people.
 
 ### Q5 — How do runs start, and does Journey feed the builder?
 
-`props.source` on `run_started` is `fresh` | `seed-link` | `daily` (shared
-seed links and the daily are the viral loops); `builder_handoff` marks
-Journey → builder. **Gap:** `?q=` arrivals from the 1,330 reference pages are
-not tracked as an event today — read that funnel from Search Console clicks
-and Cloudflare Web Analytics referrers instead, or add a `source: 'seo'` value
-to `RunSource` in a follow-up (it must also be added to the DB CHECK if one
-exists on `props`; currently only `event` is constrained).
+`props.source` on `run_started` / `run_completed` is `fresh` | `seed-link` |
+`daily` | `seo`. Shared seed links and the daily are the viral loops; `seo` is
+a run started in a tab that entered the app through a `?q=` link from one of
+the 1,330 reference pages (`src/lib/search-param.ts` sets a session flag when
+it consumes `?q=`; `src/journey/analytics.ts` `resolveRunSource` swaps `fresh`
+for `seo` at run start). `builder_handoff` marks Journey → builder. No schema
+change is needed: the only CHECK on `journey_events` is on `event`, `props` is
+free-form jsonb (docs/JOURNEY_MODE.md § Table DDL).
 
 ```sql
 select props->>'source' as source,
@@ -115,6 +116,12 @@ select props->>'source' as source,
 from journey_events
 where created_at >= now() - interval '7 days'
 group by 1 order by 2 desc;
+
+-- The reference-page funnel on its own: how many search arrivals played.
+select count(*) filter (where event = 'run_started')  as seo_runs,
+       count(*) filter (where event = 'run_completed') as seo_completed
+from journey_events
+where props->>'source' = 'seo' and created_at >= now() - interval '7 days';
 
 select count(*) as builder_handoffs
 from journey_events

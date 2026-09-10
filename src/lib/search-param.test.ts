@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { parseSearchParam, parseShareHash, MAX_SHARE_NAME_LENGTH } from './search-param';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import {
+  parseSearchParam, parseShareHash, MAX_SHARE_NAME_LENGTH,
+  initialSearchQuery, entrySource, markEntry, ENTRY_KEY,
+} from './search-param';
 
 describe('parseSearchParam', () => {
   it('reads the q param with or without a leading ?', () => {
@@ -66,5 +69,55 @@ describe('parseShareHash', () => {
 
   it('drops a label that is not valid percent-encoding instead of throwing', () => {
     expect(parseShareHash('#team=25&tn=%E0%A4%A&by=ok')).toEqual({ code: '25', teamName: undefined, by: 'ok' });
+  });
+});
+
+describe('entry attribution — the ?q= session flag', () => {
+  function installSession(store = new Map<string, string>()) {
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => { store.set(k, v); },
+      removeItem: (k: string) => { store.delete(k); },
+    });
+    return store;
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is null in a tab that never consumed a ?q=', () => {
+    installSession();
+    vi.stubGlobal('window', { location: { search: '?seed=8843' } });
+    expect(initialSearchQuery()).toBe('');
+    expect(entrySource()).toBeNull();
+  });
+
+  it("marks the session 'seo' when a valid ?q= is consumed", () => {
+    const store = installSession();
+    vi.stubGlobal('window', { location: { search: '?q=Gengar' } });
+    expect(initialSearchQuery()).toBe('Gengar');
+    expect(store.get(ENTRY_KEY)).toBe('seo');
+    expect(entrySource()).toBe('seo');
+  });
+
+  it('does not mark the session for a blank ?q=', () => {
+    installSession();
+    vi.stubGlobal('window', { location: { search: '?q=%20' } });
+    expect(initialSearchQuery()).toBe('');
+    expect(entrySource()).toBeNull();
+  });
+
+  it('ignores any value other than the one it writes', () => {
+    const store = installSession();
+    store.set(ENTRY_KEY, 'paid');
+    expect(entrySource()).toBeNull();
+  });
+
+  it('degrades to null when sessionStorage is unavailable', () => {
+    vi.stubGlobal('sessionStorage', {
+      getItem() { throw new Error('denied'); },
+      setItem() { throw new Error('denied'); },
+    });
+    expect(() => markEntry('seo')).not.toThrow();
+    expect(entrySource()).toBeNull();
   });
 });

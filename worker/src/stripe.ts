@@ -68,6 +68,11 @@ export async function stripeCheckout(req: Request, env: Env): Promise<Response> 
     'line_items[0][quantity]': '1',
     success_url: successUrl,
     cancel_url: cancelUrl,
+    // The Stripe-hosted page shows a "Add promotion code" field. This is the
+    // ONLY checkout surface that does (LAUNCH_READINESS blocker 5): the owner
+    // creates the Founding Trainer coupon + a `FOUNDING` promotion code in the
+    // dashboard and it works here with no further code change. Credits and
+    // merch sessions deliberately omit it — see credits.ts.
     allow_promotion_codes: 'true',
     // Session-level metadata is echoed back by GET /checkout/sessions so
     // /verify can pick the right license TTL without re-reading the price.

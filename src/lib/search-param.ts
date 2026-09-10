@@ -32,6 +32,35 @@ export function parseSearchParam(search: string): string {
 }
 
 /**
+ * Session flag recording HOW this tab entered the app. Written once when a
+ * valid `?q=` is consumed and read by Journey when it reports `run_started`,
+ * so a run that began from a reference-page arrival is attributed to `seo`
+ * rather than `fresh`. sessionStorage, not localStorage: the attribution is
+ * about this visit, and must not follow the browser into next week.
+ */
+export const ENTRY_KEY = 'trainerscodex.entry';
+
+export type EntrySource = 'seo';
+
+export function markEntry(source: EntrySource): void {
+  try {
+    sessionStorage.setItem(ENTRY_KEY, source);
+  } catch {
+    // Storage disabled (private mode on some browsers, locked-down kiosks) —
+    // the run simply reports as 'fresh'.
+  }
+}
+
+/** The entry flag for this tab, or null when the app was opened directly. */
+export function entrySource(): EntrySource | null {
+  try {
+    return sessionStorage.getItem(ENTRY_KEY) === 'seo' ? 'seo' : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Lazy initialiser for the builder's search box.
  *
  * Guarded for a non-browser context because this module is imported from
@@ -39,7 +68,9 @@ export function parseSearchParam(search: string): string {
  */
 export function initialSearchQuery(): string {
   if (typeof window === 'undefined') return '';
-  return parseSearchParam(window.location.search);
+  const q = parseSearchParam(window.location.search);
+  if (q) markEntry('seo');
+  return q;
 }
 
 // ---------------------------------------------------------------------------

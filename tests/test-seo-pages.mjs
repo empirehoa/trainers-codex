@@ -17,7 +17,7 @@ import { existsSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import {
-  runSuite, sleep, assert, assertGte, closeBrowser, newPage,
+  runSuite, sleep, assert, assertGte, closeBrowser, newPage, closePage,
 } from './harness.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -33,6 +33,56 @@ async function openStatic(page, rel) {
   assert(existsSync(path), `missing generated page: ${rel} — run \`pnpm build\` first`);
   await page.goto(pageUrl(rel), { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('h1', { timeout: 15_000 });
+}
+
+// ---------- analytics capture ----------
+//
+// The app posts journey_events to Supabase's REST endpoint with custom headers,
+// so the browser sends a CORS preflight first. The harness blocks every network
+// request, which silently blocks the preflight and therefore the POST — the
+// body is never observable. Answer both from the test instead: a permissive
+// preflight, then a 201 for the insert, collecting each row on the way.
+const ANALYTICS_HOST = 'https://analytics.example.test';
+const ANALYTICS_CONFIG = { supabase: { url: ANALYTICS_HOST, anonKey: 'anon-test' } };
+
+async function pageWithAnalytics(query) {
+  const rows = [];
+  const page = await newPage({
+    ...(query ? { query } : {}),
+    config: ANALYTICS_CONFIG,
+    onRequest(req) {
+      if (!req.url().startsWith(`${ANALYTICS_HOST}/rest/v1/journey_events`)) return false;
+      const cors = {
+        'access-control-allow-origin': '*',
+        'access-control-allow-headers': 'apikey, authorization, content-type, prefer',
+        'access-control-allow-methods': 'POST, OPTIONS',
+      };
+      if (req.method() === 'OPTIONS') {
+        req.respond({ status: 204, headers: cors });
+        return true;
+      }
+      if (req.method() === 'POST') {
+        rows.push(...JSON.parse(req.postData()));
+        req.respond({ status: 201, headers: cors, body: '' });
+        return true;
+      }
+      return false;
+    },
+  });
+  return { page, rows };
+}
+
+/** Open Journey, press Start, and return the single run_started row. */
+async function startRunAndCollect(page, rows) {
+  await page.evaluate(() => document.querySelector('[data-testid="journey-open"]').click());
+  await page.waitForSelector('[data-testid="journey-start"]', { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('[data-testid="journey-start"]').click());
+  await page.waitForSelector('[data-testid="journey-decision"]', { timeout: 8000 });
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && !rows.some(r => r.event === 'run_started')) await sleep(100);
+  const started = rows.filter(r => r.event === 'run_started');
+  assert(started.length === 1, `expected one run_started row, saw ${started.length}`);
+  return started[0];
 }
 
 const tests = [
@@ -243,6 +293,40 @@ const tests = [
       });
       assert(value === '', `unfiltered load should have an empty search box, got ${JSON.stringify(value)}`);
       assert(!page.__pageErrors, 'app threw on a plain load');
+    },
+  },
+
+  {
+    name: "a Journey run started after a ?q= arrival reports source 'seo'",
+    ownPage: true,
+    async fn() {
+      const { page, rows } = await pageWithAnalytics('q=Gengar');
+      try {
+        assert(await page.evaluate(() => sessionStorage.getItem('trainerscodex.entry')) === 'seo',
+          'consuming ?q= must mark the session as an seo entry');
+        const started = await startRunAndCollect(page, rows);
+        assert(started.props.source === 'seo',
+          `run_started.props.source is ${JSON.stringify(started.props.source)}, expected "seo"`);
+      } finally {
+        await closePage(page);
+      }
+    },
+  },
+
+  {
+    name: "a Journey run in a tab opened directly still reports source 'fresh'",
+    ownPage: true,
+    async fn() {
+      const { page, rows } = await pageWithAnalytics();
+      try {
+        assert(await page.evaluate(() => sessionStorage.getItem('trainerscodex.entry')) === null,
+          'a direct load must not carry an entry flag');
+        const started = await startRunAndCollect(page, rows);
+        assert(started.props.source === 'fresh',
+          `run_started.props.source is ${JSON.stringify(started.props.source)}, expected "fresh"`);
+      } finally {
+        await closePage(page);
+      }
     },
   },
 ];

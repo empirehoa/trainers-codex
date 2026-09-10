@@ -19,7 +19,8 @@ import { parseCurrentJourneyLink } from '@/journey/deeplink';
 import { recordDailyPlay, recordArchivePlay, currentStreak } from '@/journey/streak';
 import { saveRun, type SavedRun } from '@/journey/saves';
 import { trackCommerce } from '@/lib/commerce-analytics';
-import { track } from '@/journey/analytics';
+import { track, resolveRunSource } from '@/journey/analytics';
+import { entrySource } from '@/lib/search-param';
 import { fetchGhosts, ghostsToOpponents, submitGhost } from '@/journey/ghosts';
 import { levelFromXp } from '@/journey/levels';
 import type { Opponent } from '@/journey/opponents';
@@ -53,7 +54,10 @@ interface Props {
   onTogglePremium?: () => void;
 }
 
-function defaultSetup(seed: number, source: RunSource = 'fresh'): Setup {
+// The default source is resolved per call, not once at module load: a plain
+// arrival reports 'fresh' unless this tab came in through a reference-page
+// `?q=` link, in which case every fresh run it starts is attributed to 'seo'.
+function defaultSetup(seed: number, source: RunSource = resolveRunSource('fresh', entrySource())): Setup {
   const region = JOURNEY_REGIONS[0];
   return {
     seed,
@@ -78,7 +82,7 @@ function defaultSetup(seed: number, source: RunSource = 'fresh'): Setup {
  * flash on exactly the surface a shared link lands on.
  */
 function setupFromLink(link: Props['link']): Setup {
-  const base = defaultSetup(link?.seed ?? randomSeed(), link?.source ?? 'fresh');
+  const base = defaultSetup(link?.seed ?? randomSeed(), resolveRunSource(link?.source ?? 'fresh', entrySource()));
   if (!link || link.seed === null) return base;
   const regionId = link.regionId ?? base.regionId;
   return {
