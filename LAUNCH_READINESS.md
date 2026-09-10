@@ -1,8 +1,8 @@
 # Trainer's Codex — LAUNCH READINESS (v1.0-launch)
 
 Produced 2026-09-09 by the launch-hardening run (`docs/LAUNCH_HARDENING_PROMPT.md`)
-on `claude/monetization-v1` from tip `fcc2ef9` → `82be3b5` (15 patch commits +
-5 merges, 110 files, +7,742 / −1,012). Every claim below carries its evidence
+on `claude/monetization-v1` from tip `fcc2ef9` (two passes, 2026-09-09/10: 20 patch
+commits + 7 merges). Every claim below carries its evidence
 source; anything that could not be verified from the audit sandbox says so.
 
 ---
@@ -15,9 +15,9 @@ source; anything that could not be verified from the audit sandbox says so.
 | 2 | `PRINTS_PUBLIC_BASE` → real public R2 base | Merch fulfilment hands Printful a public URL; without it every order fails. **Merch is dark anyway** (blocker 3). | Cloudflare → R2 → bucket `trainerscodex` → enable public access / custom domain (`cdn.trainerscodex.com`) → `wrangler secret put PRINTS_PUBLIC_BASE` (or `[vars]`) → redeploy. |
 | 3 | Counsel's answers before flipping `MERCH_CHECKOUT` / `JOURNEY_MERCH_CTA` | Merch is now dark on **both** sides: client flag `false` (`src/lib/flags.ts`) **and** worker `[vars] MERCH_CHECKOUT = "0"` (new this run — `?ff=` can no longer reach fulfilment). | Counsel questions are listed in §5. To flip: set `MERCH_CHECKOUT = "1"` in `worker/wrangler.toml` `[vars]`, redeploy worker, then flip the client default (or set it in `TRAINERS_CODEX_CONFIG.flags` via `inject-config`). |
 | 4 | Google Search Console property + sitemap | 1,330 URLs are live but unsubmitted. | `launch/search-console.md` (15 min; TXT record in Cloudflare DNS, submit `sitemap.xml`, expect 1,330 discovered). |
-| 5 | Founding Trainer $29 annual coupon | Marketing hook for the launch posts. | Stripe Dashboard → Products → Coupons → new coupon, amount-off $10 on the $39/yr price (or fixed-price promo), duration `once`, redeem-by = launch + 14d; create a Promotion Code `FOUNDING`; pass it via Checkout `discounts` or `allow_promotion_codes: true` in `worker/src/stripe.ts` `createCheckoutSession` (one-line change; not done because the coupon/price choice is owner-only). |
+| 5 | Founding Trainer $29 annual coupon | Marketing hook for the launch posts. | **Code side is done**: the premium Checkout already sends `allow_promotion_codes=true` (verified by `worker/test/promo-codes.test.ts`; it was also removed from the credits checkout so an amount-off coupon can't zero a $1.99 pack). Owner: Stripe Dashboard → Products → Coupons → amount-off $10 restricted to the $39/yr price, duration `once`, redeem-by launch + 14d → Promotion Code `FOUNDING`. Nothing to deploy. |
 | 6 | **DMCA designated-agent registration** (`public/dmca.html` says "in progress") and the registered address/venue (Pembroke Pines / S.D. Fla. vs. EMG's Kissimmee HQ) | §512(c) safe harbour depends on the registration. | copyright.gov/dmca-directory → register → edit `public/dmca.html` to remove "in progress"; confirm the address + venue with counsel; confirm `legal@ / billing@ / privacy@trainerscodex.com` mailboxes exist (not verifiable from here). |
-| 7 | **Deploy of this build** (see §4) | The hardened build is merged and tagged but the Mac (wrangler OAuth + GitHub push) was unreachable from this session when the release was cut. | §4 has the exact commands. Until then, production still runs the pre-hardening `fcc2ef9` build — including the `?unlock=premium` bypass (A-1). **Deploy before any marketing post.** |
+| 7 | **Push + deploy this build** | The hardened build is merged and tagged but the sandbox's git proxy does not authorise `empirehoa/trainers-codex` and the Mac (wrangler OAuth + GitHub creds) was unreachable/flapping both times the release was cut. | One command on the Mac: `scripts/release.sh --bundle ~/Downloads/trainers-codex-v1.0-launch.bundle --all` (fetch → ff → push → build → inject → deploy API then site → `scripts/smoke-live.mjs` 21 checks). Details §4. Until then, production still runs `fcc2ef9` — including the `?unlock=premium` bypass (A-1). **Deploy before any marketing post.** |
 
 ---
 
@@ -25,20 +25,20 @@ source; anything that could not be verified from the audit sandbox says so.
 
 | Gate | Status | Evidence |
 |---|---|---|
-| vitest | **GO** — 458 passed, 1 skipped (was 368) | `npx vitest run` on `82be3b5`: `Test Files 31 passed \| 1 skipped · Tests 458 passed \| 1 skipped` |
-| Browser (puppeteer) | **GO** — 24 suites / 290 tests (was 21 / 228) | `node tests/run-all.mjs`: `SUITES: 24 · passed: 24 · failed: 0`; new suites `test-premium-gate` 15, `test-a11y` 24, `test-robustness` 7 |
-| Worker (node:test) | **GO** — 79 passed (was 34) | `(cd worker && node --test test/*.test.ts)`: `# pass 79 # fail 0` |
+| vitest | **GO** — 467 passed, 1 skipped (was 368) | `npx vitest run` on the release commit: `Test Files 31 passed \| 1 skipped · Tests 467 passed \| 1 skipped` |
+| Browser (puppeteer) | **GO** — 25 suites / 296 tests (was 21 / 228) | `node tests/run-all.mjs`: `SUITES: 25 · passed: 25 · failed: 0`; new suites `test-premium-gate` 15, `test-a11y` 24, `test-robustness` 7, `test-bundle-shape` 4 |
+| Worker (node:test) | **GO** — 83 passed (was 34) | `(cd worker && node --test test/*.test.ts)`: `# pass 83 # fail 0` |
 | Lint | **GO** — 0 errors, 21 warnings (unchanged baseline) | `pnpm lint`: `✖ 21 problems (0 errors, 21 warnings)` |
-| Bundle size | **GO** — 2,137,756 B (2,087.7 KB) ≤ 2,150,400 B cap; gzip ≈ 530 KB | `stat -c %s bundle.html`; CI gate added |
+| Bundle size | **GO** — 2,138,956 B (2,088.8 KB) ≤ 2,150,400 B cap; gzip ≈ 548 KB; **critical module script 1,596,630 B** (was 2,070,420 — `@smogon/calc` now a lazy embedded chunk) | `stat -c %s bundle.html`; `tests/test-bundle-shape.mjs`; CI gate |
 | Sitemap | **GO** — 1,330 `<loc>` | `grep -c '<loc>' dist/sitemap.xml` → 1330 |
-| Boot (file://, 1×) | **GO (marginal)** — 714 ms median first-card, heap 20 MB | `tests/bench-boot.mjs` merged vs base: 704 → 714 ms (noise) |
-| Boot (4× CPU) | **NO-GO vs the 700 ms target, accepted for launch** — DCL→first card ≈ 1.6 s | Agent E measurement; static first-paint shell added (FCP 5.0 → 1.0 s in devtools-throttled Lighthouse); TBT lever (`@smogon/calc` 463 KB lazy) deferred — §6 |
+| Boot (file://, 1×) | **GO** — nav→first card 859 → **659 ms** median (−23 %), JS heap 15.2 → **9.5 MB** | perf agent bench, interleaved 5-run medians (`scratchpad/patch-reports/PERF.md`) |
+| Boot (4× CPU) | **Improved, still over the 700 ms target — accepted for launch** — nav→first card 2,949 → 2,397 ms desktop, 2,725 → 2,266 ms @390 (−17…−19 %); DCL 1,401 → 888 ms | static first-paint shell (FCP 5.0 → 1.0 s devtools-throttled) + lazy calc chunk; remaining cost is the 609 KB data literal + React mount — §6 |
 | Lighthouse a11y | **GO** — SEO pages 83/91 → **100/100**; shell 95 (axe: 0 critical on shell + 6 dialogs) | Agent S/R reports; `tests/test-a11y.mjs` |
-| Lighthouse perf (mobile, `/`) | **Lab only, NO-GO vs ≥85** — 35 → 70 (devtools throttling, local gzip mirror) | live Lighthouse not verifiable (egress). Reference pages 100. |
+| Lighthouse perf (mobile, `/`) | **Lab only, NO-GO vs ≥85** — 35 → 71 (devtools throttling); TBT 3,419 → 2,773 ms (−19 %), bootup 2,322 → 1,859 ms (−20 %); simulate-mode FCP/LCP stay ≈4.1 s because the whole 548 KB gzip file is the LCP resource (single-file constraint) | local gzip mirror; live not verifiable (egress). Reference pages 100. |
 | Security (worker) | **GO** — 1 HIGH + 3 MEDIUM + 6 LOW fixed; 0 open CRITICAL/HIGH | §2 B-* |
 | Security (client) | **GO** — CRITICAL A-1 fixed; 0 open CRITICAL/HIGH | §2 A-1, C-* |
 | Legal / IP bright lines | **GO on code; counsel items open** | §2 D-*; §5 |
-| Deployed live | **PENDING** — see blocker 7 | §4 |
+| Deployed live | **PENDING** — see blocker 7 (`scripts/release.sh --all`) | §4 |
 
 **Verdict: GO to deploy and tag; GO to market once blockers 1, 4, 7 are done (5 is a nice-to-have; 2, 3, 6 gate merch, not launch).**
 
@@ -128,60 +128,28 @@ Live security-header matrix per path class; live Lighthouse; live brotli; the 12
 
 ## 3. Release
 
-- Branch `claude/monetization-v1` → `82be3b5` (15 patch commits, 5 merge commits, no squash).
-- Development line `claude/journey-mode-trainer-sim-1r2yvp` moved to the same commit (fast-forward — the dev line `1257de3` was already an ancestor, so no merge commit was needed and history is intact).
-- Tag `v1.0-launch` on the commit that adds this report (`docs: LAUNCH_READINESS.md …`, child of `82be3b5`).
-- **Push and deploy could not be executed from this session** (no GitHub credentials in the sandbox; the Mac that holds wrangler OAuth and `gh` auth was unreachable at release time). An incremental `git bundle` (prerequisite `fcc2ef9`, which the Mac already has; ~400 KB) carrying both branches and the tag is delivered alongside this report: `trainers-codex-v1.0-launch.bundle`.
+- Branch `claude/monetization-v1` → release commit (this report's commit), tag `v1.0-launch` on it; dev line `claude/journey-mode-trainer-sim-1r2yvp` moved to the same commit (fast-forward — `1257de3` was already an ancestor; history intact, no squash).
+- Two passes: 2026-09-09 (5 audit agents → 5 patch streams, 15 commits) and 2026-09-10 (lazy calc chunk, release tooling, promo-code scoping, `seo` run source — 5 commits).
+- **Push and deploy could not be executed from the sandbox**: the session's git proxy refuses to inject credentials for `empirehoa/trainers-codex` (403 "not in this session's authorized repository set") and the linked Mac was offline or flapping. An incremental `git bundle` (prerequisite `fcc2ef9`, which the Mac already has) carrying both branches and the tag is delivered alongside this report: `trainers-codex-v1.0-launch.bundle`.
 
 ---
 
-## 4. Deploy + post-verify (run on the Mac; ~10 minutes)
+## 4. Deploy + post-verify — one command on the Mac (~10 minutes)
 
 ```bash
-# 0. bring the commits in (the bundle was delivered to the chat; save it to ~/Downloads)
 cd ~/Projects/tc-monetization
-git fetch ~/Downloads/trainers-codex-v1.0-launch.bundle \
-  'refs/heads/*:refs/remotes/bundle/*' 'refs/tags/*:refs/tags/*'
-git checkout claude/monetization-v1 && git merge --ff-only bundle/claude/monetization-v1
-git branch -f claude/journey-mode-trainer-sim-1r2yvp bundle/claude/journey-mode-trainer-sim-1r2yvp
-git push origin claude/monetization-v1 claude/journey-mode-trainer-sim-1r2yvp
-git push origin v1.0-launch
-
-# 1. build (pnpm 11 on the Mac: pnpm config set verify-deps-before-run false --location project)
-PUPPETEER_SKIP_DOWNLOAD=1 pnpm install && (cd worker && pnpm install --ignore-workspace)
-pnpm build && node inline.mjs
-stat -f %z bundle.html            # expect 2137756 (≤ 2150400)
-
-# 2. stage with config (same values as the 2026-09-09 deploy)
-SUPABASE_URL=https://obcrhdmpkvwntwqyixls.supabase.co \
-SUPABASE_ANON_KEY=<anon key> \
-WORKER_URL=https://trainers-codex-api.jrriestra.workers.dev \
-node scripts/inject-config.mjs
-
-# 3. deploy — API worker first (it now carries MERCH_CHECKOUT="0" in [vars]), then the site
-(cd worker && npx wrangler deploy)
-(cd worker && npx wrangler deploy --config ../deploy/frontend-wrangler.toml)
-
-# 4. post-verify
-curl -s https://trainers-codex-api.jrriestra.workers.dev/health
-curl -sI https://trainerscodex.com/pokemon/gengar/ | head -1           # 200, static page
-curl -s https://trainerscodex.com/pokemon/gengar/ | grep -c 'fan-made'  # 1
-curl -s https://trainerscodex.com/sitemap.xml | grep -c '<loc>'         # 1330
-curl -s -o /dev/null -w '%{http_code}\n' 'https://trainerscodex.com/journey?seed=8843'   # 200
-curl -s https://trainerscodex.com/ | grep -c 'TRAINERS_CODEX_CONFIG'    # ≥1
-curl -s https://trainerscodex.com/ | grep -c 'og-home.jpg'              # ≥1  (new OG)
-curl -s https://trainerscodex.com/manifest.webmanifest | grep '"name"'  # "Trainer's Codex"
-curl -sI https://trainerscodex.com/ | grep -i content-security-policy | grep -c pokepast   # 1
-# the CRITICAL: open https://trainerscodex.com/?unlock=premium in a fresh profile →
-#   NO toast, Poster Studio still shows locked styles, localStorage has no trainerscodex.premium
-# worker guard:
-curl -s -X POST https://trainers-codex-api.jrriestra.workers.dev/merch/checkout \
-  -H 'origin: https://trainerscodex.com' -F product=mug -F markup=100 -F expectedRetail=1 \
-  -F returnUrl=https://trainerscodex.com/ -F file=@public/icon-192.png | head -c 200      # 503 merch_disabled
-# one full TEST-mode checkout round-trip: get premium → 4242… → return → premium active → restore purchase works
-# if any check shows the old build: Cloudflare → Caching → Purge Everything, retry.
-bash launch/live-probes.sh   # optional: the 12 worker probes with expected results
+# once: create the gitignored env file the script sources
+cat > .env.deploy <<'ENV'
+SUPABASE_URL=https://obcrhdmpkvwntwqyixls.supabase.co
+SUPABASE_ANON_KEY=<anon key from the 2026-09-09 deploy>
+WORKER_URL=https://trainers-codex-api.jrriestra.workers.dev
+ENV
+scripts/release.sh --bundle ~/Downloads/trainers-codex-v1.0-launch.bundle --all
 ```
+
+`--all` = fetch the bundle → `--ff-only` onto `claude/monetization-v1` → move the dev line → push both branches + tag → install → `pnpm lint` gate → build + `inline.mjs` → size gate (≤ 2,150,400 B) → `inject-config` → `wrangler deploy` API worker (now carrying `MERCH_CHECKOUT="0"`) → `wrangler deploy` site → `scripts/smoke-live.mjs` (21 checks: health, shell config + static first paint + `og-home.jpg`, no "preview mode" string, `/pokemon/gengar` with and without slash, `/type/ghost/`, sitemap 1330, `/journey?seed=8843`, sw/manifest content types + manifest name, legal/dmca, CSP on `/`, a species page and a 404 route incl. `pokepast.es` + `blob:` + insights hosts, XFO/HSTS, brotli/gzip, evil-origin preflight → no ACAO, `/merch/checkout` → 503 `merch_disabled`, `null` body → 400, `alg:none` JWT never valid, `{}` checkout → 400; with `--browser`: `?unlock=premium` inert and zero console errors). Any FAIL exits non-zero. `--dry-run` prints the plan. If a check shows the old build: Cloudflare → Caching → Purge Everything, re-run `scripts/release.sh --verify`.
+
+Manual after the script: one full TEST-mode checkout round-trip (get premium → `4242…` → return → premium active → "restore purchase (this browser)" works), then `bash launch/live-probes.sh` if you want the raw worker probe output.
 
 ---
 
@@ -199,11 +167,11 @@ bash launch/live-probes.sh   # optional: the 12 worker probes with expected resu
 
 ## 6. Post-launch backlog (measured, not blocking)
 
-1. **TBT / perf ≥ 85 on `/`** — move `@smogon/calc` (463 KB, 22 % of the bundle, matchup preview only) out of the critical script while staying single-file (blob-URL module on first matchup), then the ES/PT/JA strings. Expected: −460 KB, TBT −60 %+. Then tighten the CI cap to 1.8 MB.
+1. ~~`@smogon/calc` out of the critical script~~ **DONE 2026-09-10** (`0fdba87`: embedded Blob-URL chunk, −474 KB critical JS, TBT −19…−25 %). Next perf levers: the 609 KB data literal as an on-demand `<script type=application/json>` block (E-15's JSON.parse form alone did not help; deferring the *parse* would), i18n strings per locale, a 60-card first grid window. Perf ≥ 85 in simulate mode is transfer-bound on a single 548 KB gzip file — reaching it likely means letting `/` load the data as a second cached asset while `bundle.html` stays the offline artefact.
 2. **KV counter atomicity** (B-4) — Durable Object or Workers Rate Limiting binding for AI quota / credits / rate limit.
 3. **Boot < 700 ms at 4× CPU** — follows from (1); also consider a 60-card first window.
 4. ES for the shell (Journey is fully translated; the shell is English — A-9), PT/JA.
-5. `source: 'seo'` on `run_started` so the 1,330-page → Journey funnel is measurable in-DB (`launch/first-week-metrics.md` Q5).
+5. ~~`source: 'seo'` on `run_started`~~ **DONE 2026-09-10** (`71158b0`; `launch/first-week-metrics.md` Q5 uses it).
 6. `checkout_abandoned` event (needs a DB CHECK change + client).
 7. Supabase SRI: vendor `@supabase/supabase-js` into the bundle behind a dynamic chunk and drop `esm.sh` from CSP (C-3 root fix).
 8. 21 react-hooks lint warnings; `App.tsx` 1,600+ lines.
