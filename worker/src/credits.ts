@@ -50,7 +50,11 @@ export async function creditsCheckout(req: Request, env: Env): Promise<Response>
     'line_items[0][quantity]': '1',
     success_url: successUrl,
     cancel_url: cancelUrl,
-    allow_promotion_codes: 'true',
+    // No promotion-code field here. The launch coupon (Founding Trainer, $10
+    // off the annual Premium price) is designed for the subscription; an
+    // amount-off coupon that is not product-restricted in Stripe would zero out
+    // a $1.99 credit pack if this surface exposed the field. Only the premium
+    // checkout (stripe.ts) accepts codes.
     // Session metadata drives the webhook grant + the /verify grant.
     'metadata[source]': 'trainerscodex_credits',
     'metadata[pack]': packId,
