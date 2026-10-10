@@ -114,9 +114,12 @@ src/
     analysis.ts                    ← defensive matrix, offensive coverage, threats, counter team, sharecode
     auth.ts                        ← v5 — Supabase adapter loaded from CDN only if config present
     compatibility.ts               ← form-aware game compat (megas excluded from Switch-era, etc.)
+    calc-loader.ts                 ← the ONLY import of @smogon/calc — memoised dynamic import (lazy chunk)
     constants.ts                   ← TYPES, TYPE_COLORS, TYPE_CHART, ART_STYLES (12), GAMES, GENERATIONS
+    matchup.ts                     ← computeMatchupWith(calc, …) pure core + async computeMatchup() via the loader
     merch.ts                       ← v5 — 12-product POD catalog + Printful/Printify URL builders
-    merch-renderers.ts             ← v5 — print-ready PNGs at 300 DPI (4 designs)
+    merch-renderers.ts             ← v5 — print-ready PNGs at 300 DPI (5 designs); derived silhouettes only, never official art
+    silhouette.ts                  ← bounded sprite load → alpha-mask silhouette → type glyph fallback (shared by Legend Card + merch)
     pokemon.ts                     ← POKEMON_BY_ID lookup, sprites, learnsets, generation logic
     search-param.ts                ← v12 — `?q=` bridge from the reference pages into the builder
     posters.ts                     ← 12 canvas-based poster renderers (1080×1350)
@@ -144,7 +147,8 @@ public/
 tests/
   harness.mjs                      ← puppeteer harness (newPage, runSuite, assertions)
   run-all.mjs                      ← suite orchestrator (`pnpm test:browser`)
-  test-*.mjs                       ← 21 suites, 224 tests
+  test-*.mjs                       ← 25 suites, 294 tests (a11y, robustness, premium-gate added 2026-09-09;
+                                     bundle-shape 2026-09-10 — lazy calc chunk)
 ```
 
 ## Build + bundle workflow
@@ -162,6 +166,16 @@ node inline.mjs                    # → bundle.html (inlines CSS + JS from dist
 reads `dist/index.html`, swaps the `<link>` and `<script>` tags for inline
 `<style>` and `<script>` blocks pulling from `dist/assets/`, and writes
 `bundle.html`. The result drops onto any static host.
+
+Lazy chunks stay inside that one file. `@smogon/calc` (474 KB, matchup preview
+only) is reached solely through `src/lib/calc-loader.ts`'s dynamic import, so
+rolldown emits it as `assets/calc-<hash>.js`; `inline.mjs` embeds it as an inert
+`<script type="text/plain" data-chunk>` block and a tiny classic script defines
+`globalThis.__TC_CHUNK(name)`, which turns the block into a Blob-URL module the
+first time the entry's rewritten `import(globalThis.__TC_CHUNK("assets/calc-…"))`
+asks for it. The parse/compile cost moves from every boot to the first
+matchup; `tests/test-bundle-shape.mjs` pins the shape. The CSP therefore
+carries `blob:` in `script-src`.
 
 ## Static reference pages (v12)
 
@@ -221,12 +235,14 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 365 tests · engine, battles/badges/shinies/events, level economy,
+pnpm test:unit     # vitest · 458 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
-                   #            content health, i18n, deeplink, streak, analytics, prepare
-pnpm test:browser  # puppeteer · 21 suites / 224 tests (incl. 44 Journey Mode, 16 responsive,
-                   #            10 SEO pages — the last needs `pnpm build` for dist/)
-(cd worker && node --test test/*.test.ts)   # 19 worker tests
+                   #            content health, i18n, deeplink, streak, analytics, prepare,
+                   #            license/auth gating, storage sanitising, SEO contrast, manifest
+pnpm test:browser  # puppeteer · 24 suites / 290 tests (incl. 49 Journey Mode, 17 responsive,
+                   #            24 a11y/axe, 15 premium-gate, 13 SEO pages — the last needs
+                   #            `pnpm build` for dist/). ~12 min on a 2-core box.
+(cd worker && node --test test/*.test.ts)   # 79 worker tests (end-to-end via test/_harness.ts)
 ```
 
 Prefer a **vitest** test for anything that doesn't need a DOM — it runs in
@@ -516,6 +532,24 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
     type-only — routing it through something that imports `./constants`
     extensionless breaks it at runtime with no compile-time warning.
 
+43. **Never import `@smogon/calc` statically; it goes through
+    `lib/calc-loader.ts`.** The package is 474 KB minified and was 22 % of the
+    module script, parsed on every boot for a preview most sessions never open.
+    A static import anywhere pulls it back onto the boot path silently — the
+    build still succeeds and the file grows by nothing visible (the chunk merely
+    merges back into the entry). `tests/test-bundle-shape.mjs` asserts the entry
+    carries none of the calc's dex markers, so the regression fails loudly.
+    Two things make the lazy chunk work from a single `file://` HTML and both
+    live in `inline.mjs`: rolldown quotes the dynamic specifier as a template
+    literal (``import(`./calc-x.js`)``), and the chunk imports one runtime
+    helper back from the entry (`import{t as e}from"./index-x.js"`), which has
+    no URL — so the entry publishes its export list on `globalThis.__TC_SHARED`
+    and the chunk destructures it. `inline.mjs` throws on any shape it does not
+    recognise rather than emitting a bundle whose lazy path breaks at runtime.
+    A `codeSplitting.groups` config is NOT the fix for the shared helper: it
+    hoists rolldown's runtime into a third chunk that the entry imports
+    statically, which an inline module script cannot do.
+
 ## Code style conventions
 
 - **No defensive `try/catch` everywhere.** The codebase trusts its inputs.
@@ -553,22 +587,30 @@ It's CORS-friendly and rate-limit-free.
 
 ## Premium gating
 
-The `premium` boolean lives in `localStorage` and is controlled by a
-"preview unlock" toggle in PosterStudioDialog and MerchStudioDialog. Premium-
-gated content:
+Production entitlement is a **verified license only**: the Worker mints a JWT
+on `/stripe/verify` for a paid `trainerscodex_premium_pack` subscription
+session (and nothing else — a credits or merch session is 422), the client
+stores it as `trainerscodex.license` and re-verifies it. When a worker is
+configured (`isWorkerConfigured()`), the `?unlock=` URL directive and the
+`trainerscodex.premium` preview flag are ignored and purged on boot
+(`src/lib/license.ts`, `tests/test-premium-gate.mjs`). The preview toggle only
+exists for the no-worker static/offline build. Premium gates SURFACES, never
+outcomes — `simulate()` is pure and a fixed seed + choices scores identically
+free or premium. Premium-gated content:
 
 - **Poster styles** (4 of 12): `manifest` (Editorial), `arcade-cabinet`,
   `tcg-card` (Trading Card 6-up), `sticker-sheet`, `holo-foil`, `grainy-cinema`
   (mixed — see `ART_STYLES` in `constants.ts`)
-- **Merch designs** (2 of 4): `id-card` (Trainer ID Card), `banner` (Gym Banner)
+- **Merch designs**: none — all 5 designs render for everyone; ordering/buying is
+  behind `MERCH_CHECKOUT` (client flag AND worker `[vars]`, both off until counsel)
 - **Sprite variants**: `home-default` and `home-shiny` in the per-member
   config dialog (the 3D HOME sprites)
 
-**To wire the real Stripe flow:** replace the toggle in `PosterStudioDialog`
-and `MerchStudioDialog` with a Stripe Checkout redirect, mint a license JWT
-on the webhook, store in `localStorage` as `trainerscodex.license`, validate
-on load. The toggle approach was a deliberate "ready to flip the switch"
-pattern.
+- **Journey**: past daily archive issues, career saves beyond the first, Hall
+  of Fame, Legend Card finishes (cosmetic)
+
+Stripe Checkout is live in TEST mode until the owner sets `sk_live_` keys —
+see `LAUNCH_READINESS.md` owner blockers.
 
 ## When something breaks: ordered debugging
 

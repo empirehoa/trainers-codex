@@ -217,6 +217,31 @@ const tests = [
   },
 
   {
+    // The Type Chart's 18-column table sized the dialog instead of scrolling
+    // inside it: 608px wide on a 390px phone, title and legend clipped
+    // off-screen. Measured on the dialog itself (gotcha 39).
+    name: 'phone: the type chart dialog scrolls its table instead of growing past the viewport',
+    fn: async (page) => {
+      await reflow(page, 390, 844);
+      await clickAt(page, '[data-testid="more-actions"]');
+      await sleep(300);
+      const item = await page.evaluateHandle(() => [...document.querySelectorAll('[role="menuitem"]')].find(m => /type chart/i.test(m.textContent)));
+      const box = await item.boundingBox();
+      assert(box, 'Type chart menu item not found');
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForSelector('[role="dialog"]', { timeout: 8000 });
+      await sleep(400);
+      const o = await page.evaluate(() => {
+        const d = document.querySelector('[role="dialog"]');
+        const r = d.getBoundingClientRect();
+        return { s: d.scrollWidth, c: d.clientWidth, right: Math.round(r.right), inner: window.innerWidth };
+      });
+      assert(o.s <= o.c + 1, `type chart dialog overflows sideways: scrollWidth ${o.s} vs clientWidth ${o.c}`);
+      assert(o.right <= o.inner + 1, `type chart dialog extends to ${o.right}px on a ${o.inner}px viewport`);
+    },
+  },
+
+  {
     name: 'no text renders below the 10px floor the style guide sets',
     fn: async (page) => {
       await reflow(page, 390, 844);

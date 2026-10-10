@@ -17,14 +17,15 @@ const SHORTCUTS = [
 ];
 
 const FAQS = [
-  { q: 'Why include legendaries, mythicals, and paradox Pokémon?', a: 'v4 adds all 1025 mons including legendaries, mythicals, Ultra Beasts, and Paradox forms — filter by category in the search panel. Coverage analysis treats them like any other team member. If you only want playable-in-cup mons, set the category filter to "normal."' },
+  { q: 'Why include legendaries, mythicals, and paradox Pokémon?', a: 'All 1025 species are here, including legendaries, mythicals, Ultra Beasts, and Paradox forms — filter by category in the search panel. Coverage analysis treats them like any other team member. If you only want playable-in-cup mons, set the category filter to "normal."' },
   { q: 'How do shinies work?', a: 'Each team member has an independent shiny flag — the same Pokémon can be shiny in one team and not in another. Toggle it from the per-Pokémon configure dialog. Shiny status is encoded in the share URL (e.g. "6s-9-3") and saved with each team.' },
   { q: 'Can I pick custom movesets?', a: 'Yes — open the configure dialog from the team bar (click the gear icon on any slot). Each Pokémon has its full PokeAPI learnset available — usually 50–100 moves. Pick up to 4, filter by damaging/status/STAB-only, or hit auto-fill for a sensible default.' },
   { q: 'What about TCG cards?', a: 'Click the TCG button in the Pokémon detail dialog or analysis sheet to pull live card data from pokemontcg.io. You get card images, set/rarity info, illustrator credit, and current market prices from TCGplayer & Cardmarket when available.' },
   { q: 'How does game compatibility work?', a: 'The analysis sheet shows which of the 6 Switch-era mainline games your team can run in (Let\'s Go, Sword/Shield, BDSP, Legends Arceus, Scarlet/Violet, Legends Z-A). If your team isn\'t fully playable in any single game, it recommends the closest match and explains how to transfer through Pokémon HOME 4.0.' },
-  { q: 'What is the poster studio?', a: '12 art styles render your team as a 1080×1350 PNG ready for Instagram or print: CRT terminal, pixel grid, editorial, Game Boy, arcade cabinet, polaroid, sticker sheet, trading card, plus the new v5 set — Holographic Foil, Blueprint, Grainy Cinema, and Type Collage. Your trainer profile is embedded.' },
-  { q: 'What does premium unlock?', a: '4 premium poster styles (editorial, arcade, TCG sheet, stickers) and 3D HOME sprites in the configure dialog. There\'s a preview-unlock toggle inside the poster studio for development; a real plan will be $4.99/mo via Stripe.' },
-  { q: 'Is my data stored anywhere?', a: 'All teams, trainer profile, and premium status stay on your device via localStorage. Nothing is sent to a server. TCG card data is fetched live from pokemontcg.io when you open the cards dialog. Export to JSON anytime for backup.' },
+  { q: 'What is the poster studio?', a: '12 art styles render your team as a 1080×1350 PNG ready for Instagram or print: CRT terminal, pixel grid, editorial, Game Boy, arcade cabinet, polaroid, sticker sheet, trading card, Holographic Foil, Blueprint, Grainy Cinema, and Type Collage. Your trainer profile is embedded.' },
+  { q: 'What does premium unlock?', a: 'Premium Pack is $4.99/month or $39/year (two months free), billed through Stripe, cancel anytime. It unlocks surfaces, never outcomes: the premium poster styles and Legend Card finishes, 3D HOME and animated sprites, the Journey daily archive, extra career saves and the Hall of Fame. Coverage scores, Journey scores, the daily puzzle and the leaderboard are identical for everyone and never gated.' },
+  { q: 'How do I get premium back on a new browser?', a: 'Your license lives in the browser you bought it in and is checked against our server weekly. "Restore purchase" in the poster or merch studio re-verifies it on that same browser. On another device, sign in with the same account to sync — or write to the address on the legal page with your receipt and we will sort it out.' },
+  { q: 'Is my data stored anywhere?', a: 'All teams, trainer profile, and premium status stay on your device via localStorage. Nothing is sent to a server unless you sign in for cloud sync. TCG card data is fetched live from pokemontcg.io when you open the cards dialog. Export to JSON anytime for backup.' },
   { q: 'Who runs this?', a: "Trainer's Codex is an independent fan tool. Pokémon, character names, and sprites are trademarks of Nintendo / Game Freak / The Pokémon Company. Not affiliated." },
 ];
 
@@ -35,21 +36,23 @@ export function HelpDialog({ open, onClose }: HelpDialogProps) {
         <DialogHeader className="px-4 py-3 border-b sticky top-0 bg-card z-10">
           <DialogTitle className="font-display text-lg text-primary lowercase">help & about</DialogTitle>
           <DialogDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-            // trainer's codex v5.0
+            // trainer's codex · team builder · journey mode · poster studio
           </DialogDescription>
         </DialogHeader>
 
         <div className="p-4 space-y-5">
           <section>
-            <SectionHeading icon={<Sparkles size={13} />} title="what's new in v4" />
+            <SectionHeading icon={<Sparkles size={13} />} title="what's inside" />
             <ul className="mt-2 space-y-1.5 text-xs font-mono">
               <li className="text-muted-foreground">· <span className="text-foreground">1307 Pokémon &amp; forms</span> — all gens + megas, regionals, gigantamax</li>
+              <li className="text-muted-foreground">· <span className="text-foreground">Journey Mode</span> — a seeded career sim with a daily puzzle, streaks and a shareable Legend Card</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Shiny variants</span> with full sprite support</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Custom movesets</span> from full PokeAPI learnsets</li>
               <li className="text-muted-foreground">· <span className="text-foreground">TCG card lookup</span> per Pokémon (live pokemontcg.io)</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Game compatibility</span> check for all Switch-era games</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Trainer profile</span> — name, avatar, signature mon</li>
-              <li className="text-muted-foreground">· <span className="text-foreground">Poster studio</span> — 12 art styles, IG-ready, print-on-demand</li>
+              <li className="text-muted-foreground">· <span className="text-foreground">Poster &amp; merch studio</span> — 12 art styles, IG-ready, print-on-demand</li>
+              <li className="text-muted-foreground">· <span className="text-foreground">Premium Pack</span> — $4.99/mo or $39/yr, cancel anytime · <a href="/legal.html" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">terms &amp; refunds</a></li>
             </ul>
           </section>
 
@@ -84,7 +87,7 @@ export function HelpDialog({ open, onClose }: HelpDialogProps) {
               <li className="text-muted-foreground">· <span className="text-foreground">Add up to 6</span> Pokémon to your team</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Click a team slot</span> to configure shiny, moves, ability, nickname</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Analyze</span> for threats, coverage, counter teams, and game compat</li>
-              <li className="text-muted-foreground">· <span className="text-foreground"><Wand2 size={9} className="inline" /> Poster Studio</span> generates shareable images in 8 styles</li>
+              <li className="text-muted-foreground">· <span className="text-foreground"><Wand2 size={9} className="inline" /> Poster Studio</span> generates shareable images in 12 styles</li>
               <li className="text-muted-foreground">· <span className="text-foreground"><Gamepad2 size={9} className="inline" /> Game compat</span> tells you where to transfer via HOME</li>
             </ul>
           </section>

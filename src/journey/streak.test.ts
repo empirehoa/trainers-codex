@@ -7,8 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearStreak, currentStreak, FREE_REPAIRS, hasPlayedToday, loadStreak, longestRun,
-  recordDailyPlay, repairableDate, repairsRemaining, repairStreak,
-} from './streak';
+  recordDailyPlay, repairableDate, repairsRemaining, repairStreak, recordArchivePlay } from './streak';
 
 // jsdom isn't configured for this project, so provide the minimum localStorage
 // the module needs. Deliberately a real Map, not a mock — the point is to
@@ -156,7 +155,7 @@ describe('resilience', () => {
   it('self-heals a corrupted stored payload', () => {
     const store = installLocalStorage();
     store.set('trainerscodex.journey.streak', '{ not json');
-    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0, repairsUsed: [] });
+    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0, archiveDates: [], repairsUsed: [] });
 
     store.set('trainerscodex.journey.streak', JSON.stringify({
       playedDates: ['2026-08-01', 'garbage', null, 42, '2026-08-02'],
@@ -184,7 +183,7 @@ describe('resilience', () => {
       removeItem() { throw new Error('denied'); },
     });
     expect(() => loadStreak()).not.toThrow();
-    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0, repairsUsed: [] });
+    expect(loadStreak()).toEqual({ playedDates: [], bestStreak: 0, archiveDates: [], repairsUsed: [] });
     expect(() => recordDailyPlay('2026-08-04')).not.toThrow();
     expect(() => clearStreak()).not.toThrow();
   });
@@ -276,5 +275,32 @@ describe('streak repair', () => {
     expect(state.repairsUsed).toEqual([]);
     expect(repairsRemaining(state)).toBe(FREE_REPAIRS);
     expect(repairableDate(state, '2026-03-04')).toBe('2026-03-02');
+  });
+});
+
+describe('archive plays never count toward streaks', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('recordArchivePlay marks the date without touching playedDates', () => {
+    recordDailyPlay('2026-09-09');
+    const after = recordArchivePlay('2026-09-08');
+    expect(after.playedDates).toEqual(['2026-09-09']);
+    expect(after.archiveDates).toEqual(['2026-09-08']);
+    // The exploit this exists to prevent: a backfilled yesterday must not
+    // manufacture a 2-day streak.
+    expect(currentStreak(after, '2026-09-09')).toBe(1);
+  });
+
+  it('an archive replay of an already-streaked date is a no-op', () => {
+    recordDailyPlay('2026-09-09');
+    const after = recordArchivePlay('2026-09-09');
+    expect(after.archiveDates ?? []).toEqual([]);
+    expect(after.playedDates).toEqual(['2026-09-09']);
+  });
+
+  it('archiveDates survive a later daily play (round-trip)', () => {
+    recordArchivePlay('2026-09-01');
+    const after = recordDailyPlay('2026-09-09');
+    expect(after.archiveDates).toEqual(['2026-09-01']);
   });
 });

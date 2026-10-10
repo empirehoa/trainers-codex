@@ -32,6 +32,35 @@ export function parseSearchParam(search: string): string {
 }
 
 /**
+ * Session flag recording HOW this tab entered the app. Written once when a
+ * valid `?q=` is consumed and read by Journey when it reports `run_started`,
+ * so a run that began from a reference-page arrival is attributed to `seo`
+ * rather than `fresh`. sessionStorage, not localStorage: the attribution is
+ * about this visit, and must not follow the browser into next week.
+ */
+export const ENTRY_KEY = 'trainerscodex.entry';
+
+export type EntrySource = 'seo';
+
+export function markEntry(source: EntrySource): void {
+  try {
+    sessionStorage.setItem(ENTRY_KEY, source);
+  } catch {
+    // Storage disabled (private mode on some browsers, locked-down kiosks) —
+    // the run simply reports as 'fresh'.
+  }
+}
+
+/** The entry flag for this tab, or null when the app was opened directly. */
+export function entrySource(): EntrySource | null {
+  try {
+    return sessionStorage.getItem(ENTRY_KEY) === 'seo' ? 'seo' : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Lazy initialiser for the builder's search box.
  *
  * Guarded for a non-browser context because this module is imported from
@@ -39,5 +68,57 @@ export function parseSearchParam(search: string): string {
  */
 export function initialSearchQuery(): string {
   if (typeof window === 'undefined') return '';
-  return parseSearchParam(window.location.search);
+  const q = parseSearchParam(window.location.search);
+  if (q) markEntry('seo');
+  return q;
+}
+
+// ---------------------------------------------------------------------------
+// `#team=…&tn=…&by=…` — an INCOMING share link.
+// ---------------------------------------------------------------------------
+
+/**
+ * Longest team name / sender name a share link may carry. The team-name input
+ * enforces the same cap (AnalysisSheet `maxLength`), so a link can never hand
+ * the recipient a name they could not have typed. Anything longer is a
+ * payload, not a name — a 20 KB `tn=` used to render verbatim on the landing
+ * and become the recipient's team name on "load this team".
+ */
+export const MAX_SHARE_NAME_LENGTH = 40;
+
+export interface ShareHash {
+  /** The raw share code (`[0-9a-z,-]+`), still to be parsed by `parseShareCode`. */
+  code: string;
+  teamName?: string;
+  by?: string;
+}
+
+function decodeShareText(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  let s: string;
+  try {
+    s = decodeURIComponent(raw);
+  } catch {
+    return undefined;
+  }
+  // Collapse whitespace (a name is one line) before capping, so a run of
+  // spaces cannot be used to push the visible text off the landing card.
+  s = s.replace(/\s+/g, ' ').trim().slice(0, MAX_SHARE_NAME_LENGTH).trim();
+  return s || undefined;
+}
+
+/**
+ * Pull the share code and its optional labels out of a location hash.
+ * Returns `null` when the hash carries no `team=` segment.
+ */
+export function parseShareHash(hash: string): ShareHash | null {
+  const shared = hash.match(/(?:^#|&)team=([0-9a-z,-]+)/);
+  if (!shared) return null;
+  const tn = hash.match(/(?:^#|&)tn=([^&]+)/);
+  const by = hash.match(/(?:^#|&)by=([^&]+)/);
+  return {
+    code: shared[1],
+    teamName: decodeShareText(tn?.[1]),
+    by: decodeShareText(by?.[1]),
+  };
 }

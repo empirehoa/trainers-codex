@@ -906,7 +906,7 @@ alter table journey_events add constraint journey_events_event_known
 
 | Event | `props` |
 |---|---|
-| `run_started` | `pace`, `archetype`, `source` (`fresh｜seed-link｜daily`), `seed` |
+| `run_started` | `pace`, `archetype`, `source` (`fresh｜seed-link｜daily｜seo`), `seed` |
 | `run_completed` | `durationMs`, `score`, `verdict`, `chapters`, `pace`, `archetype`, `source`, `seed` |
 | `run_abandoned` | `state` (last UI state), `chapters`, `durationMs`, `seed` |
 | `share_attempted` | `method` (`webshare｜copy｜download｜copy-link`), `score`, `verdict`, `seed`, `daily` |

@@ -34,6 +34,19 @@ export interface AuthSession {
   provider: AuthProvider | 'email';
 }
 
+/** Supabase auth event names we branch on; anything else passes through as a string. */
+export type AuthEvent = 'INITIAL_SESSION' | 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED' | 'USER_UPDATED' | 'PASSWORD_RECOVERY' | (string & {});
+
+/**
+ * Should a "signed out" notice show for this auth event? Only a real
+ * SIGNED_OUT transition from a session that existed qualifies. Supabase fires
+ * `INITIAL_SESSION` with a null session on every anonymous boot, and that used
+ * to toast "signed out" to every first-time visitor of the live site (A-2).
+ */
+export function isSignOutTransition(prev: AuthSession | null, event: AuthEvent, next: AuthSession | null): boolean {
+  return event === 'SIGNED_OUT' && prev !== null && next === null;
+}
+
 export interface CloudData {
   trainer: TrainerProfile | null;
   teams: SavedTeam[];
@@ -48,8 +61,13 @@ export interface AuthAdapter {
   signInWith(provider: AuthProvider): Promise<void>;
   /** Sign out. */
   signOut(): Promise<void>;
-  /** Subscribe to session changes. Returns unsubscribe. */
-  onAuthChange(cb: (session: AuthSession | null) => void): () => void;
+  /**
+   * Subscribe to session changes. Returns unsubscribe. `event` is the raw
+   * Supabase auth event (`INITIAL_SESSION`, `SIGNED_IN`, `SIGNED_OUT`,
+   * `TOKEN_REFRESHED`, …) — callers that toast must key off it, see
+   * `isSignOutTransition`.
+   */
+  onAuthChange(cb: (session: AuthSession | null, event: AuthEvent) => void): () => void;
   /** Fetch the current user's cloud-stored trainer + teams. */
   fetchCloudData(): Promise<CloudData | null>;
   /** Push a complete snapshot of trainer + teams. */
@@ -59,6 +77,13 @@ export interface AuthAdapter {
 interface SupabaseConfig {
   url: string;
   anonKey: string;
+  /**
+   * Base64 SHA-384 of the esm.sh supabase-js shim, injected per deploy by
+   * scripts/inject-config.mjs from SUPABASE_SHA384 (docs/SECURITY.md runbook).
+   * Overrides the compiled-in SUPABASE_BUNDLE_SHA384 so a hash rotation needs
+   * no rebuild. Absent/empty → falls back to the constant.
+   */
+  sha384?: string;
 }
 
 export interface WorkerEndpointConfig {
@@ -152,7 +177,10 @@ interface CloudRow {
 // recommended for production, but allowed for staging).
 const SUPABASE_BUNDLE_VERSION = '2.45.4';
 const SUPABASE_BUNDLE_URL = 'https://esm.sh/@supabase/supabase-js@' + SUPABASE_BUNDLE_VERSION;
-const SUPABASE_BUNDLE_SHA384 = ''; // Populated post-deploy via docs/SECURITY.md runbook.
+// Empty until the owner computes it (docs/SECURITY.md runbook) — either here
+// or, preferably, as SUPABASE_SHA384 in the deploy env, which inject-config.mjs
+// places in config.supabase.sha384 and wins over this constant.
+const SUPABASE_BUNDLE_SHA384 = '';
 
 async function verifyAndImport(url: string, expectedSha384: string): Promise<unknown> {
   // The esm.sh response is a small re-export shim with internal relative
@@ -184,7 +212,7 @@ async function getClient(): Promise<SupabaseClientLike | null> {
 
   loadingPromise = (async () => {
     try {
-      const mod = await verifyAndImport(SUPABASE_BUNDLE_URL, SUPABASE_BUNDLE_SHA384);
+      const mod = await verifyAndImport(SUPABASE_BUNDLE_URL, cfg.sha384 || SUPABASE_BUNDLE_SHA384);
       const createClient = (mod as { createClient: (url: string, key: string) => SupabaseClientLike }).createClient;
       cachedClient = createClient(cfg.url, cfg.anonKey);
       return cachedClient;
@@ -256,8 +284,8 @@ export const auth: AuthAdapter = {
     void (async () => {
       const client = await getClient();
       if (!client) return;
-      const { data } = client.auth.onAuthStateChange((_event, session) => {
-        cb(session ? mapUser(session.user) : null);
+      const { data } = client.auth.onAuthStateChange((event, session) => {
+        cb(session ? mapUser(session.user) : null, event);
       });
       unsub = () => data.subscription.unsubscribe();
     })();

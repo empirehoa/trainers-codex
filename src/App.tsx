@@ -39,15 +39,15 @@ import {
 } from '@/lib/analysis';
 import { BADGE_REGIONS, badgesForRegion } from '@/lib/merch-renderers';
 import { loadStorage, saveStorage, genId } from '@/lib/storage';
-import { initialSearchQuery } from '@/lib/search-param';
+import { initialSearchQuery, parseShareHash } from '@/lib/search-param';
 import {
   type Ruleset, UNRESTRICTED, FORMAT_PRESETS, presetById,
   checkLegality, teamLegality, isUnrestricted, isLegal,
 } from '@/lib/formats';
 import {
   getStoredLicense, bootstrapFromCheckoutReturn, isWorkerConfigured,
-  applyOwnerUnlock, hasOwnerUnlock, clearLicense,
-} from '@/lib/license';
+  applyOwnerUnlock, hasOwnerUnlock, clearLicense, maybeReverifyLicense,
+  consumeMerchReturn, consumeCheckoutCancel } from '@/lib/license';
 
 import { PokemonCard } from '@/components/codex/PokemonCard';
 import { TeamSlot } from '@/components/codex/TeamSlot';
@@ -80,9 +80,10 @@ import { getProfileClient } from '@/lib/profiles-client';
 import { sanitizeListingTitle } from '@/lib/merch';
 import { LiveCoverageStrip } from '@/components/codex/LiveCoverageStrip';
 import { JourneyModeDialog } from '@/components/codex/journey/JourneyModeDialog';
-import { auth, type AuthSession } from '@/lib/auth';
+import { auth, isSignOutTransition, type AuthSession } from '@/lib/auth';
 import { isEnabled } from '@/lib/flags';
 import { parseCurrentJourneyLink } from '@/journey/deeplink';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { renderLegendCardPrint } from '@/journey/legend-card';
 import { downloadBlob, legendCardFilename } from '@/journey/share';
 import { track } from '@/journey/analytics';
@@ -296,17 +297,11 @@ export default function App() {
     try {
       const hash = window.location.hash || '';
       // `#team=` is an INCOMING SHARE: show the landing, don't auto-load.
-      const shared = hash.match(/(?:^#|&)team=([0-9a-z,-]+)/);
+      const shared = parseShareHash(hash);
       if (shared) {
-        const parsed = parseShareCode(shared[1]);
+        const parsed = parseShareCode(shared.code);
         if (parsed && parsed.some(Boolean)) {
-          const tn = hash.match(/(?:^#|&)tn=([^&]+)/);
-          const by = hash.match(/(?:^#|&)by=([^&]+)/);
-          const dec = (s: string | undefined) => {
-            if (!s) return undefined;
-            try { return decodeURIComponent(s) || undefined; } catch { return undefined; }
-          };
-          setSharedIncoming({ members: parsed, teamName: dec(tn?.[1]), by: dec(by?.[1]) });
+          setSharedIncoming({ members: parsed, teamName: shared.teamName, by: shared.by });
           return; // a share link supersedes the `#t=` resume hash
         }
       }
@@ -362,37 +357,69 @@ export default function App() {
     // legacy localStorage `premium` flag (which was the dev-only preview
     // toggle). The license check is structural-only here — server-side
     // verification happens lazily when premium UI opens.
-    // Owner quick-unlock: `?unlock=premium` / `#unlock=premium` flips a
-    // persistent local override (and `unlock=off` clears it). Applied before
-    // the license check so it wins, and persisted under its own key so it
-    // survives reloads even on a Worker-backed deploy.
+    // Preview unlock: `?unlock=premium` / `#unlock=premium` flips a persistent
+    // local override (and `unlock=off` clears it) — on the NO-WORKER build
+    // only. With a worker configured both helpers are inert (the param is
+    // stripped silently, the stored flag is purged) and the only entitlement
+    // is a verified license. See license.ts applyOwnerUnlock.
     const unlockAction = applyOwnerUnlock();
     if (unlockAction === 'locked') clearLicense();
 
     const license = getStoredLicense();
     if (license || hasOwnerUnlock()) {
       setPremium(true);
+      if (license) {
+        trackCommerce({
+          event: 'license_restored',
+          daysLeft: Math.max(0, Math.round((license.claims.exp * 1000 - Date.now()) / 86400000)),
+        });
+        // Weekly server re-check: a cancelled subscription is revoked
+        // server-side; this is where a revoked license actually loses premium
+        // (soft-fails to 'ok' when offline — never punishes availability).
+        void maybeReverifyLicense(license.jwt).then(verdict => {
+          if (verdict === 'revoked') {
+            setPremium(false);
+            toast('premium ended · your subscription is no longer active');
+          }
+        });
+      }
     } else if (stored.premium && !isWorkerConfigured()) {
       // Self-host / no-worker deploy: the preview toggle remains the source
       // of truth. This keeps the bundle's offline UX intact for static hosts.
       setPremium(true);
     }
     if (unlockAction === 'unlocked') {
-      toast.success('premium unlocked · preview mode — every premium surface is open');
+      toast.success('premium preview on · this offline build has no store, so every gated surface is open for testing');
     } else if (unlockAction === 'locked') {
       setPremium(false);
       toast('premium locked · back to the free experience');
     }
 
     if (stored.current && !pendingTeam && !members.some(Boolean)) {
-      const next = stored.current.members.slice(0, 6) as (TeamMember | null)[];
-      while (next.length < 6) next.push(null);
+      // loadStorage already ran sanitizeMembers / sanitizeName over `current`,
+      // so this is exactly six well-typed slots and a string.
+      const next = stored.current.members;
       if (next.some(Boolean)) {
         setMembers(next);
-        setTeamName(stored.current.name || '');
+        setTeamName(stored.current.name);
       }
     }
     setHasLoadedStorage(true);
+
+    // Merch checkout return (?merch=success|cancel) — a payment-mode session,
+    // no license to mint. Fulfillment runs server-side off the webhook; the
+    // toast is the buyer's acknowledgment.
+    const merchReturn = consumeMerchReturn();
+    if (merchReturn === 'success') {
+      toast.success('order placed · it prints and ships to the address you gave at checkout');
+    } else if (merchReturn === 'cancel') {
+      toast('checkout cancelled · your design is still here whenever you are ready');
+    }
+    // Premium / credit-pack cancel return (?checkout=cancel, ?credits=cancel):
+    // Stripe bounces back with nothing to verify — acknowledge and clean up.
+    if (consumeCheckoutCancel()) {
+      toast('checkout cancelled · no charge was made');
+    }
 
     // Stripe Checkout return path — if we landed here with ?session_id=...,
     // exchange it for a JWT and flip premium on. Fires asynchronously; the
@@ -452,10 +479,14 @@ export default function App() {
   useEffect(() => {
     if (!auth.isConfigured) return;
     void auth.getSession().then(setSession);
-    const unsub = auth.onAuthChange(s => {
+    // Supabase replays INITIAL_SESSION (null for anonymous visitors) on every
+    // boot — only a real SIGNED_OUT from a live session is worth a toast.
+    let prev: AuthSession | null = null;
+    const unsub = auth.onAuthChange((s, event) => {
       setSession(s);
-      if (s) toast.success(`signed in · ${s.name || s.email}`);
-      else toast('signed out');
+      if (s && !prev) toast.success(`signed in · ${s.name || s.email}`);
+      else if (isSignOutTransition(prev, event, s)) toast('signed out');
+      prev = s;
     });
     return unsub;
   }, []);
@@ -737,6 +768,7 @@ export default function App() {
     // Reason: premium-revenue lever. Anyone building 4+ teams is a power
     // user and the $4.99/mo conversion threshold is well-justified.
     if (!premium && savedTeams.length >= 3) {
+      trackCommerce({ event: 'paywall_shown', surface: 'saved-teams' });
       toast.error('saved-team limit · upgrade to Premium for unlimited');
       return;
     }
@@ -890,7 +922,7 @@ export default function App() {
               {undoStack.length > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden lg:flex">
+                    <Button variant="outline" size="icon" onClick={undoLast} className="w-8 h-8 hidden lg:flex" aria-label="Undo">
                       <RotateCcw size={13} />
                     </Button>
                   </TooltipTrigger>
@@ -910,6 +942,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setTrainerOpen(true)}
                     className={cn('w-8 h-8', trainer && 'border-primary text-primary')}
+                    aria-label={trainer?.name ? `Profile · ${trainer.name}` : 'Trainer profile'}
                   >
                     <User size={14} />
                   </Button>
@@ -921,6 +954,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setSignInOpen(true)}
                     className={cn('w-8 h-8', session && 'border-emerald-500 text-emerald-500')}
+                    aria-label={session ? `Signed in as ${session.name || session.email}` : 'Sign in for cloud sync'}
                   >
                     {session ? <Cloud size={13} /> : <LogIn size={13} />}
                   </Button>
@@ -944,6 +978,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setLibrary(true)}
                     className={cn('w-8 h-8', savedTeams.length > 0 && 'border-primary text-primary')}
+                    aria-label={savedTeams.length > 0 ? `Library (${savedTeams.length})` : 'Library'}
                   >
                     <FolderOpen size={14} />
                   </Button>
@@ -952,7 +987,7 @@ export default function App() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" onClick={loadRandom} className="w-8 h-8">
+                  <Button variant="outline" size="icon" onClick={loadRandom} className="w-8 h-8" aria-label="Random team">
                     <Dices size={14} />
                   </Button>
                 </TooltipTrigger>
@@ -960,7 +995,7 @@ export default function App() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" onClick={() => setChart(true)} className="w-8 h-8">
+                  <Button variant="outline" size="icon" onClick={() => setChart(true)} className="w-8 h-8" aria-label="Type chart">
                     <Grid3x3 size={14} />
                   </Button>
                 </TooltipTrigger>
@@ -973,6 +1008,7 @@ export default function App() {
                       variant="outline" size="icon" onClick={() => setJourneyOpen(true)}
                       className="w-8 h-8 border-primary/60 text-primary"
                       data-testid="journey-open"
+                      aria-label={`${t('journey.title')} · ${t('journey.tagline')}`}
                     >
                       <Compass size={14} />
                     </Button>
@@ -985,6 +1021,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setPosterOpen(true)} disabled={teamCount === 0}
                     className={cn('w-8 h-8', teamCount > 0 && 'border-primary text-primary')}
+                    aria-label="Poster studio"
                   >
                     <Wand2 size={14} />
                   </Button>
@@ -996,6 +1033,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setMerchOpen(true)} disabled={teamCount === 0}
                     className={cn('w-8 h-8', teamCount > 0 && 'border-primary text-primary')}
+                    aria-label="Merch studio · order shirts, posters, mugs"
                   >
                     <ShoppingBag size={14} />
                   </Button>
@@ -1008,6 +1046,7 @@ export default function App() {
                     variant="outline" size="icon" onClick={() => setAiOpen(true)}
                     data-testid="ai-studio-btn"
                     className={cn('w-8 h-8', premium && 'border-primary text-primary')}
+                    aria-label="AI Studio · trainer card + team art"
                   >
                     <Sparkles size={14} />
                   </Button>
@@ -1019,6 +1058,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setImportOpen(true)}
                     className="w-8 h-8" data-testid="showdown-btn"
+                    aria-label="Import / export · Showdown · PokePaste"
                   >
                     <ClipboardList size={14} />
                   </Button>
@@ -1030,6 +1070,7 @@ export default function App() {
                   <Button
                     variant="outline" size="icon" onClick={() => setShare(true)} disabled={teamCount === 0}
                     className={cn('w-8 h-8', teamCount > 0 && 'border-primary text-primary')}
+                    aria-label="Share team"
                   >
                     <Share2 size={14} />
                   </Button>
@@ -1038,7 +1079,7 @@ export default function App() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon" onClick={() => setHelp(true)} className="w-8 h-8">
+                  <Button variant="outline" size="icon" onClick={() => setHelp(true)} className="w-8 h-8" aria-label="Help">
                     <HelpCircle size={14} />
                   </Button>
                 </TooltipTrigger>
@@ -1091,7 +1132,9 @@ export default function App() {
                 className="font-mono text-xs font-bold ml-1"
               >
                 <BarChart3 size={12} className="mr-1.5" />
-                <span className="hidden lg:inline">Analyze</span>
+                {/* sr-only rather than hidden: below lg the icon is the whole
+                    button, and a hidden span is not an accessible name. */}
+                <span className="sr-only lg:not-sr-only">Analyze</span>
               </Button>
             </div>
           </TooltipProvider>
@@ -1212,7 +1255,7 @@ export default function App() {
                     data-testid="toggle-filters"
                     className={cn('font-mono text-xs', showFilters && 'border-primary text-primary')}>
               <FilterIcon size={12} className="mr-1" />
-              <span className="hidden sm:inline">filters</span>
+              <span className="sr-only sm:not-sr-only">filters</span>
               {(filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)) > 0 && (
                 <span className="ml-1 bg-primary text-primary-foreground rounded-full px-1.5 py-0 text-[10px]">
                   {filterTypes.length + filterGens.length + filterRoles.length + (filterCategory !== 'all' ? 1 : 0)}
@@ -1224,7 +1267,7 @@ export default function App() {
               setSortBy(by as typeof sortBy);
               setSortDir(dir as typeof sortDir);
             }}>
-              <SelectTrigger className="w-auto sm:w-[150px] font-mono text-xs h-9">
+              <SelectTrigger aria-label="Sort order" className="w-auto sm:w-[150px] font-mono text-xs h-9">
                 <ArrowUpDown size={12} className="mr-1 shrink-0" />
                 <SelectValue />
               </SelectTrigger>
@@ -1295,7 +1338,7 @@ export default function App() {
                     ...r, id: 'custom', label: 'Custom',
                     monoType: v === '_any' ? null : (v as PokemonType),
                   }))}>
-                  <SelectTrigger data-testid="format-monotype" className="w-auto h-7 font-mono text-[10px] uppercase tracking-wider">
+                  <SelectTrigger data-testid="format-monotype" aria-label="Monotype restriction" className="w-auto h-7 font-mono text-[10px] uppercase tracking-wider">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1455,6 +1498,7 @@ export default function App() {
           <div className="font-mono text-[10px] text-muted-foreground space-y-1">
             <div>// trainer's codex v5.0 · independent fan tool · not affiliated with nintendo / game freak / the pokémon company</div>
             <div>// sprite art and base data: <a href="https://pokeapi.co" target="_blank" rel="noopener noreferrer" className="hover:text-primary">pokéapi.co</a> · tcg data: <a href="https://pokemontcg.io" target="_blank" rel="noopener noreferrer" className="hover:text-primary">pokemontcg.io</a></div>
+            <div>// <a href="/legal.html" target="_blank" rel="noopener noreferrer" className="hover:text-primary" data-testid="footer-legal">terms · privacy · refunds</a> · <a href="/dmca.html" target="_blank" rel="noopener noreferrer" className="hover:text-primary" data-testid="footer-dmca">dmca</a></div>
           </div>
         </footer>
       </main>
@@ -1490,7 +1534,7 @@ export default function App() {
           </div>
           <Button onClick={() => setSheet(true)} disabled={teamCount === 0} className="shrink-0 font-mono text-xs font-bold">
             <BarChart3 size={12} className="mr-1.5" />
-            <span className="hidden sm:inline">analyze</span>
+            <span className="sr-only sm:not-sr-only">analyze</span>
             <span className="ml-1">{teamCount}/6</span>
           </Button>
         </div>
@@ -1607,6 +1651,9 @@ export default function App() {
           link={JOURNEY_LINK}
           onBuilderHandoff={handleJourneyHandoff}
           onMerch={(run) => { void handleJourneyMerch(run); }}
+          premium={premium}
+          premiumResolved={hasLoadedStorage}
+          onTogglePremium={() => setPremium(p => !p)}
         />
       )}
     </div>

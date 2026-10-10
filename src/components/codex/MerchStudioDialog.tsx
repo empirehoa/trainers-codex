@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ShoppingBag, Download, ExternalLink, Loader2, Sparkles } from 'lucide-react';
+import { ShoppingBag, Download, ExternalLink, Loader2, Sparkles, CreditCard } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
@@ -11,9 +11,10 @@ import { toast } from 'sonner';
 import type { TeamMember, TrainerProfile } from '@/lib/types';
 import {
   MERCH_PRODUCTS, MERCH_SLOGANS, MARKUP_OPTIONS, buildVendorOrderUrl, computeRetail,
-  sanitizeListingTitle,
+  computeRetail99, sanitizeListingTitle,
   type MerchProduct, type MerchCategory
 } from '@/lib/merch';
+import { isEnabled } from '@/lib/flags';
 import { POKEMON_BY_ID } from '@/lib/pokemon';
 import {
   renderMerchDesign, renderMerchPreview, MERCH_DESIGNS,
@@ -21,8 +22,20 @@ import {
   type MerchDesign
 } from '@/lib/merch-renderers';
 import { PremiumControl } from './PremiumControl';
-import { isWorkerConfigured, submitPrintfulOrder } from '@/lib/license';
+import { isWorkerConfigured, submitPrintfulOrder, startMerchCheckout } from '@/lib/license';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
+
+/**
+ * The Worker answers 503 `{"error":"merch_disabled"}` on /printful/order and
+ * /merch/checkout while its MERCH kill switch is off. license.ts surfaces the
+ * status + body in the thrown message; match on the token, not the status, so
+ * an unrelated 503 still reads as the real error.
+ */
+function isMerchDisabled(message: string): boolean {
+  return /merch_disabled/.test(message);
+}
+const MERCH_CLOSED_MSG = 'merch ordering is not open yet';
 
 interface MerchStudioDialogProps {
   open: boolean;
@@ -113,7 +126,19 @@ export function MerchStudioDialog({
   }, [previewUrl, printUrl]);
 
   const teamCount = team.filter(Boolean).length;
-  const retail = computeRetail(selectedProduct.baseCostUSD, markupPct);
+  // Buyer checkout: dark until the MERCH_CHECKOUT flag flips (counsel gate —
+  // see docs/JOURNEY_MODE.md). When live, the DISPLAYED price must be the
+  // Worker's authoritative .99 price, because that is what the buyer is
+  // charged and /merch/checkout 409s on any drift.
+  const buyEnabled = isEnabled('MERCH_CHECKOUT') && isWorkerConfigured() && selectedProduct.vendor === 'printful';
+  // Seller-side ordering ("order on printful": upload → sync product in the
+  // owner's store, or the vendor deeplink) is dark behind the same flag. Until
+  // counsel clears merch, nothing on this surface reaches fulfilment; the
+  // print PNG download stays open for personal use.
+  const orderEnabled = isEnabled('MERCH_CHECKOUT');
+  const retail = buyEnabled
+    ? computeRetail99(selectedProduct.baseCostUSD, markupPct)
+    : computeRetail(selectedProduct.baseCostUSD, markupPct);
   const margin = retail - selectedProduct.baseCostUSD;
 
   // Legal bright-line: anything that becomes a public Printful listing title
@@ -163,6 +188,7 @@ export function MerchStudioDialog({
   const [ordering, setOrdering] = useState(false);
 
   const handleOrder = async () => {
+    trackCommerce({ event: 'merch_render_started', product: selectedProduct.id, design });
     const blob = await generatePrintBlob();
     if (!blob) return;
     const url = URL.createObjectURL(blob);
@@ -195,11 +221,21 @@ export function MerchStudioDialog({
           },
           pngBlob: blob,
         });
+        trackCommerce({
+          event: 'merch_order_submitted', product: selectedProduct.id, design,
+          valueUsd: parseFloat(result.retail) || 0,
+        });
         toast.success(`Printful listing ready · ${result.productName}`);
         window.open(result.dashboardUrl, '_blank', 'noopener');
         return;
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'printful order failed';
+        if (isMerchDisabled(msg)) {
+          // The Worker's kill switch is authoritative: do not fall through to
+          // the vendor deeplink either.
+          toast.error(MERCH_CLOSED_MSG);
+          return;
+        }
         toast.error(`${msg} · falling back to URL deeplink`);
         // Fall through to URL-deeplink path below
       } finally {
@@ -212,6 +248,41 @@ export function MerchStudioDialog({
     window.open(buildVendorOrderUrl(selectedProduct, url), '_blank', 'noopener');
   };
 
+  const [buying, setBuying] = useState(false);
+
+  /** Buyer path: render → POST /merch/checkout → Stripe-hosted payment page. */
+  const handleBuy = async () => {
+    setBuying(true);
+    trackCommerce({ event: 'merch_render_started', product: selectedProduct.id, design });
+    trackCommerce({
+      event: 'checkout_started', surface: 'merch-studio', plan: 'merch',
+      pack: `${selectedProduct.id}:${design}`, valueUsd: retail,
+    });
+    try {
+      const blob = await generatePrintBlob();
+      if (!blob) return;
+      await startMerchCheckout({
+        productId: selectedProduct.id,
+        design,
+        markup: markupPct,
+        expectedRetail: retail,
+        metadata: {
+          teamName: cleanListing(teamName),
+          gymName: cleanListing(gymName),
+          region: cleanListing(region),
+          trainer: cleanListing(trainer?.name),
+        },
+        pngBlob: blob,
+      });
+      // startMerchCheckout navigates away; reaching here means it threw.
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'checkout failed';
+      toast.error(isMerchDisabled(msg) ? MERCH_CLOSED_MSG : msg);
+    } finally {
+      setBuying(false);
+    }
+  };
+
   // Filter products by category for the picker
   const productsByCategory = useMemo(() => {
     const groups: Record<string, MerchProduct[]> = {};
@@ -222,8 +293,11 @@ export function MerchStudioDialog({
     return groups;
   }, []);
 
-  // Printing is open to everyone — no design is premium-gated. (Merch is the
-  // primary monetization path via POD markup; AI generation is the paid tier.)
+  // Downloading the print PNG is open to everyone — no design is premium-gated
+  // and there is no paywall on this surface (AI generation is the paid tier).
+  // ORDERING (buy / order on printful) is a separate question: it is dark
+  // behind MERCH_CHECKOUT until counsel clears merch, and the Worker enforces
+  // the same switch server-side (503 merch_disabled).
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -315,21 +389,43 @@ export function MerchStudioDialog({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 mt-3">
-                <Button variant="outline" onClick={handleDownload} className="font-mono text-xs">
-                  <Download size={12} className="mr-1.5" /> download print PNG
-                </Button>
-                <Button onClick={handleOrder} disabled={ordering} className="font-mono text-xs font-bold" data-testid="merch-order">
-                  {ordering ? (
-                    <><Loader2 size={12} className="mr-1.5 animate-spin" /> uploading…</>
+              {buyEnabled && (
+                <Button onClick={() => void handleBuy()} disabled={buying}
+                        className="w-full mt-3 font-mono text-xs font-bold" data-testid="merch-buy">
+                  {buying ? (
+                    <><Loader2 size={12} className="mr-1.5 animate-spin" /> preparing checkout…</>
                   ) : (
-                    <><ExternalLink size={12} className="mr-1.5" /> order on {selectedProduct.vendor}</>
+                    <><CreditCard size={12} className="mr-1.5" /> buy this · ${retail.toFixed(2)} + shipping</>
                   )}
                 </Button>
+              )}
+              <div className={cn('grid gap-2', orderEnabled ? 'grid-cols-2' : 'grid-cols-1', buyEnabled ? 'mt-2' : 'mt-3')}>
+                <Button variant={orderEnabled || buyEnabled ? 'outline' : 'default'} onClick={handleDownload}
+                        className="font-mono text-xs" data-testid="merch-download">
+                  <Download size={12} className="mr-1.5" /> download print PNG
+                </Button>
+                {orderEnabled && (
+                  <Button variant={buyEnabled ? 'outline' : 'default'} onClick={handleOrder} disabled={ordering}
+                          className="font-mono text-xs font-bold" data-testid="merch-order">
+                    {ordering ? (
+                      <><Loader2 size={12} className="mr-1.5 animate-spin" /> uploading…</>
+                    ) : (
+                      <><ExternalLink size={12} className="mr-1.5" /> order on {selectedProduct.vendor}</>
+                    )}
+                  </Button>
+                )}
               </div>
               <p className="text-[10px] font-mono text-muted-foreground mt-2 leading-relaxed">
-                Clicking "order" downloads the print-ready file and opens {selectedProduct.vendor}.com.
-                Drag the downloaded PNG onto their design uploader to complete the order.
+                {buyEnabled && <>
+                  "Buy this" checks out on Stripe with your shipping address — the item prints and ships to you.{' '}
+                </>}
+                {orderEnabled ? <>
+                  Clicking "order" downloads the print-ready file and opens {selectedProduct.vendor}.com.
+                  Drag the downloaded PNG onto their design uploader to complete the order.{' '}
+                </> : <>
+                  Ordering is not open yet — download the print-ready PNG for personal use.
+                  Every figure is an original silhouette in your team's type colours; no official artwork is printed.{' '}
+                </>}
                 The print is {selectedProduct.printWidth}×{selectedProduct.printHeight}px at 300 DPI.
               </p>
             </div>

@@ -21,6 +21,23 @@
 | 10 | INFO | Sprite art loaded as `<img>` from `raw.githubusercontent.com/PokeAPI/sprites` | ✓ clean |
 | 11 | INFO | URL-hash share code regex `/(?:^#|&)t=([0-9a-z,\-]+)/` restricts charset before parsing | ✓ clean |
 
+### 2026-09 launch-hardening audit — Worker findings
+
+| # | Severity | Area | Status |
+|---|---|---|---|
+| B-1 | HIGH | `/stripe/verify` minted a premium license for **any** paid Checkout session (a $1.99 credit pack or sticker order → 31 days of premium) | **Fixed** — requires `metadata.source === 'trainerscodex_premium_pack'`, `mode === 'subscription'` and a subscription id, else `422 not_a_premium_session` (`worker/src/stripe.ts`, `worker/test/stripe-verify.test.ts`) |
+| D-2 / D-3 | HIGH | Merch was dark on the client only; `?ff=MERCH_CHECKOUT:1` or a direct POST reached Stripe/R2/Printful | **Fixed** — server-side `MERCH_CHECKOUT` var (default `"0"`) gates `/merch/checkout`, `/printful/order` and webhook fulfilment before any R2 put or upstream call (`worker/test/merch-guard.test.ts`) |
+| B-2 | MEDIUM | Prototype-key product ids (`__proto__`, `constructor`, …) passed catalog validation and priced to `NaN`; R2 put ran before Stripe validated | **Fixed** — `Object.hasOwn` catalog accessors, non-finite retail → null, R2 put moved after Stripe accepts the session |
+| B-3 | MEDIUM | AI uploads stored in the public bucket with the client-supplied Content-Type (SVG/HTML servable from the CDN origin) | **Fixed** — magic-byte sniff (PNG/JPEG/WebP) before moderation; anything else `400 bad_image`; stored type is the sniffed one (`worker/src/body.ts`, `worker/test/ai-upload.test.ts`) |
+| D-5 | MEDIUM | Server-side listing-name strip covered only the `Pokémon` tokens; species and publisher names reached Stripe line items / Printful titles | **Fixed** — normalized (NFD, diacritics, spacing) token/phrase blocklist incl. all 1,307 species names (generated `worker/src/species-names.ts`), fail-closed generic label (`worker/test/listing-name.test.ts`) |
+| B-5 | LOW | Non-object JSON bodies / non-multipart uploads threw, and the 500 handler echoed raw exception text (incl. upstream Stripe/Printful response bodies) | **Fixed** — `400 bad_json` / `400 multipart_required`; 500 is a generic `{error:'internal'}`, real message logged only |
+| B-6 | LOW | Upload size enforced only after `formData()` buffered the whole body | **Fixed** — Content-Length pre-check (13 MiB; 17 MiB for codex-card's two parts) → `413` before the body is read |
+| B-7 | LOW | `exp` only compared with `<`; missing/string `exp` was perpetual; no `nbf`; no signing-key length check | **Fixed** — finite numeric `exp`/`iat`, `exp ≤ iat + 400d`, `nbf` honoured, `JWT_SIGNING_KEY` < 32 chars throws at mint/verify (`worker/test/jwt.test.ts`) |
+| B-8 | LOW | Missing/failing `RATELIMIT_KV` was an unhandled throw (opaque 1101, no CORS) | **Fixed** — controlled JSON `503 rate_limit_unavailable` with CORS (fail closed); `/health` degrades to allow |
+| B-9 | LOW | `checkout.session.async_payment_succeeded` unhandled → delayed-payment merch orders never fulfilled | **Fixed** — routed through the same source dispatch as `completed`; idempotent via `merchdone:` / credit-grant markers; credits now grant only on a paid session (`worker/test/webhook.test.ts`) |
+| B-10 | LOW | `pnpm audit` in `worker/`: sharp < 0.35.4 via wrangler → miniflare (dev-only) | **Fixed** — `pnpm.overrides.sharp >= 0.35.4` in `worker/package.json`; audit clean |
+| B-11 | INFO | AI quota key was case-sensitive on email while credits lower-cased | **Fixed** — quota key lower-cases the email |
+
 Net: **0 unresolved HIGH/CRITICAL** before merging this branch.
 
 ---
@@ -99,7 +116,11 @@ const sri = btoa(String.fromCharCode(...new Uint8Array(h)));
 console.log('SHA-384 base64:', sri);
 ```
 
-Paste the result into `SUPABASE_BUNDLE_SHA384` in `src/lib/auth.ts`, rebuild, redeploy. The empty default disables the check (intended for development only); the deploy runbook in `docs/DEPLOYMENT.md` requires the hash to be set.
+Set the result as `SUPABASE_SHA384` in the deploy environment: `scripts/inject-config.mjs` injects it as `config.supabase.sha384` and `src/lib/auth.ts` prefers it over the compiled-in `SUPABASE_BUNDLE_SHA384`, so a rotation needs no rebuild (pasting it into the constant still works as a fallback). The deploy log prints `Supabase SDK integrity: OFF` while the variable is unset.
+
+**Status 2026-09-09: the hash is still empty on the live deploy.** The wiring exists (`tests/test-security.mjs` proves the env var reaches the staged config), but the value has to be computed by the owner from a network that can reach `esm.sh` — this sandbox cannot. Until then the integrity check is off and the CDN is trusted.
+
+**Known limitation:** the `esm.sh` URL returns a small shim that `export … from` a second, versioned module URL. The hash pins the shim only; the module it re-exports is fetched by the browser afterwards and is not hashed. This still catches version drift and a tampered entry point, but a compromise that keeps the shim byte-identical and swaps the target would pass. Vendoring `@supabase/supabase-js` into the bundle (it is already an npm dependency) is the fix that removes runtime CDN code altogether.
 
 ### Rotation
 
@@ -124,6 +145,13 @@ A single static HTML inlines all JS and CSS, which forces `'unsafe-inline'` for 
 See `public/_headers` for the full policy. Cloudflare Pages picks it up automatically.
 
 ### Inline-hash upgrade path (future hardening)
+
+`script-src` also carries `blob:`. The lazily loaded `@smogon/calc` chunk ships
+inside `bundle.html` as an inert `<script type="text/plain" data-chunk>` block
+and is imported as a Blob-URL module on first matchup (`inline.mjs`,
+`src/lib/calc-loader.ts`). `blob:` is not a network source — only same-document
+script can mint one — so it widens nothing beyond what `'unsafe-inline'` already
+concedes; without it the matchup preview never loads on the live origin.
 
 When this project is ready to drop `'unsafe-inline'`, modify `inline.mjs` to compute the SHA-384 of the inline `<script>` content during the inline step, and emit a companion `_headers` file with `script-src 'self' 'sha384-XXX'`. The hash must be regenerated on every build. This is a ~30-line change but adds operational complexity (header drift detection) — deferred until a clear threat justifies it.
 
@@ -256,7 +284,7 @@ The regex restricts the captured group to `[0-9a-z,\-]+`, so the parsed share co
 | Schema.org JSON-LD | `"description": "Pokemon team builder..."` | ✓ clean |
 | Merch slogan catalog | One slogan with `POKÉDEX` | **Fixed** (finding #3) |
 | Pokémon sprites on prints | User-generated configuration of their team, transformative canvas output | Gray area; transformative-use defense (same as Etsy / Redbubble fan art) |
-| Pokémon names in printed designs | User-typed via gym-name / badge-text inputs; no auto-population from species names | ✓ clean (user-content boundary) |
+| Pokémon names in printed designs | Nickname or type/role label only (species display names removed 2026-09-09); gym-name / badge-text remain user-typed | ✓ clean (user-content boundary) |
 | TCG card images | Loaded via pokemontcg.io's documented public API, displayed in-app only, never printed | ✓ clean |
 | Footer disclaimer | "// trainer's codex v5.0 · independent fan tool · not affiliated with nintendo / game freak / the pokémon company" | ✓ in place at `src/App.tsx:783` |
 
@@ -309,13 +337,31 @@ See `worker/src/index.ts` for the routing surface. The Worker is the *only* plac
 
 All env vars set via `wrangler secret put NAME`, never committed.
 
+| `MERCH_CHECKOUT` (`[vars]`, not a secret) | `worker/wrangler.toml`, default `"0"` | `worker/src/pf-catalog.ts` `merchEnabled()` → `/merch/checkout`, `/printful/order`, webhook fulfilment | **Owner-only.** Flip to `"1"` only after counsel clears merch; the client flag of the same name is UI only |
+
+### Server-side merch kill switch
+
+Every path that can create a physical-goods Checkout session or reach Printful checks `env.MERCH_CHECKOUT === '1'` before touching R2, Stripe or Printful. With it off (the default) `/merch/checkout` and `/printful/order` answer `503 merch_disabled`, and a paid merch webhook is acknowledged (200, so Stripe stops retrying) but logged for manual review instead of fulfilled — nothing is ever sent to Printful. The browser's `MERCH_CHECKOUT` feature flag only shows or hides buttons; it cannot override the server.
+
+### Premium license minting
+
+`/stripe/verify` mints a premium JWT only for a paid, complete Checkout session whose `metadata.source` is `trainerscodex_premium_pack`, whose `mode` is `subscription`, and which carries a subscription id. Any other paid session (credit packs, merch) is `422 not_a_premium_session`. Credits tokens are minted separately by `/credits/verify` with the mirror-image check.
+
 ### Webhook signature verification
 
-`worker/src/stripe.ts` calls `Stripe.constructEvent(body, signature, webhookSecret)` to reject any forged webhook. Without this, an attacker could POST a fake `checkout.session.completed` and mint a license JWT for any email.
+`worker/src/stripe.ts` `verifyStripeSignature` HMAC-SHA256s `${t}.${rawBody}` with the webhook secret, accepts only `v1`, enforces a ±300 s replay window and compares in constant time. Without this, an attacker could POST a fake `checkout.session.completed` and grant credits or trigger fulfilment. `checkout.session.completed` and `checkout.session.async_payment_succeeded` share one idempotent dispatch keyed on `metadata.source`.
 
 ### Rate limit + 429
 
-`worker/src/ratelimit.ts` enforces per-IP limits using Cloudflare KV. Returning a `Retry-After` header lets the browser back off gracefully.
+`worker/src/ratelimit.ts` enforces per-IP limits using Cloudflare KV. Returning a `Retry-After` header lets the browser back off gracefully. If the KV binding is missing or KV errors, every rate-limited route fails **closed** with a JSON `503 rate_limit_unavailable` (with CORS headers); only `/health` degrades to allow so monitors can tell a KV outage from a dead worker.
+
+### Request-body guards
+
+`worker/src/body.ts` is the single place request shapes are policed: JSON routes require a JSON object (`400 bad_json` for `null`, arrays, strings, numbers, malformed input); upload routes require `multipart/form-data` (`400 multipart_required`) and refuse a declared Content-Length above the cap (`413`) before reading the body; AI uploads are sniffed by magic bytes and stored under the sniffed PNG/JPEG/WebP type only. Unhandled exceptions surface as a generic `{"error":"internal"}` — the real message goes to the Worker log.
+
+### Listing-name sanitization (paid surfaces)
+
+`worker/src/pf-catalog.ts` `stripTrademark` normalizes free text (NFD, diacritics stripped, lowercase, punctuation → spaces) and removes franchise/publisher terms plus every species display name from `worker/src/species-names.ts` — a generated file (`node worker/scripts/gen-species-names.mjs`) pinned to `src/data/pokemon-data.json` by `worker/test/listing-name.test.ts`. A label that is nothing but blocked terms falls back to `Custom team design`. Applied to Stripe `product_data.name` and Printful product titles regardless of what the client sent.
 
 ### CORS allow-list
 
@@ -332,7 +378,7 @@ These were not addressed in this session and are flagged for the v5.1 milestone:
 3. **Subresource Integrity migration if `esm.sh` adds native dynamic-import SRI support.** Once the HTML spec lands `import("url", { integrity: "sha384-..." })`, swap the verify-then-import shim for the native form. (Issue WHATWG/HTML#3014 — track via WPT.)
 4. **A `report-uri` for CSP violations.** Right now the policy is silent on violation; wiring `report-uri https://csp.trainerscodex.com/violations` and a Worker route to log them would surface XSS attempts early.
 5. **Supabase RLS audit.** The schema in `docs/DEPLOYMENT.md` § "Supabase setup" includes RLS policies. Once the project is up, verify against [supabase-audit](https://github.com/supabase/supabase-audit) before opening sign-up.
-6. **Automated dependency scanning.** Add `pnpm audit --prod` to CI when CI exists; today the repo has zero runtime dependencies with known CVEs (verified at audit time).
+6. **Automated dependency scanning.** Done 2026-09-09: `.github/workflows/ci.yml` runs `pnpm audit --prod` at the root on every push (the worker audit is separate). Zero runtime dependencies with known CVEs at the time of wiring.
 
 ---
 
@@ -354,8 +400,10 @@ test "$(stat -f%z bundle.html 2>/dev/null || stat -c%s bundle.html)" -lt 1572864
 # CSP / headers verification (on deployed site)
 curl -sI https://trainerscodex.com/ | grep -iE "content-security|strict-transport|x-frame|x-content-type"
 
-# Stripe webhook signature smoke test (replays a real test event)
-cd worker && pnpm test -- stripe-webhook
+# Worker suite: signature table, premium-session check, merch kill switch,
+# body guards, JWT hardening, listing-name sanitizer (drives the real router
+# through worker/test/_harness.ts with in-memory KV/R2 and stubbed upstreams)
+cd worker && pnpm audit --ignore-workspace && node --test test/*.test.ts
 ```
 
-A passing run produces zero findings on the static sweep, the bundle under 1.5 MB, all five security headers present, and a clean Stripe webhook test.
+A passing run produces zero findings on the static sweep, the bundle under 1.5 MB, all five security headers present, and a green worker suite.

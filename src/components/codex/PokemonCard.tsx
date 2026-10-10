@@ -43,6 +43,26 @@ const FORM_BADGES: Record<string, { label: string; color: string }> = {
   form:        { label: 'FORM',   color: '#64748b' },
 };
 
+// Offline / sprite-mirror-down fallback: a type-coloured pokéball outline as an
+// inline SVG data URI, so a card never shows the browser's broken-image glyph
+// (CLAUDE.md promises "they fall back to placeholders"; until this the grid did
+// not). One string per type colour, built on first use.
+const PLACEHOLDERS = new Map<string, string>();
+function placeholderSprite(color: string): string {
+  let uri = PLACEHOLDERS.get(color);
+  if (!uri) {
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+      `<circle cx="32" cy="32" r="22" fill="none" stroke="${color}" stroke-width="3" opacity="0.55"/>` +
+      `<path d="M10 32h44" stroke="${color}" stroke-width="3" opacity="0.55"/>` +
+      `<circle cx="32" cy="32" r="6" fill="none" stroke="${color}" stroke-width="3" opacity="0.8"/>` +
+      `</svg>`;
+    uri = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    PLACEHOLDERS.set(color, uri);
+  }
+  return uri;
+}
+
 // memo: the grid holds up to 1,307 of these; without it every keystroke in the
 // search box re-renders the entire mounted set. With stable handlers from App,
 // only cards whose props actually changed re-render.
@@ -87,6 +107,12 @@ export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, onTog
             alt={p.display}
             loading="lazy"
             decoding="async"
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (img.dataset.fallback) return;
+              img.dataset.fallback = 'true';
+              img.src = placeholderSprite(primary);
+            }}
             className="pixel-img w-full h-full object-contain p-1 group-hover:scale-110 transition-transform"
           />
           {badge && (

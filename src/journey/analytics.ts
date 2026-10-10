@@ -33,7 +33,9 @@ export type JourneyEventName =
   | 'merch_cta_click'
   | 'daily_played';
 
-export type ShareMethod = 'webshare' | 'copy' | 'download' | 'copy-link';
+// 'clip' is the 9:16 video download — kept distinct from a plain image
+// 'download' so the launch report can say WHICH share artifact converts.
+export type ShareMethod = 'webshare' | 'copy' | 'download' | 'copy-link' | 'clip';
 
 /** Event payloads. Deliberately narrow — anything not listed cannot be sent. */
 export type JourneyEventProps =
@@ -44,6 +46,20 @@ export type JourneyEventProps =
   | { event: 'builder_handoff'; score: number; verdict: string; seed: number }
   | { event: 'merch_cta_click'; score: number; verdict: string; seed: number }
   | { event: 'daily_played'; streak: number; date: string; score: number; seed: number };
+
+/**
+ * Attribute a run to how the tab entered the app.
+ *
+ * A run that was going to report `fresh` reports `seo` instead when the
+ * session began at a `?q=` link from a reference page (`entry` is the flag
+ * lib/search-param.ts writes). Anything more specific than `fresh` — a shared
+ * seed link, the daily — already names its own source and is left alone: a
+ * visitor who arrived via a species page and then opened today's daily is a
+ * daily player, and the daily funnel must not lose them.
+ */
+export function resolveRunSource(source: RunSource, entry: string | null): RunSource {
+  return source === 'fresh' && entry === 'seo' ? 'seo' : source;
+}
 
 interface SupabaseRest {
   url: string;

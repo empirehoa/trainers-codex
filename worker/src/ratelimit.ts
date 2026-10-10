@@ -16,6 +16,9 @@ export async function rateLimit(
   const minute = Math.floor(Date.now() / 60_000);
   const key = `rl:${minute}:${route}:${ip}`;
 
+  // A missing binding is a deploy misconfiguration, not a quiet "allow": throw
+  // a clear error and let the router turn it into a controlled 503.
+  if (!env.RATELIMIT_KV) throw new Error('RATELIMIT_KV binding missing — rate limiting unavailable');
   const raw = await env.RATELIMIT_KV.get(key);
   const count = raw ? parseInt(raw, 10) : 0;
 

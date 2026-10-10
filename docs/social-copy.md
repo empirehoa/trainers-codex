@@ -3,6 +3,14 @@
 **Authored:** 2026-05-29
 **Status:** Drafts. Paste, tweak, do NOT auto-post.
 
+> **Merch is dark at launch.** `MERCH_CHECKOUT` defaults to off in
+> `src/lib/flags.ts`, so no post below mentions merch, Printful or print-on-demand.
+> Merch copy returns to these drafts only after the owner flips `MERCH_CHECKOUT`
+> and counsel has cleared the printed designs (docs/SECURITY.md). The lint in
+> `tests/test-security.mjs` fails the build if a fenced post block mentions
+> merch while the flag is off. The repo is proprietary (see `LICENSE`), so no
+> post links "the code" or calls it open source.
+
 All copy below assumes launch sequence per `docs/LAUNCH_PLAN.md` — soft launch mid-June 2026, hard launch Aug 26, 2026 (Tuesday before VGC Worlds weekend).
 
 **Tone rules:**
@@ -33,7 +41,7 @@ Things stunfisk might actually care about:
 - Counter team builder: picks 6 mons that should beat your team
 
 Things stunfisk WON'T care about but exist:
-- 12 poster styles, AI-generated trainer card from a user photo, print-on-demand merch via Printful
+- 12 poster styles, AI-generated trainer card from a user photo, Journey Mode (a three-minute seeded trainer career with a daily run)
 
 I'm not here to sell anything (the premium tier is $4.99/mo for cosmetic gates — all the analyzer features are free). I'm here because I tuned the coverage scoring against my own teams and want stunfisk to roast it.
 
@@ -46,11 +54,9 @@ What scoring weight am I missing?
 
 **Comment to drop in your own thread within 5 min:**
 ```
-For transparency: there's a Premium Pack ($4.99/mo) that unlocks 6 of 12 poster styles, animated Gen 5 sprites, and 2 of 5 merch designs. Everything analytic (coverage, threats, counter teams, Tera hints) is free forever. If you only ever use it on free tier you get full functional value.
+For transparency: there's a Premium Pack ($4.99/mo) that unlocks 6 of 12 poster styles and animated Gen 5 sprites. Everything analytic (coverage, threats, counter teams, Tera hints) is free forever. If you only ever use it on free tier you get full functional value.
 
-The Printful integration is a print-on-demand pipeline — you build the team, the site generates a 300DPI poster/shirt mockup, click "Order on Printful," it creates a sync product. Vendor ships directly. I make $13-25 net per item depending on SKU.
-
-Asking it of stunfisk specifically because if the analyzer is bad, the merch is just stickers on a broken analyzer.
+Asking it of stunfisk specifically because if the analyzer is bad, the posters are just pictures of a broken analyzer.
 ```
 
 ---
@@ -78,11 +84,11 @@ Features:
 - 1,307 Pokémon including every form (Megas, Gigantamax, regional, Paradox)
 - 12 poster styles (holographic foil, retro CRT, editorial, blueprint, polaroid stack, etc.)
 - AI trainer card generator from a selfie (anime style, picks a starter, builds a 6-mon team around your vibe)
-- Print-on-demand merch (T-shirts, hoodies, mugs, posters — POD via Printful)
+- Journey Mode — a seeded three-minute trainer career with a daily run you can share
 - Type chart, threat detection, counter team builder
 - Works offline once loaded — the entire thing is one HTML file
 
-It's free. There's a $4.99/mo Premium Pack for cosmetic stuff (extra poster styles, animated sprites, more merch designs) but you don't need it.
+It's free. There's a $4.99/mo Premium Pack for cosmetic stuff (extra poster styles, animated sprites) but you don't need it.
 
 https://trainerscodex.com
 
@@ -120,7 +126,7 @@ https://trainerscodex.com
 
 **Tagline (250 char max):**
 ```
-Trainer's Codex — Pokémon team builder, analyzer, AI-generated trainer cards from your photo, and print-on-demand merch. 1,307 mons, 12 poster styles. One HTML file. Free.
+Trainer's Codex — Pokémon team builder, analyzer, AI-generated trainer cards from your photo, and a three-minute Journey Mode. 1,307 mons, 12 poster styles. One HTML file. Free.
 ```
 
 **Description (1,000 char max):**
@@ -131,10 +137,10 @@ I built Trainer's Codex because Pokémon team builders are either bloated SaaS o
 🛡 Live coverage analyzer scores your team 0-100, surfaces threats, suggests counter teams
 🎨 12 poster art styles — generate a print-ready 300DPI image of your team in any style
 🧬 AI trainer card generator from your selfie — anime style, picks your starter, builds a cohesive 6-mon team
-👕 Print-on-demand merch — order shirts, hoodies, mugs, posters of your team via Printful (no Etsy markup)
+🗺 Journey Mode — a seeded trainer career in three minutes, with a daily run and a shareable card
 ☁️ Sign in with Google/Apple/Microsoft/Discord — your teams sync across devices
 
-Free. Premium Pack is $4.99/mo for extra poster styles, animated Gen 5 sprites, premium merch designs.
+Free. Premium Pack is $4.99/mo for extra poster styles and animated Gen 5 sprites.
 
 The whole thing is a single 1.3MB HTML file. Works offline. Drop on any web server, it just runs.
 
@@ -147,18 +153,17 @@ Builder here, happy to answer anything.
 
 Three things I tried to do differently:
 
-(1) Single-file architecture. Drop bundle.html on any web server, no build pipeline. The 1,307 Pokémon entries + 919 moves + every learnset are inlined as JSON (~650KB). React 19, Tailwind, Canvas-2D for poster rendering (no WebGL, no AI image gen at runtime). The Cloudflare Worker handles Stripe Checkout + Printful sync + AI trainer card generation (via fal.ai's nano-banana for face-preservation).
+(1) Single-file architecture. Drop bundle.html on any web server, no build pipeline. The 1,307 Pokémon entries + 919 moves + every learnset are inlined as JSON (~650KB). React 19, Tailwind, Canvas-2D for poster rendering (no WebGL, no AI image gen at runtime). The Cloudflare Worker handles Stripe Checkout + AI trainer card generation (via fal.ai's nano-banana for face-preservation).
 
 (2) Form coverage. Most team builders track 1,025 base species. We track 1,307 including 71 Megas, 34 Gigantamax, 59 regional variants, 24 Paradox. Built form-aware game compatibility (Megas excluded from Switch-era games, Hisuian only in PLA/SV/PLZA, etc.).
 
-(3) Merch isn't an afterthought. The print PNG is generated at the product's exact dimensions (T-shirt is 3600×4800 at 300DPI). One click → Printful sync product created → real checkout URL returned. Net margin is $13-25 per item.
+(3) Journey Mode is a pure, deterministic simulation. `simulate(setup, choices)` has no DOM, no randomness outside the seed, so the same seed replays identically for everyone — that is what makes the daily run and the shared cards comparable.
 
 Honest about what's not here: no battle simulator (Pokémon Showdown owns that and it's not winnable to compete). No tournament tracker (Pikalytics owns that).
 
 What's coming next: Pokémon Champions team import (by August), battle simulator iframe integration via Showdown, friends + public profiles, VGC meta leaderboard.
 
 Site: https://trainerscodex.com
-Code (MIT): https://github.com/empirehoa/trainers-codex
 ```
 
 ---
@@ -178,14 +183,13 @@ Builder here. Three engineering choices that made this fit in one file:
 
 2. All 1,307 Pokémon entries + 919 moves + every learnset are inlined as JSON (~650KB total before gzip). Generation logic is form-aware (Mega Charizard X is PokeAPI ID 10034, not 6.5; baseSpeciesId is a separate field for transfer-game compatibility math).
 
-3. All poster + merch rendering is Canvas-2D, no WebGL, no Web Workers, no AI image gen at runtime. The 12 poster styles are all hand-coded canvas renderers. The AI trainer card feature (when enabled) hits a Cloudflare Worker that proxies fal.ai's nano-banana edit endpoint — image stays client-side until the user opts into AI.
+3. All poster rendering is Canvas-2D, no WebGL, no Web Workers, no AI image gen at runtime. The 12 poster styles are all hand-coded canvas renderers. The AI trainer card feature (when enabled) hits a Cloudflare Worker that proxies fal.ai's nano-banana edit endpoint — image stays client-side until the user opts into AI.
 
-The Worker handles Stripe Checkout creation + JWT mint for the $4.99/mo Premium Pack + Printful sync-product creation. About 800 LOC of Worker code. Webhook signature verification is hand-rolled HMAC-SHA-256 (cheaper than the stripe-sdk dependency).
+The Worker handles Stripe Checkout creation + JWT mint for the $4.99/mo Premium Pack. About 800 LOC of Worker code. Webhook signature verification is hand-rolled HMAC-SHA-256 (cheaper than the stripe-sdk dependency).
 
-Open source: https://github.com/empirehoa/trainers-codex (MIT)
 Live: https://trainerscodex.com
 
-Happy to answer questions on architecture, the bundle.html inlining trick, the form-aware game compatibility logic, the Canvas-2D poster renderers, or the Stripe + Printful integration.
+Happy to answer questions on architecture, the bundle.html inlining trick, the form-aware game compatibility logic, the Canvas-2D poster renderers, or the Stripe integration.
 ```
 
 ---
@@ -196,7 +200,7 @@ Happy to answer questions on architecture, the bundle.html inlining trick, the f
 ```
 I built a Pokémon team builder + AI trainer card generator that fits in a single 1.3MB HTML file.
 
-1,307 Pokémon, 12 poster styles, real Stripe + Printful integration. Drop bundle.html on any web server, it runs.
+1,307 Pokémon, 12 poster styles, works offline. Drop bundle.html on any web server, it runs.
 
 https://trainerscodex.com
 
@@ -232,11 +236,11 @@ Anime style, picks a starter (Grass/Fire/Water), builds a cohesive 6-mon team ar
 
 **Tweet 5:**
 ```
-Print-on-demand pipeline: build your team → Merch Studio → 5 design layouts × 12 products (T-shirts, hoodies, mugs, posters, stickers, totes, phone cases) → one click creates a Printful sync product → real checkout URL.
+Journey Mode: a seeded trainer career in about three minutes. Same seed, same run, for everyone — so the daily is a fair race.
 
-300 DPI print PNG, exact print dimensions per SKU.
+Retire, get a verdict and a rank, share the card.
 
-[Screenshot 5: Trainer Card merch design with gym badges]
+[Screenshot 5: Journey Mode result card]
 ```
 
 **Tweet 6:**
@@ -250,9 +254,9 @@ Build a team on your phone, finish it on your laptop. Saved teams + trainer prof
 
 **Tweet 7:**
 ```
-Free. Premium Pack is $4.99/mo for extra poster styles, animated Gen 5 sprites, premium merch designs.
+Free. Premium Pack is $4.99/mo for extra poster styles and animated Gen 5 sprites.
 
-If you only ever use it on free tier, you still get the full analyzer + 6 poster styles + 3 merch designs.
+If you only ever use it on free tier, you still get the full analyzer + 6 poster styles + Journey Mode.
 
 I'm not gating essential features. The premium stuff is cosmetic.
 ```
@@ -276,24 +280,22 @@ What I learned shipping a side-project SaaS in 3 weeks
 
 I run Empire Management Group — a Florida community-association firm with 90 employees and ~$11M revenue. By day I'm managing 316 communities.
 
-By night, I built a Pokémon team analyzer with a Stripe-billed Premium Pack and Printful-integrated merch sales. It's live at https://trainerscodex.com.
+By night, I built a Pokémon team analyzer with a Stripe-billed Premium Pack. It's live at https://trainerscodex.com.
 
 Three counterintuitive lessons from a CEO-built side project:
 
 → Single-file architecture beats microservices for side projects. The entire frontend is ONE 1.3MB HTML file. Drop it on any web server, it works. Zero infrastructure to maintain. I deploy by dragging a file onto Cloudflare's web UI.
 
-→ Validate the niche, not the idea. Before writing one line of code, I cross-referenced what's missing across the top 10 competing tools (Pokémon Showdown, Pikalytics, Marriland, etc.). The wedge: nobody combines AI-generated trainer cards from user photos + team analysis + print-on-demand merch. So I built exactly that combination.
+→ Validate the niche, not the idea. Before writing one line of code, I cross-referenced what's missing across the top 10 competing tools (Pokémon Showdown, Pikalytics, Marriland, etc.). The wedge: nobody combines AI-generated trainer cards from user photos + team analysis + a shareable three-minute career mode. So I built exactly that combination.
 
-→ Premium gating should remove friction, not paywall essentials. The entire analyzer is free. Premium ($4.99/mo) is cosmetic — extra poster styles, animated sprites, premium merch designs. If 99% of users never pay, they still got real value. The 1% who pay paid for convenience, not access.
+→ Premium gating should remove friction, not paywall essentials. The entire analyzer is free. Premium ($4.99/mo) is cosmetic — extra poster styles, animated sprites. If 99% of users never pay, they still got real value. The 1% who pay paid for convenience, not access.
 
 What I'd do differently:
 - Launch sequence matters more than feature count. I'm planning my hard launch around Pokémon Champions Worlds (Aug 28-30) instead of next week.
 - Build the differentiation feature (AI trainer card) BEFORE shipping the table-stakes features (team builder).
-- Pick monetization before pricing. The merch margin ($13-25/item) and the subscription ($4.99/mo) reinforce each other; premium subscribers buy 4-7x more merch.
+- Pick monetization before pricing. The subscription ($4.99/mo) is cosmetic-only, so the free tier stays the full product.
 
-Engineering specifics for those curious: React 19 + Vite + Tailwind + shadcn/ui, all inlined into a single bundle.html via a custom 50-line Node script. Cloudflare Worker for Stripe + Printful + AI generation. Supabase for cloud sync. 66 puppeteer tests.
-
-The repo is MIT-licensed: https://github.com/empirehoa/trainers-codex
+Engineering specifics for those curious: React 19 + Vite + Tailwind + shadcn/ui, all inlined into a single bundle.html via a custom 50-line Node script. Cloudflare Worker for Stripe + AI generation. Supabase for cloud sync. 66 puppeteer tests.
 ```
 
 ---
@@ -308,10 +310,9 @@ This is a side project by Jose, a Florida HOA management CEO who has been losing
 
 🎮 The site: https://trainerscodex.com
 🐦 Twitter: @trainerscodex
-📂 Code: https://github.com/empirehoa/trainers-codex (MIT)
 
 🟢 #team-feedback — share a team via URL hash, get coverage scoring feedback from other trainers
-🟢 #merch-drops — show off your printed trainer card / poster / shirt
+🟢 #poster-drops — show off your posters and Journey cards
 🟢 #premium — Premium Pack subscribers' channel
 🟢 #help — bugs, feature requests, "how do I X"
 🟢 #champions-vgc — Pokémon Champions VGC discussion (we're shipping team import before August Worlds)
@@ -325,7 +326,7 @@ House rules:
 What you can build:
 ✅ AI trainer card from your selfie (Premium)
 ✅ Posters in 12 styles, 1080×1350 Instagram-ready (6 free + 6 Premium)
-✅ Print-on-demand merch via Printful (5 designs × 12 products)
+✅ Journey Mode — seeded three-minute trainer careers with a daily run
 ✅ Cloud-synced trainer profile + saved teams
 ✅ Coverage analyzer scoring 0-100 with threat detection + counter team builder
 

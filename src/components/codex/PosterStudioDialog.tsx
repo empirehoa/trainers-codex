@@ -11,7 +11,8 @@ import type { ArtStyle } from '@/lib/constants';
 import { buildShareCode } from '@/lib/analysis';
 import { renderPoster } from '@/lib/posters';
 import { canShareFiles, shareImage } from '@/lib/share';
-import { PremiumControl, PremiumUnlockCTA } from './PremiumControl';
+import { PremiumControl } from './PremiumControl';
+import { trackCommerce } from '@/lib/commerce-analytics';
 import { cn } from '@/lib/utils';
 
 interface PosterStudioDialogProps {
@@ -38,6 +39,9 @@ export function PosterStudioDialog({
   const code = buildShareCode(members);
   const currentStyleInfo = ART_STYLES.find(s => s.id === style);
   const isLocked = currentStyleInfo?.premium && !premium;
+  useEffect(() => {
+    if (open && isLocked) trackCommerce({ event: 'paywall_shown', surface: 'poster-style' });
+  }, [open, isLocked]);
 
   const generate = useCallback(async () => {
     if (filled.length === 0) return;
@@ -128,9 +132,14 @@ export function PosterStudioDialog({
                   <Lock size={32} className="mx-auto mb-3 text-primary" />
                   <div className="font-mono text-sm text-foreground mb-1">premium style</div>
                   <div className="font-mono text-[10px] text-muted-foreground mb-4 max-w-xs mx-auto">
-                    {currentStyleInfo?.label} · unlock with premium pack ($4.99/mo) for 4 premium styles, 3D HOME sprites, and custom palettes
+                    {currentStyleInfo?.label} · premium pack unlocks the premium poster styles, 3D HOME sprites, Legend Card finishes, the daily archive and extra career saves
                   </div>
-                  <PremiumUnlockCTA onTogglePremium={onTogglePremium} />
+                  {/* The FULL control lives here (not compact): the annual term
+                      and same-browser "restore purchase" must be reachable from
+                      the one place a free user actually meets the paywall. */}
+                  <div className="max-w-xs mx-auto text-left" data-testid="poster-premium-pitch">
+                    <PremiumControl premium={premium} onTogglePremium={onTogglePremium} surface="poster-style" />
+                  </div>
                 </div>
               ) : busy ? (
                 <div className="text-center">
@@ -182,22 +191,27 @@ export function PosterStudioDialog({
                   <button
                     key={s.id}
                     onClick={() => setStyle(s.id)}
+                    // Locked styles dim the frame (dashed border), not the
+                    // copy: `opacity-60` on the whole card took the 10px
+                    // description to 2.7:1.
                     className={cn(
                       'w-full text-left rounded border p-2.5 transition',
                       isPicked ? 'border-primary' : 'border-border hover:border-primary/50',
-                      locked && 'opacity-60'
+                      locked && 'border-dashed'
                     )}
                     style={{ background: isPicked ? 'hsl(var(--primary)/0.1)' : 'transparent' }}
                   >
                     <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="font-mono text-xs font-semibold">{s.label}</span>
+                      <span className={cn('font-mono text-xs font-semibold', locked && !isPicked && 'text-muted-foreground')}>{s.label}</span>
                       {locked && <Lock size={10} className="text-primary shrink-0" />}
                       {!locked && s.premium && (
                         <span className="text-[10px] font-mono uppercase tracking-wider text-primary">PRO</span>
                       )}
                       {isPicked && !locked && <Check size={11} className="text-primary shrink-0" />}
                     </div>
-                    <div className="font-mono text-[10px] text-muted-foreground">{s.desc}</div>
+                    {/* The picked card sits on an amber tint that costs the
+                        muted token its AA margin; it reads in foreground there. */}
+                    <div className={cn('font-mono text-[10px]', isPicked ? 'text-foreground/90' : 'text-muted-foreground')}>{s.desc}</div>
                   </button>
                 );
               })}

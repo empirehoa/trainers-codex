@@ -14,10 +14,12 @@ const SUITES = [
   'test-v5-extras.mjs',
   'test-posters.mjs',
   'test-stripe-printful.mjs',
+  'test-premium-gate.mjs',
   'test-team-sprites.mjs',
   'test-showdown.mjs',
   'test-champions.mjs',
   'test-matchup.mjs',
+  'test-bundle-shape.mjs',
   'test-profiles.mjs',
   'test-merch-legal.mjs',
   'test-responsive.mjs',
@@ -29,6 +31,8 @@ const SUITES = [
   'test-favorites.mjs',
   'test-security.mjs',
   'test-seo-pages.mjs',
+  'test-a11y.mjs',
+  'test-robustness.mjs',
 ];
 
 let totalPassed = 0;

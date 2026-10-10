@@ -52,18 +52,23 @@ export function OpponentCard({ opponent, advantage }: { opponent: Opponent; adva
             </div>
           )}
         </div>
+        {/* Fixed 22px boxes with overflow hidden: when the sprite mirror is
+            unreachable the alt text renders instead, and four captions in a
+            row widened the dialog past a 390px phone (gotcha 39). The alt stays
+            for assistive tech; it just cannot take layout space. */}
         <div className="flex gap-0.5 shrink-0">
           {opponent.teamIds.slice(0, 4).map((id, i) => (
             <img key={`${id}-${i}`} src={pixelSprite(id)} alt={rosterCaption(id)}
                  title={rosterCaption(id)} width={22} height={22}
-                 className="pixelated opacity-90" loading="lazy" decoding="async" />
+                 className="pixelated opacity-90 block w-[22px] h-[22px] shrink-0 overflow-hidden"
+                 loading="lazy" decoding="async" />
           ))}
         </div>
       </div>
       <div className={cn(
         'font-mono text-[10px] mt-1',
         edge === 'advantage' ? 'text-emerald-500'
-          : edge === 'disadvantage' ? 'text-destructive' : 'text-muted-foreground',
+          : edge === 'disadvantage' ? 'text-destructive-text' : 'text-muted-foreground',
       )} data-testid="journey-opponent-edge">
         {t(`journey.opponent.${edge}`)}
       </div>

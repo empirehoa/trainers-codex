@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Swords, Gauge, Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import type { TeamMember, Pokemon } from '@/lib/types';
-import { computeMatchup } from '@/lib/matchup';
+import { computeMatchupWith } from '@/lib/matchup';
+import { calcIfLoaded, loadCalc, type CalcModule } from '@/lib/calc-loader';
 import { POKEMON_BY_ID, POKEMON_LIST, pixelSprite } from '@/lib/pokemon';
 import { TYPE_COLORS } from '@/lib/constants';
 import { TypePill } from './TypePill';
@@ -22,6 +23,16 @@ function pctColor(pct: number): string {
 export function MatchupSection({ team }: MatchupSectionProps) {
   const [opponentId, setOpponentId] = useState<number | null>(null);
   const [query, setQuery] = useState('');
+  // @smogon/calc is a lazy chunk (see lib/calc-loader.ts). Start fetching it the
+  // moment this section mounts — opening the analysis sheet is the signal — so
+  // by the time an opponent is picked it has almost always resolved.
+  const [calc, setCalc] = useState<CalcModule | null>(calcIfLoaded);
+  useEffect(() => {
+    if (calc) return;
+    let live = true;
+    loadCalc().then(mod => { if (live) setCalc(mod); });
+    return () => { live = false; };
+  }, [calc]);
 
   const members = team.filter((m): m is TeamMember => Boolean(m));
 
@@ -99,10 +110,13 @@ export function MatchupSection({ team }: MatchupSectionProps) {
           </div>
 
           {/* Per-member matchups */}
+          {!calc ? (
+            <div data-testid="matchup-loading" className="text-[10px] font-mono text-muted-foreground">// loading calc…</div>
+          ) : (
           <div className="space-y-2">
             {members.map((m, i) => {
               const p = POKEMON_BY_ID[m.id] as Pokemon | undefined;
-              const mu = computeMatchup(m, opponent.id);
+              const mu = computeMatchupWith(calc, m, opponent.id);
               return (
                 <div key={i} className="rounded border p-2" style={{ borderColor: 'hsl(var(--border))' }}>
                   <div className="flex items-center gap-2 mb-1.5">
@@ -143,6 +157,7 @@ export function MatchupSection({ team }: MatchupSectionProps) {
               );
             })}
           </div>
+          )}
         </>
       )}
     </section>

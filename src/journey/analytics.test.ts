@@ -10,7 +10,7 @@
 // project. The DDL and both queries are in docs/JOURNEY_MODE.md § Analytics.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isAnalyticsConfigured, sessionId, track } from './analytics';
+import { isAnalyticsConfigured, resolveRunSource, sessionId, track } from './analytics';
 
 const SUPABASE_URL = 'https://example.supabase.co';
 const ANON = 'anon-key-123';
@@ -215,5 +215,32 @@ describe('failure isolation — analytics must never break the sim', () => {
     installFetch(() => new Promise(() => { /* never settles */ }));
     const result = track({ event: 'builder_handoff', score: 1, verdict: 'v', seed: 1 });
     expect(result).toBeUndefined();
+  });
+});
+
+describe('resolveRunSource — attributing the reference-page funnel', () => {
+  it("reports 'seo' for a fresh run when the tab entered through ?q=", () => {
+    expect(resolveRunSource('fresh', 'seo')).toBe('seo');
+  });
+
+  it("keeps 'fresh' when the tab was opened directly", () => {
+    expect(resolveRunSource('fresh', null)).toBe('fresh');
+    expect(resolveRunSource('fresh', '')).toBe('fresh');
+    expect(resolveRunSource('fresh', 'garbage')).toBe('fresh');
+  });
+
+  it('never overrides a source that already names its own funnel', () => {
+    expect(resolveRunSource('daily', 'seo')).toBe('daily');
+    expect(resolveRunSource('seed-link', 'seo')).toBe('seed-link');
+    expect(resolveRunSource('seo', 'seo')).toBe('seo');
+  });
+
+  it("puts 'seo' on the wire as props.source of run_started", () => {
+    configure({ supabase: { url: SUPABASE_URL, anonKey: ANON } });
+    const fx = installFetch();
+    track({ event: 'run_started', pace: 'normal', archetype: 'balance', source: resolveRunSource('fresh', 'seo'), seed: 8843 });
+    const [row] = fx.bodies();
+    expect(row.event).toBe('run_started');
+    expect(row.props.source).toBe('seo');
   });
 });

@@ -22,9 +22,13 @@
 
 import { TYPE_COLORS } from '@/lib/constants';
 import { spriteUrl, POKEMON_BY_ID } from '@/lib/pokemon';
+import {
+  SPRITE_TIMEOUT_MS, fallbackSilhouette, fitText, loadImg, roundRect, silhouetteFrom,
+} from '@/lib/silhouette';
 import { monEpithet, rosterCaption } from './content';
 import { displayLink } from './deeplink';
 import { resolveRank, rosterRarity } from './ranks';
+import { mulberry32 } from './prng';
 import type { JourneyRun } from './types';
 import type { Locale, Vars } from '@/i18n/strings';
 import { translate } from '@/i18n/strings';
@@ -40,6 +44,22 @@ export const PRINT_SCALE = {
   apparel: 3600 / W,
 } as const;
 
+/**
+ * Card finishes. `classic` is the free look; the other three are Premium
+ * cosmetics (see docs/JOURNEY_MODE.md § Premium). Cosmetic is the operative
+ * word: a finish changes pixels, never data — the score, verdict, QR link and
+ * roster are identical on every finish, so a premium card is prettier, not
+ * better, and the shared artifact stays honest.
+ */
+export type LegendFinish = 'classic' | 'holo-foil' | 'gold-leaf' | 'retro-crt';
+
+export const LEGEND_FINISHES: { id: LegendFinish; premium: boolean }[] = [
+  { id: 'classic', premium: false },
+  { id: 'holo-foil', premium: true },
+  { id: 'gold-leaf', premium: true },
+  { id: 'retro-crt', premium: true },
+];
+
 export interface LegendCardOptions {
   run: JourneyRun;
   locale: Locale;
@@ -49,51 +69,20 @@ export interface LegendCardOptions {
   origin?: string;
   /** Transparent background — required for apparel prints. */
   transparent?: boolean;
+  /** Card finish. Defaults to 'classic'. Premium gating happens at the UI. */
+  finish?: LegendFinish;
 }
 
 // ============================================================
 // CANVAS PRIMITIVES
 // ============================================================
+//
+// The silhouette pipeline (bounded sprite load → alpha-mask recolour →
+// type-coloured fallback glyph) lives in src/lib/silhouette.ts so the merch
+// renderers print under the same rule. Re-exported here for card-video.ts and
+// any caller that grew up importing them from the card.
 
-/**
- * How long to wait for one sprite before giving up on it.
- *
- * A bare image load has no timeout: `onerror` fires for a refused or 404'd
- * request, but a request that merely HANGS — captive portal, dead proxy,
- * throttled mobile connection, the sprite mirror rate-limiting — never settles
- * either way. Without this bound the whole card render awaits forever and the
- * user watches a spinner instead of getting their result. The sprites are
- * decorative input to a silhouette mask, so timing one out costs a fallback
- * shape and nothing else.
- */
-export const SPRITE_TIMEOUT_MS = 4000;
-
-export function loadImg(src: string, timeoutMs = SPRITE_TIMEOUT_MS): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      // Cancel the in-flight fetch so a hung request can't keep the
-      // connection (or the decode) alive behind us.
-      img.src = '';
-      rej(new Error('img timeout: ' + src));
-    }, timeoutMs);
-
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      fn();
-    };
-
-    img.crossOrigin = 'anonymous';
-    img.onload = () => finish(() => res(img));
-    img.onerror = () => finish(() => rej(new Error('img failed: ' + src)));
-    img.src = src;
-  });
-}
+export { SPRITE_TIMEOUT_MS, fallbackSilhouette, fitText, loadImg, roundRect, silhouetteFrom };
 
 function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((res, rej) => {
@@ -101,104 +90,12 @@ function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   });
 }
 
-/**
- * Rounded rect with a capability guard.
- *
- * Per CLAUDE.md gotcha #9 this tests `typeof (c as {...}).roundRect` rather
- * than `'roundRect' in c` — the latter narrows the else branch to `never` and
- * TypeScript then rejects the fallback path.
- */
-export function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  if (typeof (c as { roundRect?: unknown }).roundRect === 'function') {
-    c.beginPath();
-    (c as CanvasRenderingContext2D & { roundRect(x: number, y: number, w: number, h: number, r: number): void })
-      .roundRect(x, y, w, h, r);
-    return;
-  }
-  c.beginPath();
-  c.moveTo(x + r, y);
-  c.arcTo(x + w, y, x + w, y + h, r);
-  c.arcTo(x + w, y + h, x, y + h, r);
-  c.arcTo(x, y + h, x, y, r);
-  c.arcTo(x, y, x + w, y, r);
-  c.closePath();
-}
-
-/**
- * Reduce an image to a solid silhouette in `color`.
- *
- * Uses `source-in` compositing against the image's own alpha, so only the
- * shape survives — no source colour, no interior detail.
- */
-export function silhouetteFrom(
-  img: HTMLImageElement,
-  size: number,
-  color: string,
-  accent: string,
-): HTMLCanvasElement {
-  const off = document.createElement('canvas');
-  off.width = size;
-  off.height = size;
-  const oc = off.getContext('2d');
-  if (!oc) return off;
-
-  oc.imageSmoothingEnabled = true;
-  oc.drawImage(img, 0, 0, size, size);
-
-  // Keep the alpha, replace everything else with a type-derived gradient.
-  oc.globalCompositeOperation = 'source-in';
-  const grad = oc.createLinearGradient(0, 0, size, size);
-  grad.addColorStop(0, accent);
-  grad.addColorStop(1, color);
-  oc.fillStyle = grad;
-  oc.fillRect(0, 0, size, size);
-  oc.globalCompositeOperation = 'source-over';
-
-  return off;
-}
-
-/** Placeholder used when a sprite can't be fetched (offline, rate-limited). */
-export function fallbackSilhouette(size: number, color: string, accent: string): HTMLCanvasElement {
-  const off = document.createElement('canvas');
-  off.width = size;
-  off.height = size;
-  const oc = off.getContext('2d');
-  if (!oc) return off;
-  const grad = oc.createLinearGradient(0, 0, size, size);
-  grad.addColorStop(0, accent);
-  grad.addColorStop(1, color);
-  oc.fillStyle = grad;
-  // A neutral capsule — reads as "a member was here" without pretending to be
-  // a specific creature.
-  const pad = size * 0.18;
-  roundRect(oc, pad, pad, size - pad * 2, size - pad * 2, size * 0.28);
-  oc.fill();
-  return off;
-}
-
-export function fitText(
-  c: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-  startPx: number,
-  font: (px: number) => string,
-  minPx = 18,
-): number {
-  let px = startPx;
-  c.font = font(px);
-  while (c.measureText(text).width > maxWidth && px > minPx) {
-    px -= 2;
-    c.font = font(px);
-  }
-  return px;
-}
-
 // ============================================================
 // THE CARD
 // ============================================================
 
 export async function renderLegendCard(opts: LegendCardOptions): Promise<Blob> {
-  const { run, locale, scale = 1, origin, transparent = false } = opts;
+  const { run, locale, scale = 1, origin, transparent = false, finish = 'classic' } = opts;
   const t = (key: string, vars?: Vars) => translate(key, locale, vars);
 
   const canvas = document.createElement('canvas');
@@ -513,6 +410,9 @@ export async function renderLegendCard(opts: LegendCardOptions): Promise<Blob> {
   c.font = '11px "JetBrains Mono", monospace';
   c.fillText(t('journey.card.disclaimer'), W / 2, footY + 56);
 
+  // ---------- finish overlay (premium cosmetics) ----------
+  applyFinish(c, finish, run.setup.seed);
+
   return toBlob(canvas);
 }
 
@@ -553,6 +453,96 @@ function wrapCentered(
   }
 
   lines.forEach((l, i) => c.fillText(l, cx, y + i * lineHeight));
+}
+
+/**
+ * Apply a finish overlay on the completed card.
+ *
+ * Deterministic on the run's seed (sparkle positions come from mulberry32,
+ * never Math.random) so the same career renders the same card byte-for-byte —
+ * the replay contract extends to the artwork.
+ */
+function applyFinish(c: CanvasRenderingContext2D, finish: LegendFinish, seed: number): void {
+  if (finish === 'classic') return;
+
+  if (finish === 'holo-foil') {
+    // Diagonal spectral sweep, the TCG holo look. Screen blend keeps the
+    // underlying ink legible; two passes give the band a hot core.
+    c.save();
+    c.globalCompositeOperation = 'screen';
+    const sweep = c.createLinearGradient(0, H, W, 0);
+    const stops: [number, string][] = [
+      [0.00, 'rgba(255,64,128,0)'], [0.18, 'rgba(255,64,128,0.16)'],
+      [0.34, 'rgba(64,160,255,0.18)'], [0.50, 'rgba(64,255,196,0.20)'],
+      [0.66, 'rgba(255,224,64,0.18)'], [0.82, 'rgba(196,64,255,0.16)'],
+      [1.00, 'rgba(196,64,255,0)'],
+    ];
+    for (const [at, color] of stops) sweep.addColorStop(at, color);
+    c.fillStyle = sweep;
+    c.fillRect(0, 0, W, H);
+
+    // Seeded sparkle field.
+    const rng = mulberry32(seed ^ 0x51ab);
+    c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 90; i++) {
+      const x = rng() * W;
+      const y = rng() * H;
+      const r = 0.6 + rng() * 1.8;
+      c.fillStyle = `rgba(255,255,255,${0.10 + rng() * 0.22})`;
+      c.beginPath();
+      c.arc(x, y, r, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+    return;
+  }
+
+  if (finish === 'gold-leaf') {
+    c.save();
+    // Warm wash + a heavy gilded frame inside the standard one.
+    c.globalCompositeOperation = 'overlay';
+    c.fillStyle = 'rgba(244,174,60,0.10)';
+    c.fillRect(0, 0, W, H);
+    c.globalCompositeOperation = 'source-over';
+    const gold = c.createLinearGradient(0, 0, W, H);
+    gold.addColorStop(0, 'rgba(255,214,120,0.95)');
+    gold.addColorStop(0.5, 'rgba(214,164,60,0.95)');
+    gold.addColorStop(1, 'rgba(255,232,160,0.95)');
+    c.strokeStyle = gold;
+    c.lineWidth = 6;
+    roundRect(c, 40, 40, W - 80, H - 80, 14);
+    c.stroke();
+    c.lineWidth = 1.5;
+    roundRect(c, 52, 52, W - 104, H - 104, 10);
+    c.stroke();
+    // Corner leaf dots — seeded jitter so each career's leaf lies differently.
+    const rng = mulberry32(seed ^ 0x60fd);
+    for (const [cx, cy] of [[40, 40], [W - 40, 40], [40, H - 40], [W - 40, H - 40]] as const) {
+      for (let i = 0; i < 7; i++) {
+        c.fillStyle = `rgba(255,220,140,${0.35 + rng() * 0.4})`;
+        c.beginPath();
+        c.arc(cx + (rng() - 0.5) * 34, cy + (rng() - 0.5) * 34, 1 + rng() * 2.2, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    c.restore();
+    return;
+  }
+
+  // retro-crt: heavier scanlines, phosphor tint, edge bloom.
+  c.save();
+  c.fillStyle = 'rgba(0,0,0,0.16)';
+  for (let y = 0; y < H; y += 4) c.fillRect(0, y, W, 2);
+  c.globalCompositeOperation = 'overlay';
+  c.fillStyle = 'rgba(80,255,160,0.10)';
+  c.fillRect(0, 0, W, H);
+  c.globalCompositeOperation = 'screen';
+  const glow = c.createRadialGradient(W / 2, H / 2, W * 0.2, W / 2, H / 2, W * 0.75);
+  glow.addColorStop(0, 'rgba(120,255,190,0.05)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = glow;
+  c.fillRect(0, 0, W, H);
+  c.restore();
 }
 
 /**

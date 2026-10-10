@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import type { Pokemon, SavedTeam, TeamMember } from '@/lib/types';
+import type { Pokemon, SavedTeam } from '@/lib/types';
 import { TYPE_COLORS } from '@/lib/constants';
 import { pixelSprite } from '@/lib/pokemon';
-import { genId } from '@/lib/storage';
+import { genId, sanitizeName, sanitizeTeam } from '@/lib/storage';
 
 interface LibraryDialogProps {
   open: boolean;
@@ -54,30 +54,14 @@ export function LibraryDialog({
       const parsed = JSON.parse(importVal);
       const teams = parsed.teams || parsed;
       if (!Array.isArray(teams)) throw new Error('not an array');
+      // sanitizeTeam is the storage boundary's shape check; an import is the
+      // same untrusted input arriving through a textarea instead of disk. Each
+      // team gets a fresh id so an imported file can't collide with (or
+      // overwrite) an existing entry.
       const cleaned: SavedTeam[] = (teams as unknown[])
-        .filter((t): t is { name?: string; ids?: unknown[]; members?: unknown[]; createdAt?: number } => {
-          if (typeof t !== 'object' || t === null) return false;
-          return 'ids' in t || 'members' in t;
-        })
-        .map(t => {
-          let members: (TeamMember | null)[];
-          if (Array.isArray(t.members)) {
-            members = (t.members as (TeamMember | null)[]).slice(0, 6);
-          } else if (Array.isArray(t.ids)) {
-            members = (t.ids as (number | null)[]).slice(0, 6).map(id =>
-              id ? { id, shiny: false } : null
-            );
-          } else {
-            members = [];
-          }
-          while (members.length < 6) members.push(null);
-          return {
-            id: genId(),
-            name: t.name || 'Imported',
-            members,
-            createdAt: t.createdAt || Date.now(),
-          };
-        });
+        .filter((t): t is Record<string, unknown> => typeof t === 'object' && t !== null && ('ids' in t || 'members' in t))
+        .map(t => sanitizeTeam({ ...t, id: genId(), name: sanitizeName(t.name) || 'Imported' }))
+        .filter((t): t is SavedTeam => t !== null);
       if (cleaned.length === 0) throw new Error('no valid teams in JSON');
       onImport(cleaned);
       setImportVal(''); setImportOpen(false);

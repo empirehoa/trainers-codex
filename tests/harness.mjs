@@ -79,6 +79,25 @@ async function getBrowser() {
  *                                  exercised without a server.
  * @param {{width:number,height:number}} [opts.viewport] Viewport override, for
  *                                  the 360px mobile-layout assertions.
+ * @param {object} [opts.config]    window.TRAINERS_CODEX_CONFIG to install
+ *                                  BEFORE the bundle runs (evaluateOnNewDocument),
+ *                                  e.g. `{ worker: { url: 'https://api.example.test' } }`
+ *                                  — the only way to exercise boot-time code
+ *                                  paths (license bootstrap, unlock gating) as a
+ *                                  Worker-backed deploy. Setting the global after
+ *                                  boot only reaches render-time reads.
+ * @param {Record<string,string>} [opts.storage] localStorage entries seeded
+ *                                  before boot (saves, flags, licenses).
+ * @param {(req: import('puppeteer').HTTPRequest) => boolean} [opts.onRequest]
+ *                                  Runs before the default network block for
+ *                                  every request. Return true after calling
+ *                                  `req.respond(...)` / `req.continue()` to
+ *                                  take the request over; anything else falls
+ *                                  through to the block. This is how a test
+ *                                  observes a cross-origin POST body: the
+ *                                  browser sends a CORS preflight first, and a
+ *                                  blocked preflight means the POST never
+ *                                  leaves the page.
  * @param {number} [opts.timezone]  Unused placeholder kept out on purpose —
  *                                  timezone shifts are emulated per-test via
  *                                  page.emulateTimezone.
@@ -99,6 +118,7 @@ export async function newPage(opts = {}) {
   });
   await page.setRequestInterception(true);
   page.on('request', (req) => {
+    if (opts.onRequest && opts.onRequest(req)) return;
     const url = req.url();
     if (url.startsWith('file://') || url.startsWith('data:') || url.startsWith('blob:')) {
       req.continue();
@@ -107,7 +127,14 @@ export async function newPage(opts = {}) {
     }
   });
 
-const url = opts.query ? `${BUNDLE_URL}?${opts.query}` : BUNDLE_URL;
+  if (opts.config || opts.storage) {
+    await page.evaluateOnNewDocument((config, storage) => {
+      if (config) window.TRAINERS_CODEX_CONFIG = config;
+      for (const [k, v] of Object.entries(storage || {})) localStorage.setItem(k, v);
+    }, opts.config ?? null, opts.storage ?? null);
+  }
+
+  const url = opts.query ? `${BUNDLE_URL}?${opts.query}` : BUNDLE_URL;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   // The inlined bundle is ~1.7MB of JS; under CPU contention (the full runner
   // launches a fresh context per test across 15 suites) the React mount can

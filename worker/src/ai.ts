@@ -21,12 +21,21 @@
 import type { Env } from './index';
 import { jsonOk, jsonError } from './index';
 import { verifyLicense } from './jwt';
+import { isSessionRevoked } from './revocation';
 import { sanitizeStylePrompt } from './sanitize';
 import { consumeCredit, refundCredit } from './credit-store';
+import { guardMultipart, normalizeImageBlob } from './body';
 export { sanitizeStylePrompt, type SanitizedPrompt } from './sanitize';
 
 const FAL_API_BASE = 'https://fal.run/fal-ai';
 const PREMIUM_MONTHLY_QUOTA = 5;
+// /ai/codex-card legitimately carries two 8 MB parts; the other AI routes use
+// the shared 13 MiB ceiling.
+const CODEX_CARD_MAX_BYTES = 17 * 1024 * 1024;
+
+function multipartError(req: Request, env: AIEnv, guard: { ok: false; status: 400 | 413; code: string; maxBytes?: number }): Response {
+  return jsonError(req, env, guard.status, guard.code, guard.status === 413 ? { max_bytes: guard.maxBytes } : undefined);
+}
 
 interface AIEnv extends Env {
   FAL_API_KEY?: string;
@@ -71,20 +80,25 @@ export async function aiTrainerCard(req: Request, env: AIEnv): Promise<Response>
   const license = await requireAIEntitlement(req, env);
   if (!license.ok) return license.response;
 
+  const guard = guardMultipart(req);
+  if (!guard.ok) return multipartError(req, env, guard);
+
   const form = await req.formData();
-  const photo = form.get('photo');
+  const rawPhoto = form.get('photo');
   const name = form.get('name')?.toString().slice(0, 24) || 'Trainer';
   const year = form.get('year')?.toString() || new Date().getFullYear().toString();
   const vibe = form.get('vibe')?.toString() || 'balanced';
   const starter = form.get('starter')?.toString() || 'fire';
   const style = form.get('style')?.toString() || 'anime';
 
-  if (!photo || typeof photo === 'string') {
+  if (!rawPhoto || typeof rawPhoto === 'string') {
     return jsonError(req, env, 400, 'photo_required');
   }
-  if (photo.size > 8 * 1024 * 1024) {
+  if (rawPhoto.size > 8 * 1024 * 1024) {
     return jsonError(req, env, 413, 'photo_too_large', { max_mb: 8 });
   }
+  const photo = await normalizeImageBlob(rawPhoto);
+  if (!photo) return jsonError(req, env, 400, 'bad_image');
 
   const mod = await moderateUpload(req, env, photo);
   if (!mod.ok) return mod.response;
@@ -94,7 +108,8 @@ export async function aiTrainerCard(req: Request, env: AIEnv): Promise<Response>
   // burn one of the user's 5 monthly premium credits.
   const quota = await consumeEntitlement(env, license, 'trainer-card');
   if (!quota.ok) {
-    const status = quota.errorCode === 'no_credits' ? 402 : 429;
+    const status = quota.errorCode === 'no_credits' ? 402
+      : quota.errorCode === 'quota_unavailable' ? 503 : 429;
     return jsonError(req, env, status, quota.errorCode || 'quota_exhausted', {
       remaining: quota.remaining,
       resetAt: quota.resetAt,
@@ -149,19 +164,27 @@ export async function aiTeamArt(req: Request, env: AIEnv): Promise<Response> {
   const license = await requireAIEntitlement(req, env);
   if (!license.ok) return license.response;
 
+  const guard = guardMultipart(req);
+  if (!guard.ok) return multipartError(req, env, guard);
+
   const form = await req.formData();
-  const photo = form.get('photo');
+  const rawPhoto = form.get('photo');
   const style = form.get('style')?.toString() || 'hyperreal-3d';
   const teamRaw = form.get('team')?.toString() || '[]';
   let team: string[] = [];
-  try { team = JSON.parse(teamRaw); } catch { /* malformed client field — treat as an empty team */ }
+  try {
+    const parsed: unknown = JSON.parse(teamRaw);
+    if (Array.isArray(parsed)) team = parsed.filter((t): t is string => typeof t === 'string');
+  } catch { /* malformed client field — treat as an empty team */ }
 
-  if (!photo || typeof photo === 'string') {
+  if (!rawPhoto || typeof rawPhoto === 'string') {
     return jsonError(req, env, 400, 'photo_required');
   }
-  if (photo.size > 8 * 1024 * 1024) {
+  if (rawPhoto.size > 8 * 1024 * 1024) {
     return jsonError(req, env, 413, 'photo_too_large', { max_mb: 8 });
   }
+  const photo = await normalizeImageBlob(rawPhoto);
+  if (!photo) return jsonError(req, env, 400, 'bad_image');
 
   const mod = await moderateUpload(req, env, photo);
   if (!mod.ok) return mod.response;
@@ -170,7 +193,8 @@ export async function aiTeamArt(req: Request, env: AIEnv): Promise<Response> {
   // aiTrainerCard) — failures upstream of this point must not consume a credit.
   const quota = await consumeEntitlement(env, license, 'team-art');
   if (!quota.ok) {
-    const status = quota.errorCode === 'no_credits' ? 402 : 429;
+    const status = quota.errorCode === 'no_credits' ? 402
+      : quota.errorCode === 'quota_unavailable' ? 503 : 429;
     return jsonError(req, env, status, quota.errorCode || 'quota_exhausted', {
       remaining: quota.remaining,
       resetAt: quota.resetAt,
@@ -223,8 +247,12 @@ export async function aiCodexCard(req: Request, env: AIEnv): Promise<Response> {
   const license = await requireAIEntitlement(req, env);
   if (!license.ok) return license.response;
 
+  // Two 8 MB parts are legitimate here (photo + style reference).
+  const guard = guardMultipart(req, CODEX_CARD_MAX_BYTES);
+  if (!guard.ok) return multipartError(req, env, guard);
+
   const form = await req.formData();
-  const photo = form.get('photo');
+  const rawPhoto = form.get('photo');
   const name = form.get('name')?.toString().slice(0, 24) || 'Trainer';
   const cardStyle = form.get('cardStyle')?.toString() || 'classic';
   const mon = form.get('mon')?.toString().slice(0, 40) || '';
@@ -232,30 +260,38 @@ export async function aiCodexCard(req: Request, env: AIEnv): Promise<Response> {
   // the reference card is a private STYLE reference only (palette/finish/mood),
   // never reproduced — enforced by prompt contract + the originality guard.
   const sanitized = sanitizeStylePrompt(form.get('prompt')?.toString());
-  const reference = form.get('reference');
-  const hasReference = !!reference && typeof reference !== 'string';
+  const rawReference = form.get('reference');
+  const hasReference = !!rawReference && typeof rawReference !== 'string';
 
-  if (!photo || typeof photo === 'string') {
+  if (!rawPhoto || typeof rawPhoto === 'string') {
     return jsonError(req, env, 400, 'photo_required');
   }
-  if (photo.size > 8 * 1024 * 1024) {
+  if (rawPhoto.size > 8 * 1024 * 1024) {
     return jsonError(req, env, 413, 'photo_too_large', { max_mb: 8 });
   }
-  if (hasReference && (reference as Blob).size > 8 * 1024 * 1024) {
+  if (hasReference && (rawReference as Blob).size > 8 * 1024 * 1024) {
     return jsonError(req, env, 413, 'reference_too_large', { max_mb: 8 });
+  }
+  const photo = await normalizeImageBlob(rawPhoto);
+  if (!photo) return jsonError(req, env, 400, 'bad_image');
+  let reference: Blob | null = null;
+  if (hasReference) {
+    reference = await normalizeImageBlob(rawReference as Blob);
+    if (!reference) return jsonError(req, env, 400, 'bad_image', { field: 'reference' });
   }
 
   const mod = await moderateUpload(req, env, photo);
   if (!mod.ok) return mod.response;
   // The reference image also reaches the model, so it must clear moderation too.
-  if (hasReference) {
-    const refMod = await moderateUpload(req, env, reference as Blob);
+  if (reference) {
+    const refMod = await moderateUpload(req, env, reference);
     if (!refMod.ok) return refMod.response;
   }
 
   const quota = await consumeEntitlement(env, license, 'codex-card');
   if (!quota.ok) {
-    const status = quota.errorCode === 'no_credits' ? 402 : 429;
+    const status = quota.errorCode === 'no_credits' ? 402
+      : quota.errorCode === 'quota_unavailable' ? 503 : 429;
     return jsonError(req, env, status, quota.errorCode || 'quota_exhausted', {
       remaining: quota.remaining,
       resetAt: quota.resetAt,
@@ -278,8 +314,8 @@ export async function aiCodexCard(req: Request, env: AIEnv): Promise<Response> {
       promptRawRemoved: sanitized.removed.join(',').slice(0, 256),
     });
     const image_urls = [photoUrl];
-    if (hasReference) {
-      const refUrl = await uploadToR2(env, reference as Blob, `codex-cards/ref-${crypto.randomUUID()}.png`, {
+    if (reference) {
+      const refUrl = await uploadToR2(env, reference, `codex-cards/ref-${crypto.randomUUID()}.png`, {
         kind: 'codex-card-reference',
         by: license.email,
       });
@@ -571,10 +607,15 @@ async function falImageEdit(env: AIEnv, opts: { image_url?: string; image_urls?:
 // R2 helpers
 // ============================================================
 
-async function uploadToR2(env: AIEnv, blob: Blob | File, key: string, meta?: Record<string, string>): Promise<string> {
+// `blob` here is always the output of normalizeImageBlob: its .type is the
+// MIME the bytes actually declare (PNG/JPEG/WebP), never the multipart header
+// the client sent. The bucket is public; storing a client-typed
+// image/svg+xml or text/html object would make the CDN serve attacker-authored
+// script (audit finding B-3).
+async function uploadToR2(env: AIEnv, blob: Blob, key: string, meta?: Record<string, string>): Promise<string> {
   const buf = await blob.arrayBuffer();
   await env.PRINTS_BUCKET.put(key, buf, {
-    httpMetadata: { contentType: blob.type || 'image/png' },
+    httpMetadata: { contentType: blob.type },
     customMetadata: meta,
   });
   const base = (env as unknown as { PRINTS_PUBLIC_BASE?: string }).PRINTS_PUBLIC_BASE
@@ -718,6 +759,11 @@ async function requireAIEntitlement(req: Request, env: AIEnv): Promise<LicenseCh
   if (claims.plan !== 'premium' && claims.plan !== 'credits') {
     return { ok: false, response: jsonError(req, env, 403, 'premium_required') };
   }
+  // A cancelled subscription's license is revoked (revocation.ts). Without
+  // this check the metered AI quota keeps flowing until the JWT expires.
+  if (claims.plan === 'premium' && await isSessionRevoked(env.AI_QUOTA_KV, claims.stripe_session)) {
+    return { ok: false, response: jsonError(req, env, 403, 'license_revoked') };
+  }
   return { ok: true, email: claims.email, sub: claims.sub, mode: claims.plan };
 }
 
@@ -729,7 +775,8 @@ async function consumeEntitlement(
 ): Promise<{ ok: boolean; remaining: number; resetAt: number; errorCode?: string }> {
   if (ent.mode === 'premium') {
     const q = await checkAndIncrementQuota(env, ent.email, kind);
-    return { ok: q.ok, remaining: q.remaining, resetAt: q.resetAt, errorCode: q.ok ? undefined : 'quota_exhausted' };
+    const errorCode = q.ok ? undefined : q.unavailable ? 'quota_unavailable' : 'quota_exhausted';
+    return { ok: q.ok, remaining: q.remaining, resetAt: q.resetAt, errorCode };
   }
   // credits
   if (!env.AI_QUOTA_KV) {
@@ -748,13 +795,20 @@ async function refundEntitlement(env: AIEnv, ent: LicenseCheck, kind: string): P
   }
 }
 
-async function checkAndIncrementQuota(env: AIEnv, email: string, kind: string): Promise<{ ok: boolean; remaining: number; resetAt: number }> {
+async function checkAndIncrementQuota(env: AIEnv, email: string, kind: string): Promise<{ ok: boolean; remaining: number; resetAt: number; unavailable?: boolean }> {
   if (!env.AI_QUOTA_KV) {
-    // Quota tracking optional — if KV not configured, allow but warn.
-    return { ok: true, remaining: PREMIUM_MONTHLY_QUOTA, resetAt: 0 };
+    // FAIL CLOSED. This used to allow unlimited premium generation when the
+    // quota store was missing — a deploy misconfiguration silently became an
+    // unmetered bill from the image provider. Credits already failed closed;
+    // premium now behaves the same, and the route surfaces a 503 so the
+    // operator sees a config problem instead of a quiet cost leak.
+    console.error('[ai] AI_QUOTA_KV missing — refusing premium generation (fail closed)');
+    return { ok: false, remaining: 0, resetAt: 0, unavailable: true };
   }
   const month = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const key = `ai:${month}:${email}:${kind}`;
+  // Lower-cased for parity with credit-store.ts balanceKey — one bucket per
+  // mailbox regardless of how Stripe cased the address.
+  const key = `ai:${month}:${email.toLowerCase()}:${kind}`;
   const raw = await env.AI_QUOTA_KV.get(key);
   const used = raw ? parseInt(raw, 10) : 0;
   if (used >= PREMIUM_MONTHLY_QUOTA) {
@@ -775,7 +829,7 @@ async function checkAndIncrementQuota(env: AIEnv, email: string, kind: string): 
 async function refundQuota(env: AIEnv, email: string, kind: string): Promise<void> {
   if (!env.AI_QUOTA_KV) return;
   const month = new Date().toISOString().slice(0, 7);
-  const key = `ai:${month}:${email}:${kind}`;
+  const key = `ai:${month}:${email.toLowerCase()}:${kind}`;
   const raw = await env.AI_QUOTA_KV.get(key);
   const used = raw ? parseInt(raw, 10) : 0;
   if (used > 0) {

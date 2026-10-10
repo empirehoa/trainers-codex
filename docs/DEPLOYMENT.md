@@ -9,6 +9,50 @@ every paste, every gotcha. Plan ~3 hours end-to-end the first time.
 > surface, no name collisions, and de-risks Stripe verification later.
 > See `docs/SECURITY.md` for the full domain audit.
 
+## Release in one command
+
+Everything below this section is the long-form runbook for the *first* deploy.
+Once the accounts exist, a release is one script run from the repo root on the
+Mac:
+
+```bash
+# once: the runtime config, kept out of git (.env.deploy is gitignored)
+cat > .env.deploy <<'ENV'
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<anon public key>
+WORKER_URL=https://trainers-codex-api.jrriestra.workers.dev
+ENV
+
+# every release
+scripts/release.sh --all                      # push → deploy → verify
+scripts/release.sh --all --bundle ~/Downloads/trainers-codex-v1.0-launch.bundle
+                                              # same, but first fast-forward onto a git bundle
+scripts/release.sh --deploy --dry-run         # print the plan, run nothing
+```
+
+`scripts/release.sh` refuses to deploy unless the tree is clean, the branch is
+`claude/monetization-v1`, `pnpm lint` has 0 errors, `bundle.html` is under the
+2,150,400-byte cap and `npx wrangler whoami` succeeds. It deploys the API
+worker first, then the site (`deploy/frontend-wrangler.toml` over
+`/tmp/tc-deploy`, staged by `scripts/inject-config.mjs`), and never prints a
+secret.
+
+`--verify` runs `scripts/smoke-live.mjs --browser` against production: the
+shell has its config and static first paint, `/pokemon/gengar/` is the static
+page, the sitemap has 1,330 URLs, `sw.js` / the manifest carry the right MIME
+types, CSP + HSTS + `X-Frame-Options` are on every route, the worker refuses
+foreign origins and keeps merch dark, an `alg:none` license is never valid,
+and `?unlock=premium` is inert in a real browser. It prints a PASS/FAIL table
+and exits non-zero on any failure; run it on its own any time with
+`node scripts/smoke-live.mjs --browser` (`SITE=` / `API=` override the
+targets; `--skip-worker`, `--skip-site` narrow it). Requests are spaced one per
+second.
+
+If a probe still shows the previous build after a deploy: Cloudflare → Caching
+→ Purge Everything, then `scripts/release.sh --verify` again.
+
+---
+
 ## Prerequisites
 
 You'll need accounts on:

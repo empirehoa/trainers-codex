@@ -19,27 +19,21 @@
 
 import type { Env } from './index';
 import { jsonOk, jsonError } from './index';
+import {
+  catalogBaseCost, catalogVariant, designLabel, merchEnabled, pfFetch, publicPrintUrl, stripTrademark,
+  GENERIC_LISTING_LABEL,
+} from './pf-catalog';
+import { guardMultipart } from './body';
+// Re-exported for existing importers.
+export {
+  BASE_COST_USD, PRINTFUL_VARIANT_MAP, pfFetch, publicPrintUrl, stripTrademark,
+} from './pf-catalog';
 
-const PRINTFUL_API = 'https://api.printful.com';
 
 // Map Trainer's Codex product IDs → Printful catalog variant IDs.
 // These come from Printful's product catalog (GET /products) and shouldn't
 // drift unless Printful retires a SKU. The mapping is intentionally explicit
 // rather than dynamic so we can fail loudly on unknowns.
-const PRINTFUL_VARIANT_MAP: Record<string, { productId: string; variantId: string }> = {
-  'tshirt-bella-3001':      { productId: '71',    variantId: '4011'  }, // Bella+Canvas 3001, white, M
-  'tshirt-gildan-64000':    { productId: '162',   variantId: '8923'  }, // Gildan 64000, white, M
-  'hoodie-gildan-18500':    { productId: '146',   variantId: '5530'  }, // Gildan 18500, black, M
-  'crewneck-gildan-18000':  { productId: '145',   variantId: '5497'  }, // Gildan 18000, black, M
-  'mug-11oz-white':         { productId: '19',    variantId: '1320'  }, // 11oz white mug
-  'mousepad-small':         { productId: '643',   variantId: '12108' }, // Gaming mouse pad
-  'mousepad-xl-desk':       { productId: '14026', variantId: '17517' }, // Desk mat 36x16
-  'sticker-die-cut':        { productId: '358',   variantId: '10162' }, // Kiss-cut sticker 4x4 (Printful native)
-  'poster-11x14':           { productId: '171',   variantId: '4304'  }, // Matte poster 11x14
-  'poster-18x24':           { productId: '173',   variantId: '4314'  }, // Matte poster 18x24
-  'tote-canvas':            { productId: '84',    variantId: '1857'  }, // Canvas tote
-  'phone-case-iphone':      { productId: '181',   variantId: '4451'  }, // iPhone snap case (15 base; user picks model in PF UI)
-};
 
 interface PrintfulFileResp {
   result: { id: number; url: string };
@@ -70,8 +64,18 @@ interface PrintfulProductResp {
  *   externalId   — our internal ID so the seller can grep their Printful catalog
  */
 export async function printfulOrder(req: Request, env: Env): Promise<Response> {
+  // Server-side kill switch (shared with /merch/checkout): this route creates
+  // a priced sync product in the OWNER's Printful store, so it is gated by the
+  // same MERCH_CHECKOUT var — a client flag flip cannot reach Printful.
+  if (!merchEnabled(env)) {
+    return jsonError(req, env, 503, 'merch_disabled');
+  }
   if (!env.PRINTFUL_API_KEY) {
     return jsonError(req, env, 503, 'printful_not_configured');
+  }
+  const guard = guardMultipart(req);
+  if (!guard.ok) {
+    return jsonError(req, env, guard.status, guard.code, guard.status === 413 ? { max_bytes: guard.maxBytes } : undefined);
   }
 
   const form = await req.formData();
@@ -88,13 +92,21 @@ export async function printfulOrder(req: Request, env: Env): Promise<Response> {
     return jsonError(req, env, 413, 'file_too_large', { max_mb: 12 });
   }
 
-  const mapping = PRINTFUL_VARIANT_MAP[productId];
-  if (!mapping) {
+  const mapping = catalogVariant(productId);
+  const baseCost = catalogBaseCost(productId);
+  if (!mapping || baseCost === undefined) {
     return jsonError(req, env, 400, 'unknown_product', { product: productId });
   }
+  const markupPct = parseInt(markup, 10);
+  if (!Number.isFinite(markupPct) || markupPct <= 0 || markupPct > 500) {
+    return jsonError(req, env, 400, 'bad_markup', { markup });
+  }
 
-  let metadata: { teamName?: string; gymName?: string; region?: string; trainer?: string } = {};
-  try { metadata = JSON.parse(metadataRaw); } catch { /* malformed client field — treat as absent metadata */ }
+  let metadata: { teamName?: unknown; gymName?: unknown; region?: unknown; trainer?: unknown } = {};
+  try {
+    const parsed: unknown = JSON.parse(metadataRaw);
+    if (typeof parsed === 'object' && parsed !== null) metadata = parsed as typeof metadata;
+  } catch { /* malformed client field — treat as absent metadata */ }
 
   // 1) Stash the PNG in R2 and surface it via a public-readable URL.
   const fileKey = `prints/${crypto.randomUUID()}.png`;
@@ -103,32 +115,26 @@ export async function printfulOrder(req: Request, env: Env): Promise<Response> {
     httpMetadata: { contentType: 'image/png' },
   });
 
-  // Public read URL from R2's bound zone. Jose will configure a public
-  // bucket subdomain like cdn.trainerscodex.com → trainerscodex-prints in
-  // Cloudflare; the env var PRINTS_PUBLIC_BASE override lives in wrangler.toml.
-  const printsBase = (env as unknown as { PRINTS_PUBLIC_BASE?: string }).PRINTS_PUBLIC_BASE
-    || 'https://cdn.trainerscodex.com';
-  const designUrl = `${printsBase}/${fileKey}`;
+  const designUrl = publicPrintUrl(env, fileKey);
 
   // 2) Upload the file reference to Printful's file library.
   const pfFile = await pfFetch<PrintfulFileResp>(env, 'POST', '/files', {
     'type': 'default',
     'url': designUrl,
-    'filename': `${productId}-${design}.png`,
+    'filename': `${productId}-${designSlug(design)}.png`,
   });
 
   // 3) Create the sync product.
   const productName = composeProductName({
     designLabel: designLabel(design),
-    teamName: metadata.teamName,
-    gymName: metadata.gymName,
-    region: metadata.region,
+    teamName: typeof metadata.teamName === 'string' ? metadata.teamName : undefined,
+    gymName: typeof metadata.gymName === 'string' ? metadata.gymName : undefined,
+    region: typeof metadata.region === 'string' ? metadata.region : undefined,
   });
-  const externalId = `tc-${productId}-${design}-${crypto.randomUUID().slice(0, 8)}`;
+  const externalId = `tc-${productId}-${designSlug(design)}-${crypto.randomUUID().slice(0, 8)}`;
 
   // Calculate retail using the markup.
-  const baseCost = BASE_COST_USD[productId];
-  const retail = (baseCost * (1 + parseInt(markup, 10) / 100)).toFixed(2);
+  const retail = (baseCost * (1 + markupPct / 100)).toFixed(2);
 
   const pfProduct = await pfFetch<PrintfulProductResp>(env, 'POST', '/sync/products', undefined, JSON.stringify({
     sync_product: {
@@ -165,76 +171,35 @@ export async function printfulOrder(req: Request, env: Env): Promise<Response> {
   });
 }
 
-async function pfFetch<T>(env: Env, method: string, path: string, qs?: Record<string, string>, body?: string): Promise<T> {
-  const headers: HeadersInit = {
-    'authorization': `Bearer ${env.PRINTFUL_API_KEY}`,
-    'x-pf-store-id': env.PRINTFUL_STORE_ID,
-  };
-  if (body) (headers as Record<string, string>)['content-type'] = 'application/json';
+/**
+ * Public read URL for an object in the prints bucket. Jose configures either a
+ * public bucket subdomain (cdn.trainerscodex.com) or the bucket's r2.dev URL;
+ * the PRINTS_PUBLIC_BASE var in wrangler.toml overrides the default. Printful
+ * fetches designs from this host — if it is not actually serving the bucket,
+ * every order dies at the file-upload step (see docs/PRINTFUL-SETUP.md).
+ */
 
-  let url = `${PRINTFUL_API}${path}`;
-  if (qs) {
-    const u = new URL(url);
-    for (const [k, v] of Object.entries(qs)) u.searchParams.set(k, v);
-    url = u.toString();
-  }
-  const resp = await fetch(url, { method, headers, body });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`printful_${resp.status}: ${text.slice(0, 200)}`);
-  }
-  return await resp.json() as T;
-}
 
-function designLabel(design: string): string {
-  const map: Record<string, string> = {
-    'crest':    'Trainer Crest',
-    'roster':   'Champion Roster',
-    'id-card':  'Trainer ID Card',
-    'banner':   'Gym Banner',
-  };
-  return map[design] || 'Trainer Codex';
+/** Design id as it may appear in a filename / external id — never echoed raw. */
+function designSlug(design: string): string {
+  const slug = design.toLowerCase().replace(/[^a-z0-9-]+/g, '').slice(0, 24);
+  return slug || 'design';
 }
 
 // Legal bright-line backstop: a public Printful listing title must never carry
-// the Pokémon trademark, even if a stale/modified client skips its own strip.
-// The client (which holds the full species list) sanitizes species names; here
-// we guarantee the trademark token is gone server-side. Mirrors
-// src/lib/merch.ts `sanitizeListingTitle`.
-const TRADEMARK_RE: RegExp[] = [
-  /\bpok[ée]mons?\b/gi,
-  /\bpok[ée]\s?balls?\b/gi,
-  /\bpok[ée](?![a-z])/gi,
-];
-
-function stripTrademark(raw: string): string {
-  let out = raw;
-  for (const re of TRADEMARK_RE) out = out.replace(re, ' ');
-  return out.replace(/[·|,/]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function composeProductName(parts: { designLabel: string; teamName?: string; gymName?: string; region?: string }): string {
+// the franchise trademark, the publisher names, or a species name — even if a
+// stale/modified client skips its own strip. The worker holds the full species
+// list (species-names.ts, generated) so this no longer depends on the client.
+// A user label that is nothing BUT blocked terms falls back to the generic
+// label rather than vanishing, so the seller can still recognise the listing.
+export function composeProductName(parts: { designLabel: string; teamName?: string; gymName?: string; region?: string }): string {
   const fragments: string[] = [parts.designLabel];
-  const gym = parts.gymName ? stripTrademark(parts.gymName) : '';
-  const team = parts.teamName ? stripTrademark(parts.teamName) : '';
-  const region = parts.region ? stripTrademark(parts.region) : '';
-  if (gym) fragments.push(gym);
-  else if (team) fragments.push(team);
-  if (region) fragments.push(region);
+  const primary = parts.gymName || parts.teamName;
+  if (primary) fragments.push(stripTrademark(primary) || GENERIC_LISTING_LABEL);
+  if (parts.region) {
+    const region = stripTrademark(parts.region);
+    if (region) fragments.push(region);
+  }
   return fragments.join(' · ');
 }
 
-const BASE_COST_USD: Record<string, number> = {
-  'tshirt-bella-3001':      8.95,
-  'tshirt-gildan-64000':    6.50,
-  'hoodie-gildan-18500':   22.50,
-  'crewneck-gildan-18000': 18.50,
-  'mug-11oz-white':         4.50,
-  'mousepad-small':         7.95,
-  'mousepad-xl-desk':      18.00,
-  'sticker-die-cut':        1.50,
-  'poster-11x14':           4.50,
-  'poster-18x24':          11.95,
-  'tote-canvas':           12.50,
-  'phone-case-iphone':     11.95,
-};

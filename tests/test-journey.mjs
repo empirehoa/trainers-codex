@@ -305,7 +305,28 @@ const tests = [
         [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
           .filter(el => /journey-archive-\d+$/.test(el.getAttribute('data-testid'))).length);
       assertGte(rows, 1, 'archive should list at least one past issue');
-      // Playing a past issue starts a real run on that issue's seed.
+      // FREE tier: past issues are a premium surface. Clicking one must NOT
+      // start a run — the row is a visible lock (defence in depth also guards
+      // the direct call in JourneyModeDialog.playIssue).
+      await page.evaluate(() => {
+        const el = [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
+          .find(e => /journey-archive-\d+$/.test(e.getAttribute('data-testid')));
+        el.click();
+      });
+      await sleep(600);
+      assert(!(await has(page, '[data-testid="journey-decision"]')),
+        'a free user must not be able to start a past issue');
+      assert(await has(page, '[data-testid="journey-archive-paywall"]'),
+        'the archive lock must be visible to free users');
+
+      // PREMIUM: the same row plays a real run on that issue's seed. The
+      // preview-premium key is what ?unlock=premium persists.
+      await page.evaluate(() => localStorage.setItem('trainerscodex.premium', 'true'));
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await openJourney(page);
+      await page.waitForSelector('[data-testid="journey-archive-toggle"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-archive-toggle"]').click());
+      await page.waitForSelector('[data-testid="journey-archive"]', { timeout: 8000 });
       await page.evaluate(() => {
         const el = [...document.querySelectorAll('[data-testid^="journey-archive-"]')]
           .find(e => /journey-archive-\d+$/.test(e.getAttribute('data-testid')));
@@ -732,8 +753,11 @@ const tests = [
     name: 'a ?daily= link shows the daily banner and the same seed in two fresh sessions',
     ownPage: true,
     async fn() {
+      // A fixed PAST date pins the seed across sessions — which makes this an
+      // archive open, a premium surface. `unlock=premium` is the owner
+      // preview path (applyOwnerUnlock) and is exactly how QA exercises it.
       const run = async () => {
-        const page = await newPage({ query: 'daily=2026-08-26&pace=express' });
+        const page = await newPage({ query: 'daily=2026-08-26&pace=express&unlock=premium' });
         try {
           await page.waitForSelector('[data-testid="journey-daily-banner"]', { timeout: 8000 });
           await startRun(page);
@@ -746,6 +770,26 @@ const tests = [
       const b = await run();
       assertEq(b.verdict, a.verdict, 'the daily seed must be identical across sessions');
       assertEq(b.score, a.score, 'the daily score must be identical across sessions');
+    },
+  },
+
+  {
+    name: 'a past ?daily= link on the free tier falls back to a fresh setup, not a run',
+    ownPage: true,
+    async fn() {
+      const page = await newPage({ query: 'daily=2026-08-26&pace=express' });
+      try {
+        // The dialog opens on the deep link, but the past-issue gate clears
+        // the daily context: no banner, no auto-run — a clean setup instead.
+        await page.waitForSelector('[data-testid="journey-setup"]', { timeout: 8000 });
+        await sleep(400);
+        assert(!(await has(page, '[data-testid="journey-daily-banner"]')),
+          'a free user must not get a past daily banner from a deep link');
+        assert(!(await has(page, '[data-testid="journey-decision"]')),
+          'a free user must not be dropped into a past-issue run');
+      } finally {
+        await closePage(page);
+      }
     },
   },
 
@@ -929,6 +973,63 @@ const tests = [
       // A couple of pixels of rounding slack; anything more is a real overflow.
       assert(overflow.docScroll <= overflow.docClient + 2,
         `horizontal overflow at 360px: scrollWidth ${overflow.docScroll} vs clientWidth ${overflow.docClient}`);
+    },
+  },
+
+  {
+    // Sprites are blocked here, so the opponent's four 22px <img>s render their
+    // alt text — which used to widen the dialog to 400px on a 388px box. Same
+    // measurement as the card screen (gotcha 39), on the decision screen.
+    name: 'the decision screen fits its dialog at 390px even with sprite alt text showing',
+    pageOpts: { viewport: { width: 390, height: 844 }, query: 'seed=8843' },
+    async fn(page) {
+      await page.evaluate(() => document.querySelector('[data-testid="journey-open-hero"]').click());
+      await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+      await startRun(page);
+      await page.waitForSelector('[data-testid="journey-opponent"]', { timeout: 8000 });
+      await sleep(300);
+      const o = await page.evaluate(() => {
+        const d = document.querySelector('[data-testid="journey-dialog"]');
+        const imgs = [...document.querySelectorAll('[data-testid="journey-opponent"] img')].map(i => Math.round(i.getBoundingClientRect().width));
+        return { s: d.scrollWidth, c: d.clientWidth, imgs };
+      });
+      assert(o.s <= o.c + 1, `decision screen overflows its dialog sideways: scrollWidth ${o.s} vs clientWidth ${o.c}`);
+      for (const w of o.imgs) assert(w <= 22, `an opponent sprite box grew to ${w}px`);
+    },
+  },
+
+  {
+    // The gym-badge numerals on the route map were 7 SVG user units — ≈7.8px
+    // rendered on a phone, the only text in the app under the 10px floor. SVG
+    // text is measured at its RENDERED size (font-size × viewport/viewBox).
+    name: 'the retired screen has no text below the 10px floor, route map included',
+    pageOpts: { viewport: { width: 390, height: 844 }, query: 'seed=8843' },
+    async fn(page) {
+      await page.evaluate(() => document.querySelector('[data-testid="journey-open-hero"]').click());
+      await page.waitForSelector('[data-testid="journey-dialog"]', { timeout: 8000 });
+      await page.evaluate(() => document.querySelector('[data-testid="journey-pace-express"]').click());
+      await sleep(80);
+      await startRun(page);
+      await playToEnd(page);
+      await page.waitForSelector('[data-testid^="journey-map-node-"]', { timeout: 8000 });
+      const tiny = await page.evaluate(() => {
+        const out = [];
+        for (const el of document.querySelectorAll('[data-testid="journey-dialog"] *')) {
+          if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+          const cs = getComputedStyle(el);
+          if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+          let px = parseFloat(cs.fontSize);
+          if (el instanceof SVGElement && el.ownerSVGElement) {
+            const svg = el.ownerSVGElement;
+            px = px * svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+          }
+          if (px < 10) out.push(`${el.tagName}@${px.toFixed(1)}px "${el.textContent.trim().slice(0, 12)}"`);
+        }
+        return out;
+      });
+      const nodes = await page.evaluate(() => document.querySelectorAll('[data-testid="journey-dialog"] svg text').length);
+      assertGte(nodes, 1, 'the route map rendered no labels — nothing was measured');
+      assert(tiny.length === 0, `text below 10px on the retired screen: ${[...new Set(tiny)].join(', ')}`);
     },
   },
 

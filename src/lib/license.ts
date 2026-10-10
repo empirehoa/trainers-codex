@@ -18,6 +18,7 @@
 // without a paid worker.
 
 import type { Pokemon } from './types';
+import { trackCommerce } from './commerce-analytics';
 
 export type LicensePlan = 'premium' | 'credits';
 
@@ -45,6 +46,11 @@ export const PREVIEW_PREMIUM_KEY = 'trainerscodex.premium';
 // email-bucket to spend against.
 export const CREDITS_TOKEN_KEY = 'trainerscodex.credits';
 export const CREDITS_BALANCE_KEY = 'trainerscodex.credits.balance';
+// When the stored license last passed a server-side re-verification. The
+// client re-checks weekly so a cancelled subscription (revoked server-side,
+// see worker/src/revocation.ts) loses premium within days, not at JWT expiry.
+export const LICENSE_CHECKED_KEY = 'trainerscodex.license.checkedAt';
+const REVERIFY_INTERVAL_MS = 7 * 24 * 3600 * 1000;
 
 function getWorkerUrl(): string | null {
   const cfg = typeof window !== 'undefined' ? window.TRAINERS_CODEX_CONFIG : undefined;
@@ -279,6 +285,7 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
       const { token, balance } = await resp.json() as { token: string; balance: number };
       const claims = storeCreditsToken(token);
       if (typeof balance === 'number') setCachedCreditBalance(balance);
+      if (claims) trackCommerce({ event: 'credits_purchased', balance: balance ?? 0 });
       cleanReturnUrl();
       return claims;
     }
@@ -297,6 +304,12 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
     }
     const { license } = await resp.json() as { license: string };
     const claims = storeLicense(license);
+    if (claims) {
+      // >90 days of TTL can only be the annual plan (monthly mints 31d).
+      const days = (claims.exp - claims.iat) / 86400;
+      trackCommerce({ event: 'purchase_completed', plan: 'premium', term: days > 90 ? 'annual' : 'monthly' });
+      try { localStorage.setItem(LICENSE_CHECKED_KEY, String(Date.now())); } catch { /* best effort */ }
+    }
     cleanReturnUrl();
     return claims;
   } catch (e) {
@@ -311,8 +324,20 @@ export async function bootstrapFromCheckoutReturn(): Promise<LicenseClaims | nul
  * the worker (the client-side decode only checks shape + expiry).
  */
 export async function verifyServerSide(jwt: string): Promise<boolean> {
+  return (await verifyServerSideDetailed(jwt)) !== 'invalid';
+}
+
+/**
+ * Tri-state server verification. The distinction matters for revocation:
+ * 'invalid' means the Worker examined the token and rejected it (bad
+ * signature, expired, or REVOKED after a cancelled subscription) — the client
+ * must clear it. 'unreachable' means we simply couldn't ask (offline, worker
+ * down) — the client must NOT punish the user for our availability, so the
+ * stored license stands until a definitive answer arrives.
+ */
+export async function verifyServerSideDetailed(jwt: string): Promise<'valid' | 'invalid' | 'unreachable'> {
   const workerUrl = getWorkerUrl();
-  if (!workerUrl) return isLicenseValid(decodeLicense(jwt));
+  if (!workerUrl) return isLicenseValid(decodeLicense(jwt)) ? 'valid' : 'invalid';
 
   try {
     const resp = await fetch(`${workerUrl}/license/verify`, {
@@ -320,31 +345,67 @@ export async function verifyServerSide(jwt: string): Promise<boolean> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jwt }),
     });
-    if (!resp.ok) return false;
+    // Only a 200 with an explicit verdict is a verdict. 5xx/429 are the
+    // worker's problem, not the license's.
+    if (!resp.ok) return 'unreachable';
     const { valid } = await resp.json() as { valid: boolean };
-    return valid;
+    return valid ? 'valid' : 'invalid';
   } catch {
-    return false;
+    return 'unreachable';
   }
 }
 
 /**
- * Owner/dev quick-unlock. Reads a `unlock=` directive from either the query
- * string (`?unlock=premium`) or the hash (`#unlock=premium`) and flips the
- * local preview-premium flag accordingly — independent of whether a Stripe
- * Worker is configured. This lets the owner exercise every premium-gated
- * surface (poster styles, merch designs, HOME sprites) without a purchase, and
- * `unlock=off` locks back down to compare the free experience.
+ * Weekly license re-verification, called once on boot when a stored license
+ * exists. Returns 'revoked' when the license was definitively rejected (the
+ * caller flips premium off and clears storage), 'ok' otherwise.
+ *
+ * Cadence, not every boot: the offline single-file bundle is a headline
+ * feature and a boot-blocking network check would break it; weekly keeps the
+ * revocation tail short (a cancelled annual is out within 7 days instead of
+ * 366) at zero cost to the offline path.
+ */
+export async function maybeReverifyLicense(jwt: string): Promise<'ok' | 'revoked'> {
+  let last = 0;
+  try { last = parseInt(localStorage.getItem(LICENSE_CHECKED_KEY) || '0', 10) || 0; } catch { /* unreadable → recheck */ }
+  if (Date.now() - last < REVERIFY_INTERVAL_MS) return 'ok';
+
+  const verdict = await verifyServerSideDetailed(jwt);
+  if (verdict === 'valid') {
+    try { localStorage.setItem(LICENSE_CHECKED_KEY, String(Date.now())); } catch { /* best effort */ }
+    return 'ok';
+  }
+  if (verdict === 'invalid') {
+    clearLicense();
+    trackCommerce({ event: 'license_revoked' });
+    return 'revoked';
+  }
+  // 'unreachable' — leave the license and the timestamp alone; we'll ask again
+  // next boot until we get a real answer.
+  return 'ok';
+}
+
+/**
+ * Preview unlock for the NO-WORKER build only. Reads a `unlock=` directive
+ * from either the query string (`?unlock=premium`) or the hash
+ * (`#unlock=premium`) and flips the local preview-premium flag accordingly, so
+ * the static/offline bundle (no Stripe, no Worker) can still demo every
+ * premium-gated surface; `unlock=off` locks back down to compare the free
+ * experience. The browser test suite drives the gating UI through this path.
+ *
+ * On a Worker-backed deploy the directive is INERT: the only premium
+ * entitlement in production is a verified license. `?unlock=premium` shipped
+ * live as a one-line shareable bypass (audit A-1/C-4) — so when a worker is
+ * configured the param is stripped silently, nothing is toasted, and any
+ * preview flag left in storage is cleared on boot.
  *
  * Returns 'unlocked' | 'locked' when a directive was applied (so the caller can
- * toast + flip React state), or null when no directive was present. The token
- * is stripped from the URL either way so a refresh doesn't re-trigger it.
- *
- * This is a deliberate soft backdoor for pre-launch testing. It only grants the
- * *client-side* preview flag — it cannot mint a server-signed license, so it
- * never unlocks Worker-gated AI generation (that still needs real credits).
+ * toast + flip React state), or null when none was present or the deploy has a
+ * worker. The token is stripped from the URL either way so a refresh doesn't
+ * re-trigger it.
  */
 export function hasOwnerUnlock(): boolean {
+  if (isWorkerConfigured()) return false;
   try { return localStorage.getItem(PREVIEW_PREMIUM_KEY) === 'true'; } catch { return false; }
 }
 
@@ -354,7 +415,6 @@ export function applyOwnerUnlock(): 'unlocked' | 'locked' | null {
     const hash = window.location.hash || '';
     const hashMatch = hash.match(/(?:^#|[#&])unlock=([a-z0-9]+)/i);
     const directive = (search.get('unlock') || hashMatch?.[1] || '').toLowerCase();
-    if (!directive) return null;
 
     const strip = () => {
       search.delete('unlock');
@@ -364,6 +424,14 @@ export function applyOwnerUnlock(): 'unlocked' | 'locked' | null {
       const url = window.location.pathname + (qs ? `?${qs}` : '') + (newHash && newHash !== '#' ? newHash : '');
       window.history.replaceState(null, '', url);
     };
+
+    if (isWorkerConfigured()) {
+      // Production: a stale preview flag is not an entitlement either.
+      try { localStorage.removeItem(PREVIEW_PREMIUM_KEY); } catch { /* ignore */ }
+      if (directive) strip();
+      return null;
+    }
+    if (!directive) return null;
 
     if (directive === 'off' || directive === 'lock' || directive === 'free') {
       try {
@@ -426,4 +494,99 @@ export async function submitPrintfulOrder(opts: {
     throw new Error(`Printful order failed (${resp.status}): ${text.slice(0, 200)}`);
   }
   return await resp.json() as PrintfulOrderResult;
+}
+
+/**
+ * BUYER merch checkout (POST /merch/checkout): uploads the print PNG, has the
+ * Worker price the product server-side, and navigates to the returned
+ * Stripe-hosted Checkout page (payment mode, shipping collected there).
+ *
+ * `expectedRetail` is the price the buyer was shown — the Worker refuses with
+ * 409 `price_mismatch` when it drifts from the authoritative computation, so a
+ * stale or tampered client can never silently mischarge.
+ *
+ * Behind the MERCH_CHECKOUT feature flag (default off) — see worker/src/merch.ts
+ * for the full pipeline (R2 staging → Stripe → webhook → Printful DRAFT order).
+ */
+export async function startMerchCheckout(opts: {
+  productId: string;
+  design: string;
+  markup: number;
+  expectedRetail: number;
+  metadata: { teamName?: string; gymName?: string; region?: string; trainer?: string };
+  pngBlob: Blob;
+}): Promise<void> {
+  const workerUrl = getWorkerUrl();
+  if (!workerUrl) throw new Error('checkout not configured');
+
+  const form = new FormData();
+  form.append('product', opts.productId);
+  form.append('design', opts.design);
+  form.append('markup', String(opts.markup));
+  form.append('expectedRetail', opts.expectedRetail.toFixed(2));
+  form.append('metadata', JSON.stringify(opts.metadata));
+  form.append('returnUrl', window.location.origin + window.location.pathname);
+  form.append('file', opts.pngBlob, `${opts.productId}-${opts.design}.png`);
+
+  const resp = await fetch(`${workerUrl}/merch/checkout`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  if (!resp.ok) {
+    const body = await resp.text();
+    if (resp.status === 409) {
+      // Price drifted between render and click (e.g. a deploy changed base
+      // costs). Reload picks up the new table — surface that, don't retry.
+      throw new Error('the price just changed — refresh the page and try again');
+    }
+    throw new Error(`checkout failed (${resp.status}): ${body.slice(0, 200)}`);
+  }
+  const { url } = await resp.json() as { url: string };
+  if (!url) throw new Error('checkout failed: no redirect URL');
+  window.location.assign(url);
+}
+
+/**
+ * Consume a merch-checkout return (`?merch=success|cancel`) — strips the
+ * one-time params and reports which way the buyer came back. Runs on boot,
+ * before `bootstrapFromCheckoutReturn` (which ignores merch sessions: they
+ * carry `session_id` but no `checkout`/`credits` flag).
+ */
+export function consumeMerchReturn(): 'success' | 'cancel' | null {
+  return consumeReturnFlag('merch', ['success', 'cancel']);
+}
+
+/**
+ * Consume a cancelled premium / credit-pack checkout (`?checkout=cancel`,
+ * `?credits=cancel` — the shapes the Worker sets as `cancel_url`). Stripe
+ * bounces the buyer back with the one-time params and nothing to verify; this
+ * strips them and reports which flow was abandoned so the shell can say "no
+ * charge was made". The `success` shapes are left alone for
+ * `bootstrapFromCheckoutReturn`.
+ *
+ * No commerce event fires here on purpose: `checkout_abandoned` is not in the
+ * live `commerce_events` CHECK vocabulary and a row the DB rejects is worse
+ * than none — the funnel already infers abandonment from a checkout_started
+ * without a matching purchase_completed.
+ */
+export function consumeCheckoutCancel(): 'premium' | 'credits' | null {
+  if (consumeReturnFlag('checkout', ['cancel'])) return 'premium';
+  if (consumeReturnFlag('credits', ['cancel'])) return 'credits';
+  return null;
+}
+
+function consumeReturnFlag<T extends 'success' | 'cancel'>(name: 'merch' | 'checkout' | 'credits', accept: readonly T[]): T | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const flag = params.get(name) as T | null;
+    if (!flag || !accept.includes(flag)) return null;
+    params.delete(name);
+    params.delete('session_id');
+    const cleanUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '') + window.location.hash;
+    window.history.replaceState(null, '', cleanUrl);
+    return flag;
+  } catch {
+    return null;
+  }
 }

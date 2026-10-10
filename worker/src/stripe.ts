@@ -21,8 +21,12 @@ import type { Env } from './index';
 import { jsonOk, jsonError } from './index';
 import { mintLicense } from './jwt';
 import { grantCredits } from './credit-store';
-
-const STRIPE_API_BASE = 'https://api.stripe.com/v1';
+import { recordSubscriptionSession, revokeBySubscription } from './revocation';
+import { fulfillMerchOrder } from './merch';
+import { stripeFetch, isAllowedReturnUrl, appendQuery, type StripeSession } from './stripe-client';
+import { readJsonObject } from './body';
+// Re-exported so existing importers (credits.ts, tests) keep working.
+export { stripeFetch, isAllowedReturnUrl, appendQuery, type StripeSession } from './stripe-client';
 
 interface StripeCheckoutBody {
   returnUrl?: string;
@@ -31,38 +35,6 @@ interface StripeCheckoutBody {
   term?: 'monthly' | 'annual';
 }
 
-export interface StripeSession {
-  id: string;
-  payment_status: 'paid' | 'unpaid' | 'no_payment_required';
-  status: 'open' | 'complete' | 'expired';
-  customer: string | null;
-  customer_email: string | null;
-  customer_details?: { email?: string | null };
-  subscription: string | null;
-  metadata?: Record<string, string>;
-  url: string;
-}
-
-export async function stripeFetch<T>(env: Env, method: 'GET' | 'POST', path: string, body?: Record<string, string>): Promise<T> {
-  // No explicit stripe-version header — uses the account's default API
-  // version (set in Stripe Dashboard → Developers → API). This avoids
-  // version-mismatch errors when Stripe rotates supported versions.
-  const headers: HeadersInit = {
-    'authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-  };
-  let init: RequestInit = { method, headers };
-  if (body) {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(body)) params.append(k, v);
-    init = { method, headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' }, body: params.toString() };
-  }
-  const resp = await fetch(`${STRIPE_API_BASE}${path}`, init);
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`stripe_${resp.status}: ${text.slice(0, 200)}`);
-  }
-  return await resp.json() as T;
-}
 
 /**
  * POST /stripe/checkout
@@ -70,14 +42,12 @@ export async function stripeFetch<T>(env: Env, method: 'GET' | 'POST', path: str
  * Returns: { url: string } — the Stripe-hosted Checkout URL.
  */
 export async function stripeCheckout(req: Request, env: Env): Promise<Response> {
-  let body: StripeCheckoutBody;
-  try {
-    body = await req.json();
-  } catch {
+  const body = await readJsonObject(req) as StripeCheckoutBody | null;
+  if (!body) {
     return jsonError(req, env, 400, 'bad_json');
   }
 
-  if (!body.returnUrl || !isAllowedReturnUrl(body.returnUrl, env)) {
+  if (typeof body.returnUrl !== 'string' || !isAllowedReturnUrl(body.returnUrl, env)) {
     return jsonError(req, env, 400, 'bad_return_url');
   }
 
@@ -98,6 +68,11 @@ export async function stripeCheckout(req: Request, env: Env): Promise<Response> 
     'line_items[0][quantity]': '1',
     success_url: successUrl,
     cancel_url: cancelUrl,
+    // The Stripe-hosted page shows a "Add promotion code" field. This is the
+    // ONLY checkout surface that does (LAUNCH_READINESS blocker 5): the owner
+    // creates the Founding Trainer coupon + a `FOUNDING` promotion code in the
+    // dashboard and it works here with no further code change. Credits and
+    // merch sessions deliberately omit it — see credits.ts.
     allow_promotion_codes: 'true',
     // Session-level metadata is echoed back by GET /checkout/sessions so
     // /verify can pick the right license TTL without re-reading the price.
@@ -106,7 +81,7 @@ export async function stripeCheckout(req: Request, env: Env): Promise<Response> 
     'subscription_data[metadata][source]': 'trainerscodex_premium_pack',
     'subscription_data[metadata][term]': term,
   };
-  if (body.email) {
+  if (typeof body.email === 'string' && body.email) {
     params.customer_email = body.email;
   }
   // Automatic tax disabled by default. To enable: configure your origin
@@ -121,25 +96,33 @@ export async function stripeCheckout(req: Request, env: Env): Promise<Response> 
 /**
  * POST /stripe/verify
  * Body: { sessionId: string }
- * Returns: { license: string } if the session is paid, else 402.
+ * Returns: { license: string } if the session is a paid PREMIUM subscription
+ * session, 402 if unpaid, 422 if it is some other kind of paid session.
  */
 export async function stripeVerify(req: Request, env: Env): Promise<Response> {
-  let body: { sessionId?: string };
-  try {
-    body = await req.json();
-  } catch {
+  const body = await readJsonObject(req);
+  if (!body) {
     return jsonError(req, env, 400, 'bad_json');
   }
-  if (!body.sessionId || !/^cs_(test|live)_[A-Za-z0-9]{20,}$/.test(body.sessionId)) {
+  const sessionId = body.sessionId;
+  if (typeof sessionId !== 'string' || !/^cs_(test|live)_[A-Za-z0-9]{20,}$/.test(sessionId)) {
     return jsonError(req, env, 400, 'bad_session_id');
   }
 
-  const session = await stripeFetch<StripeSession>(env, 'GET', `/checkout/sessions/${body.sessionId}?expand[]=subscription`);
+  const session = await stripeFetch<StripeSession>(env, 'GET', `/checkout/sessions/${sessionId}?expand[]=subscription`);
 
   const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
   const done = session.status === 'complete';
   if (!paid || !done) {
     return jsonError(req, env, 402, 'session_not_paid', { payment_status: session.payment_status, status: session.status });
+  }
+
+  // Only a Premium Pack SUBSCRIPTION session may mint a premium license. A paid
+  // $1.99 credit pack or sticker order is also a paid, complete Checkout
+  // session — without this check either one minted 31 days of premium
+  // (audit finding B-1). Same shape as the credits.ts source check.
+  if (!isPremiumSubscriptionSession(session)) {
+    return jsonError(req, env, 422, 'not_a_premium_session');
   }
 
   const email = session.customer_email || session.customer_details?.email || '';
@@ -162,11 +145,20 @@ export async function stripeVerify(req: Request, env: Env): Promise<Response> {
   return jsonOk(req, env, { license: jwt, email, expiresInDays: annual ? 366 : 31 });
 }
 
+/** The one shape of Checkout Session that is allowed to mint a premium JWT. */
+export function isPremiumSubscriptionSession(session: StripeSession): boolean {
+  return session.metadata?.source === 'trainerscodex_premium_pack'
+    && session.mode === 'subscription'
+    && typeof session.subscription === 'string' && session.subscription.length > 0;
+}
+
 /**
  * POST /stripe/webhook
  * Stripe-signed webhook. We verify the signature, then react to:
- *   - checkout.session.completed: mint license (redundant with /verify; cheap)
- *   - customer.subscription.deleted: nothing today (license naturally expires)
+ *   - checkout.session.completed / .async_payment_succeeded: credit grants,
+ *     subscription→session mapping, merch fulfilment (all keyed on
+ *     metadata.source; all idempotent so redelivery is harmless)
+ *   - customer.subscription.deleted / updated(canceled|unpaid): revoke license
  *   - invoice.payment_failed: log; the user keeps their JWT until exp.
  */
 export async function stripeWebhook(req: Request, env: Env): Promise<Response> {
@@ -178,38 +170,52 @@ export async function stripeWebhook(req: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ error: 'bad_signature' }), { status: 400, headers: { 'content-type': 'application/json' } });
   }
 
-  const event = JSON.parse(raw) as { type: string; data: { object: Record<string, unknown> } };
+  let event: { type?: unknown; data?: { object?: unknown } };
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    return new Response(JSON.stringify({ error: 'bad_json' }), { status: 400, headers: { 'content-type': 'application/json' } });
+  }
+  if (typeof event !== 'object' || event === null || typeof event.type !== 'string') {
+    return new Response(JSON.stringify({ error: 'bad_json' }), { status: 400, headers: { 'content-type': 'application/json' } });
+  }
+  const obj = (typeof event.data?.object === 'object' && event.data.object !== null
+    ? event.data.object : {}) as Record<string, unknown>;
 
   switch (event.type) {
-    case 'checkout.session.completed': {
-      const obj = event.data.object as Record<string, unknown>;
-      const meta = (obj.metadata as Record<string, string> | undefined) || {};
-      console.log(`[stripe] checkout completed sub=${obj.customer} session=${obj.id} email=${obj.customer_email} source=${meta.source}`);
-      // Credit-pack purchases are granted here (the authoritative path — the
-      // browser may never return). grantCredits is idempotent on session id, so
-      // a later /credits/verify from the browser won't double-credit.
-      if (meta.source === 'trainerscodex_credits' && env.AI_QUOTA_KV) {
-        const email = (obj.customer_email as string)
-          || ((obj.customer_details as { email?: string } | undefined)?.email)
-          || '';
-        const credits = parseInt(meta.credits || '0', 10);
-        if (email && credits > 0) {
-          const bal = await grantCredits(env.AI_QUOTA_KV, email, credits, String(obj.id));
-          console.log(`[stripe] granted ${credits} credits to ${email} (balance=${bal})`);
-        }
-      }
-      // Premium /verify mints the JWT when the browser comes back; this webhook
-      // is otherwise telemetry + future server-side license storage.
+    // A session paid with a delayed-notification method (ACH, bank redirects,
+    // BNPL) arrives as `completed` with payment_status 'unpaid' and is only
+    // paid when `async_payment_succeeded` follows. Both events carry the full
+    // session object and route through the same source dispatch; every
+    // branch is idempotent on session id, so the second delivery grants /
+    // fulfils exactly once (audit finding B-9).
+    case 'checkout.session.completed':
+    case 'checkout.session.async_payment_succeeded': {
+      await handleCheckoutSession(env, event.type, obj);
       break;
     }
-    case 'customer.subscription.deleted':
+    case 'customer.subscription.deleted': {
+      // The subscription has actually ended (period end after a cancel, or a
+      // hard cancellation). Kill the license it minted.
+      const revoked = await revokeBySubscription(env.AI_QUOTA_KV, obj.id as string);
+      console.log(`[stripe] subscription deleted customer=${obj.customer} revoked_session=${revoked ?? 'none-mapped'}`);
+      break;
+    }
     case 'customer.subscription.updated': {
-      const obj = event.data.object as Record<string, unknown>;
-      console.log(`[stripe] subscription ${event.type} status=${obj.status} customer=${obj.customer}`);
+      // `cancel_at_period_end` flips are NOT revocations — the period is paid
+      // for. Only a status that means "no longer entitled" revokes early.
+      if (obj.status === 'canceled' || obj.status === 'unpaid') {
+        const revoked = await revokeBySubscription(env.AI_QUOTA_KV, obj.id as string);
+        console.log(`[stripe] subscription ${obj.status} customer=${obj.customer} revoked_session=${revoked ?? 'none-mapped'}`);
+      } else {
+        console.log(`[stripe] subscription updated status=${obj.status} customer=${obj.customer}`);
+      }
       break;
     }
     case 'invoice.payment_failed': {
-      const obj = event.data.object as Record<string, unknown>;
+      // Log only. Stripe's own retry/dunning schedule decides the outcome: if
+      // recovery fails it transitions the subscription to canceled/unpaid and
+      // one of the handlers above performs the actual revocation.
       console.log(`[stripe] payment failed customer=${obj.customer}`);
       break;
     }
@@ -218,6 +224,44 @@ export async function stripeWebhook(req: Request, env: Env): Promise<Response> {
   }
 
   return new Response(JSON.stringify({ received: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+async function handleCheckoutSession(env: Env, eventType: string, obj: Record<string, unknown>): Promise<void> {
+  const meta = (obj.metadata as Record<string, string> | undefined) || {};
+  const paid = obj.payment_status === 'paid' || obj.payment_status === 'no_payment_required';
+  console.log(`[stripe] ${eventType} sub=${obj.customer} session=${obj.id} email=${obj.customer_email} source=${meta.source} paid=${paid}`);
+
+  // Credit-pack purchases are granted here (the authoritative path — the
+  // browser may never return). grantCredits is idempotent on session id, so
+  // a later /credits/verify from the browser won't double-credit. Only a PAID
+  // session grants: an async-payment `completed` arrives unpaid first.
+  if (meta.source === 'trainerscodex_credits' && env.AI_QUOTA_KV && paid) {
+    const email = (obj.customer_email as string)
+      || ((obj.customer_details as { email?: string } | undefined)?.email)
+      || '';
+    const credits = parseInt(meta.credits || '0', 10);
+    if (email && credits > 0) {
+      const bal = await grantCredits(env.AI_QUOTA_KV, email, credits, String(obj.id));
+      console.log(`[stripe] granted ${credits} credits to ${email} (balance=${bal})`);
+    }
+  }
+  // Premium subscriptions: remember which checkout session this
+  // subscription minted, so a later cancellation can revoke the license
+  // that session produced. Without this mapping the JWT (up to 366 days)
+  // outlives the subscription. Best-effort — KV absent means self-host.
+  if (meta.source === 'trainerscodex_premium_pack') {
+    await recordSubscriptionSession(env.AI_QUOTA_KV, obj.subscription as string | null, String(obj.id));
+    if (!env.AI_QUOTA_KV) console.warn('[stripe] AI_QUOTA_KV missing — cancellation revocation disabled');
+  }
+  // Paid merch: the buyer has paid us; place the Printful draft order.
+  // Failures throw → Stripe retries the webhook, which is what we want.
+  // (fulfillMerchOrder itself skips unpaid sessions and honours the
+  // MERCH_CHECKOUT kill switch.)
+  if (meta.source === 'trainerscodex_merch') {
+    await fulfillMerchOrder(env, obj);
+  }
+  // Premium /verify mints the JWT when the browser comes back; this webhook
+  // is otherwise telemetry + server-side entitlement bookkeeping.
 }
 
 /**
@@ -251,18 +295,3 @@ async function verifyStripeSignature(rawBody: string, sigHeader: string, secret:
   return diff === 0;
 }
 
-export function isAllowedReturnUrl(url: string, env: Env): boolean {
-  try {
-    const u = new URL(url);
-    const allowed = env.ALLOWED_ORIGINS.split(',').map(s => s.trim());
-    return allowed.includes(u.origin);
-  } catch {
-    return false;
-  }
-}
-
-export function appendQuery(url: string, params: Record<string, string>): string {
-  const u = new URL(url);
-  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  return u.toString();
-}
