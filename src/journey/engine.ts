@@ -34,6 +34,7 @@ import {
   emptyInventory, ITEM_LEVEL_GRANT, ITEM_PARTY_XP, ITEM_STAT_EFFECT,
   type Inventory, type ItemId,
 } from './items';
+import { MEGA_STONE_BADGE, MEGA_WIN_RATE_BONUS, canMegaEvolve, defaultMegaFor } from './mega';
 import {
   canEvolveNow, chapterXp, levelForNewCatch, levelFromXp, START_LEVEL, xpForLevel,
 } from './levels';
@@ -501,6 +502,9 @@ function resolveChapter(input: ChapterInput): {
   const primary = input.chain[0] ?? null;
   const matchup = primary ? matchupFor(input.roster, primary, partyLevel) : null;
   const matchupDelta = matchup ? matchupWinRateDelta(matchup) : 0;
+  // A Mega-capable member on the party is a flat edge for the rest of the run
+  // (its new types already feed the matchup above). See mega.ts.
+  const megaBonus = input.roster.some(m => m.megaId !== undefined) ? MEGA_WIN_RATE_BONUS : 0;
   // Momentum: +1.2pp win rate per gamble that has landed this run, capped at
   // five. Makes an early risky call run-defining the way an early build choice
   // is in a roguelite — and gives a risky career a compounding edge to set
@@ -508,7 +512,7 @@ function resolveChapter(input: ChapterInput): {
   const momentum = Math.min(MOMENTUM_CAP, input.landedSoFar) * MOMENTUM_PER_LANDED;
 
   const winRate = Math.min(0.95, Math.max(0.05,
-    profile.baseWinRate + mods.winRate + bondBonus - fatiguePenalty + meanShift + spread + matchupDelta + momentum,
+    profile.baseWinRate + mods.winRate + bondBonus - fatiguePenalty + meanShift + spread + matchupDelta + momentum + megaBonus,
   ));
   const wins = Math.round(battles * winRate);
   const losses = battles - wins;
@@ -828,6 +832,7 @@ function resolveChapter(input: ChapterInput): {
     fame: stats.fame,
     ace: aceId !== undefined ? describeMon(aceId, 'ace') : '',
     recruit: recruitedId !== undefined ? describeMon(recruitedId, 'find') : '',
+    mega: (() => { const m = roster.find(x => x.megaId !== undefined); return m ? describeMon(m.megaId!, 'ace') : ''; })(),
     placement: placement ?? 0,
     chapter: index + 1,
     choice: input.choiceOptionId ?? '',
@@ -915,6 +920,7 @@ function computePrepare(
   const hasLinkCord = (inventory['link-cord'] ?? 0) > 0;
 
   for (const m of roster) {
+    if (m.megaId !== undefined) continue; // Mega-capable members are final
     const opts = evolutionsOf(m.id);
     if (opts.length === 0) continue; // fully evolved — never offered
     const targets: EvolveTarget[] = opts.map(o => {
@@ -1083,6 +1089,7 @@ function applyPrepareActions(
       if (!isValidEvolution(action.fromId, action.toId)) continue;
       if (roster.some(m => m.id === action.toId)) continue; // keep the six unique
       const member = roster[i];
+      if (member.megaId !== undefined) continue; // Megas are final
       const edge = evolutionsOf(action.fromId).find(e => e.id === action.toId);
       if (!edge) continue;
       const gate = canEvolveNow({
@@ -1128,9 +1135,10 @@ function applyPrepareActions(
         origin: incoming.origin,
         eventId: incoming.eventId,
         joinedAt: chapterIndex,
-        types: typesOf(incoming.id),
+        types: typesOf(incoming.megaId ?? incoming.id),
         evolved: 0,
         xp: incoming.xp,
+        megaId: incoming.megaId,
       } : m);
       // The benched member keeps its XP — swapping is reversible, not a cull.
       box = [
@@ -1139,6 +1147,7 @@ function applyPrepareActions(
           id: outgoing.id, shiny: outgoing.shiny,
           origin: outgoing.origin, eventId: outgoing.eventId,
           xp: outgoing.xp ?? 0, caughtAt: outgoing.joinedAt,
+          megaId: outgoing.megaId,
         },
       ];
       if (!seen.includes(incoming.id)) seen.push(incoming.id);
@@ -1170,6 +1179,22 @@ function applyPrepareActions(
       const statEffect = ITEM_STAT_EFFECT[item];
       const levelGrant = ITEM_LEVEL_GRANT[item];
       const partyXp = ITEM_PARTY_XP[item];
+      if (item === 'mega-stone') {
+        // The Key Stone: the target (the ace by default) becomes Mega-capable
+        // for the rest of the run. A target with no Mega form, or one already
+        // Mega-capable, is a soft no-op that keeps the stone — same replay
+        // posture as a blocked evolution.
+        const targetId = action.targetId ?? roster[0]?.id;
+        const i = roster.findIndex(m => m.id === targetId);
+        if (i === -1 || !canMegaEvolve(roster[i])) continue;
+        const mega = defaultMegaFor(roster[i].id)!;
+        roster = roster.map((m, idx) => idx === i
+          ? { ...m, megaId: mega.id, types: typesOf(mega.id) }
+          : m);
+        if (!seen.includes(mega.id)) seen.push(mega.id);
+        inventory[item] -= 1;
+        continue;
+      }
       // Stones and cords are consumed by the evolution they enable, not here.
       if (!statEffect && !levelGrant && !partyXp) continue;
 
@@ -1366,6 +1391,8 @@ export function simulate(
   let roster = initialRoster(setup);
   let box: BoxEntry[] = [];
   let inventory = emptyInventory();
+  // One Key Stone per career, handed over at the fourth badge (mega.ts).
+  let keyStoneGranted = false;
   // Dex seeded with the starter — the trainer has, at minimum, met their own.
   const seen: number[] = [setup.starterId];
   const caught: number[] = [setup.starterId];
@@ -1448,6 +1475,7 @@ export function simulate(
     let choiceDelta: StatDelta | null = null;
     let choiceOptionId: string | null = null;
     let choicePayoff: Payoff | null = null;
+    let megaDebutId: number | undefined;
     const landedSoFar = chapters.reduce((n, ch) => n + (ch.landed ? 1 : 0), 0);
 
     if (isDecisionChapter(index, chapterCount, decisionEvery)) {
@@ -1480,6 +1508,7 @@ export function simulate(
       // Apply any recorded prepare-actions BEFORE the decision resolves, so the
       // team the player shaped (evolutions, ace, items) is what faces the
       // chapter — and is what the awaiting-decision snapshot shows.
+      const megaBefore = new Set(roster.map(m => m.megaId).filter((id): id is number => id !== undefined));
       const prepped = applyPrepareActions(
         { roster, box, inventory, stats, seen, caught }, actions, index,
       );
@@ -1495,6 +1524,8 @@ export function simulate(
       inventory = carried.inventory;
       stats = carried.stats;
       mergeDex(carried.seen, carried.caught);
+      // A Key Stone spent at this prepare step is this chapter's Mega debut.
+      megaDebutId = roster.find(m => m.megaId !== undefined && !megaBefore.has(m.megaId))?.megaId;
 
       // Quest board for THIS decision only — the final board is recomputed at
       // the end of the run, so this local never needs to outlive the return.
@@ -1591,6 +1622,22 @@ export function simulate(
       inventory = { ...inventory, [resolved.payoffItem]: (inventory[resolved.payoffItem] ?? 0) + 1 };
     }
     mergeDex(resolved.seenAdded, resolved.caughtAdded);
+
+    // ---- Mega Evolution (v15) ----
+    // The debut is recorded on the chapter whose prepare step spent the stone.
+    if (megaDebutId !== undefined) {
+      resolved.chapter.megaDebutId = megaDebutId;
+      resolved.chapter.beatKeys = [...resolved.chapter.beatKeys, 'journey.beat.mega-debut'];
+    }
+    // The Key Stone itself: once per career, the chapter the fourth badge
+    // lands. No dice — a deterministic milestone, so a seed that never spends
+    // it replays exactly as it did before the mechanic existed (gotcha #41).
+    if (!keyStoneGranted && stats.badges >= MEGA_STONE_BADGE) {
+      keyStoneGranted = true;
+      inventory = { ...inventory, 'mega-stone': (inventory['mega-stone'] ?? 0) + 1 };
+      resolved.chapter.keyStone = true;
+      resolved.chapter.beatKeys = [...resolved.chapter.beatKeys, 'journey.beat.key-stone'];
+    }
 
     for (const b of resolved.battles) {
       battles.push(b);

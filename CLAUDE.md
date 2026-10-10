@@ -7,15 +7,17 @@ rediscover them.
 ## What this project is
 
 **Trainer's Codex** is a Pokémon team builder + analyzer that ships as a single
-self-contained HTML file. Users build a team of 6 Pokémon (from 1307 entries
-including all forms), analyze defensive/offensive coverage, customize movesets +
+self-contained HTML file. Users build a team of 6 Pokémon (from 1333 entries
+including all forms — every Mega through Legends: Z-A / Champions), analyze
+defensive/offensive coverage, customize movesets +
 shinies + Tera types, see live coverage scoring, generate Instagram-ready
 posters in 12 art styles, and order their team as print-on-demand merch
 (T-shirts, hoodies, mugs, posters, mousepads, stickers, totes, phone cases).
 
 The app's identity hooks: single static HTML, works offline, embeds every
-piece of Pokémon data (1307 species + 919 moves + complete learnsets, ~200KB +
-360KB JSON inlined), no accounts required, optional cloud sync via Supabase.
+piece of Pokémon data (1333 species + 919 moves + complete learnsets, ~210KB +
+210KB JSON inlined — learnsets are delta-encoded, see `lib/learnset.ts`), no
+accounts required, optional cloud sync via Supabase.
 
 **Owner:** Jose, CEO of Empire Management Group (Florida CAM firm, 250+
 communities). This is his side project. He's monetizing it via POD merch sales
@@ -97,6 +99,7 @@ src/
     card-video.ts                  ← v11 — 9:16 clip, captureStream + MediaRecorder
     atlas.ts                       ← v12 — seeded region route maps (pure geometry)
     luck.ts                        ← v14 — skill-vs-luck: replay the seed 4 ways, decompose the score
+    mega.ts                        ← v15 — Key Stone at badge 4, ace Mega-evolves (docs/JOURNEY_MODE.md § Mega Evolution)
     risk.test.ts                   ← v14 — 3,000-career sweep pinning "risk is a choice, not a tax"
     ranks.gen.test.ts              ← v14 — regenerates SCORE_PERCENTILES (GEN_RANKS=1), skipped otherwise
     *.test.ts                      ← vitest, colocated
@@ -113,7 +116,10 @@ src/
     flags.ts                       ← v6 — feature flags (defaults → config → ?ff=)
     analysis.ts                    ← defensive matrix, offensive coverage, threats, counter team, sharecode
     auth.ts                        ← v5 — Supabase adapter loaded from CDN only if config present
-    compatibility.ts               ← form-aware game compat (megas excluded from Switch-era, etc.)
+    compatibility.ts               ← form-aware game compat (Megas only in plza + champions — MEGA_GAMES)
+    champions.ts                   ← v15 — Pokémon Champions current Regulation: usable ids + dated window
+    formats.ts                     ← team-building rulesets/presets incl. the Champions allowlist preset
+    learnset.ts                    ← v15 — learnset codec (base-36 deltas) + base-species inheritance
     calc-loader.ts                 ← the ONLY import of @smogon/calc — memoised dynamic import (lazy chunk)
     constants.ts                   ← TYPES, TYPE_COLORS, TYPE_CHART, ART_STYLES (12), GAMES, GENERATIONS
     matchup.ts                     ← computeMatchupWith(calc, …) pure core + async computeMatchup() via the loader
@@ -127,17 +133,21 @@ src/
     types.ts                       ← Pokemon, TeamMember, TrainerProfile, FormCategory, Move, etc.
     utils.ts                       ← shadcn cn() helper
   data/
-    pokemon-data.json              ← 1307 entries (1025 base + 282 forms), ~200KB
-    learnsets.json                 ← 1307 learnsets, ~360KB
+    pokemon-data.json              ← 1333 entries (1025 base + 308 forms, 97 Megas), ~210KB
+    learnsets.json                 ← 1333 learnsets as base-36 delta strings, ~210KB (was 360KB as arrays)
     moves.json                     ← 919 moves, ~92KB
     species.json                   ← ~56KB
+    champions-regulation.json      ← v15 — Champions Reg. M-C usable ids + window (generated, ~2KB)
 inline.mjs                         ← bundle.html generator (regex-based Vite dist inliner)
 docs/
   RESEARCH_2026-09-07.md           ← deep-research report: what moves retention/sharing (cited, with refuted claims)
 scripts/
   make-og-image.mjs                ← renders public/og-journey.jpg via puppeteer (`pnpm og`)
-  gen-seo-pages.ts                 ← v12 — emits ~1,330 static pages + sitemap.xml (`pnpm seo`)
+  gen-seo-pages.ts                 ← v12 — emits ~1,360 static pages + sitemap.xml (`pnpm seo`)
   inject-config.mjs                ← stages /tmp/tc-deploy for the Cloudflare deploy
+  fetch-forms.mjs                  ← v15 — rebuilds pokemon-data.json + learnsets.json from the PokeAPI mirror
+  gen-champions-roster.mjs         ← v15 — scripts/data/champions-usable.json (Serebii rows) → champions-regulation.json
+  data/champions-usable.json       ← v15 — committed Serebii "Newly Useable" + Regular Roster rows (Serebii is not fetchable from CI)
 public/
   _headers                         ← Cloudflare CSP + security headers
   _redirects                       ← 200 rewrite for /journey (preserves ?seed=)
@@ -235,13 +245,15 @@ shipping:**
 
 ```bash
 pnpm test:all      # vitest + puppeteer — what `pnpm ship` runs
-pnpm test:unit     # vitest · 458 tests · engine, battles/badges/shinies/events, level economy,
+pnpm test:unit     # vitest · 521 tests · engine, battles/badges/shinies/events, level economy,
                    #            money/rerolls/carry-forward, ranks, archive, card-video, atlas,
                    #            content health, i18n, deeplink, streak, analytics, prepare,
-                   #            license/auth gating, storage sanitising, SEO contrast, manifest
-pnpm test:browser  # puppeteer · 24 suites / 290 tests (incl. 49 Journey Mode, 17 responsive,
-                   #            24 a11y/axe, 15 premium-gate, 13 SEO pages — the last needs
-                   #            `pnpm build` for dist/). ~12 min on a 2-core box.
+                   #            license/auth gating, storage sanitising, SEO contrast, manifest,
+                   #            v15: learnset codec, dataset health, compatibility sweep,
+                   #            Champions regulation/preset, Journey Mega Evolution
+pnpm test:browser  # puppeteer · 24 suites / 292 tests (incl. 49 Journey Mode, 17 responsive,
+                   #            24 a11y/axe, 15 premium-gate, 15 SEO pages, 8 champions — SEO
+                   #            needs `pnpm build` for dist/). ~12 min on a 2-core box.
 (cd worker && node --test test/*.test.ts)   # 79 worker tests (end-to-end via test/_harness.ts)
 ```
 
@@ -575,18 +587,33 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
 ## Data update workflow
 
 When you need to regenerate `pokemon-data.json` or `learnsets.json` (e.g.
-when Gen 10 ships, or PokeAPI fixes a learnset bug):
+when Winds & Waves / Gen 10 ships, or PokeAPI fixes a learnset bug):
 
 ```bash
-# scripts live in /tmp/ in the current sandbox — for Claude Code, move to scripts/
-node /tmp/fetch-forms.mjs          # sweep IDs 10001-10300 via api-data mirror
-node /tmp/merge-forms.mjs          # classify by name → form category, attach baseSpeciesId
-node /tmp/fetch-form-learnsets.mjs # learnsets for form IDs
+node scripts/fetch-forms.mjs --dry       # full re-sweep, report only (added / removed / changed, bytes)
+node scripts/fetch-forms.mjs             # write src/data/pokemon-data.json + learnsets.json
+node worker/scripts/gen-species-names.mjs
+pnpm test:unit                           # pokemon-data.test.ts pins the exact counts — update them
 ```
+
+The script is idempotent and fetches EVERYTHING (~1,350 small JSONs, cached
+under `node_modules/.cache/pokeapi`), so a stale learnset on an existing species
+is fixed by the same run that adds a new form. It preserves hand-tuned display
+names and form categories of existing entries, excludes totem / in-battle
+states (see `EXCLUDED`), and carries `ABILITY_OVERRIDES` for Megas PokeAPI
+publishes without abilities — only published ones, never a guess. After a run:
+update the `1,333` counts (README, index.html, HelpDialog, the SEO + browser
+tests, `pokemon-data.test.ts`), re-run `scripts/gen-champions-roster.mjs` if
+the Champions rows changed, and check the bundle-size gate.
 
 The api-data mirror URL is
 `https://raw.githubusercontent.com/PokeAPI/api-data/master/data/api/v2/pokemon/{id}/index.json`.
 It's CORS-friendly and rate-limit-free.
+
+Champions legality is a separate pipeline: scrape Serebii's regulation pages
+(the "Newly Useable Pokémon" tables) and Regular Roster into
+`scripts/data/champions-usable.json`, then `node scripts/gen-champions-roster.mjs`.
+`champions.test.ts` pins the resulting id count and the window dates.
 
 ## Premium gating
 

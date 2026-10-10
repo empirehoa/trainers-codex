@@ -21,6 +21,7 @@ Behind two feature flags. `JOURNEY_MODE` ships **on**; `JOURNEY_MERCH_CTA` ships
 - [The level economy](#the-level-economy-and-why-it-is-one-number-in-two-places)
 - [Money, rerolls, and carry-forward](#money-rerolls-and-carry-forward)
 - [Named battles, badges, and the ladders](#named-battles-badges-and-the-ladders)
+- [Mega Evolution](#mega-evolution)
 - [Scoring and calibration](#scoring-and-calibration)
 - [Verdict table](#verdict-table)
 - [Seeds and deep-links](#seeds-and-deep-links)
@@ -485,6 +486,57 @@ catch from a legendary one. Events now declare `grantsShiny` themselves.
 Provenance survives a round trip through the box. The swap path rebuilt the
 roster entry without `origin`/`eventId`, laundering an event Pokémon into an
 ordinary one.
+
+## Mega Evolution
+
+Added in v15 alongside the 26 Legends: Z-A / Champions Megas in the dataset
+(97 Megas total). `src/journey/mega.ts` holds the lookups and the two tuning
+constants; the engine hooks are small and marked `// ---- Mega Evolution (v15)`.
+
+### The beat
+
+| | |
+|---|---|
+| **Key Stone** | Granted **once per career**, on the chapter the trainer's **fourth badge** lands (`MEGA_STONE_BADGE`). Recap line `journey.beat.key-stone`; `ChapterResult.keyStone = true`. Appears in the bag as the `mega-stone` item. |
+| **Spending it** | A normal `item` prepare action targeting the **ace** (`roster[0]`). The ace gains `megaId` (its species' first Mega form in dex order — Charizard → X), its `types` become the Mega's, and it stops appearing in the evolve offers: Megas are final. The chapter carries `megaDebutId` and `journey.beat.mega-debut` with `{mega}` = `describeMon(megaId)`. |
+| **In battle** | The Mega types feed `matchupFor` from then on, and the party carries a flat `MEGA_WIN_RATE_BONUS` (0.04) for the rest of the run — the size of a solid type matchup, not a payoff. Nothing in scoring changes; it flows through wins. |
+| **On screen** | Party rail, prepare panel, result roster, the Legend Card and the 9:16 clip all draw a Mega-capable member as its Mega form (`displayId(entry)` / `entry.megaId ?? entry.id`). |
+| **Box** | `megaId` travels with the member through a swap in both directions, so benching never un-Megas it. |
+
+### Why it is built this way
+
+**The grant has no dice.** `itemGrantFor` is seeded, and adding a seventh item
+to that roll would have shifted which item every existing seed received at
+every decision — the whole Daily archive would have replayed differently. A
+badge-count milestone changes nothing on a seed that does not spend the stone:
+one extra recap line, one more item in the bag, byte-identical chapters
+otherwise. `mega.test.ts` pins that the chapters before the action are
+unchanged and the event sequence is identical with or without it (gotcha #41).
+
+**One stone, ace only.** The games allow one Mega Evolution per battle, and
+the prepare step already has an "ace" action — so the choice the player makes
+is *who* carries the stone, by promoting them first. When the ace has no Mega
+form the item renders as a held resource with the reason in its title
+(`journey.prepare.noMegaForm`), not as a button that silently does nothing.
+
+**First Mega form, not a pick.** A seeded choice between Charizard X and Y
+would cost an rng draw; a player choice needs its own action type and UI. The
+default is documented and deterministic; a `mega-choice` action is the obvious
+follow-up if players ask.
+
+**Not a feature flag.** `simulate()` is pure and takes no flags; the mechanic
+is inert until spent, so there is nothing to switch off. Species flavor still
+goes through `describeMon`, the IP chokepoint.
+
+### Numbers
+
+Measured over 40 seeds that reached the stone (option 0 everywhere, stone spent
+at the first opportunity): mean career wins rose by a small positive amount
+(`mega.test.ts` asserts `> 0`, not a magnitude — the bonus is deliberately
+below the matchup ceiling of 0.22). The rank table did not need regenerating:
+no fixed-strategy sweep spends items.
+
+---
 
 ## Scoring and calibration
 

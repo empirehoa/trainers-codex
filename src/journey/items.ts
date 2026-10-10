@@ -15,13 +15,14 @@ export type ItemId =
   | 'rare-candy'
   | 'evo-stone'
   | 'link-cord'
-  | 'exp-share';
+  | 'exp-share'
+  | 'mega-stone';
 
 export interface ItemSpec {
   id: ItemId;
   nameKey: string;
   descKey: string;
-  icon: 'heart' | 'leaf' | 'candy' | 'gem' | 'link' | 'share';
+  icon: 'heart' | 'leaf' | 'candy' | 'gem' | 'link' | 'share' | 'mega';
   /** True when the player picks WHICH member it applies to. */
   targeted: boolean;
 }
@@ -33,10 +34,13 @@ export const ITEMS: Record<ItemId, ItemSpec> = {
   'evo-stone':   { id: 'evo-stone',   nameKey: 'journey.item.evo-stone.name',   descKey: 'journey.item.evo-stone.desc',   icon: 'gem',   targeted: true },
   'link-cord':   { id: 'link-cord',   nameKey: 'journey.item.link-cord.name',   descKey: 'journey.item.link-cord.desc',   icon: 'link',  targeted: true },
   'exp-share':   { id: 'exp-share',   nameKey: 'journey.item.exp-share.name',   descKey: 'journey.item.exp-share.desc',   icon: 'share', targeted: false },
+  // v15: granted once per career at the fourth badge (engine.ts), never by the
+  // per-decision item roll — see mega.ts for why that keeps replays stable.
+  'mega-stone':  { id: 'mega-stone',  nameKey: 'journey.item.mega-stone.name',  descKey: 'journey.item.mega-stone.desc',  icon: 'mega',  targeted: true },
 };
 
 export const ITEM_IDS: ItemId[] = [
-  'soothe-bell', 'energy-root', 'rare-candy', 'evo-stone', 'link-cord', 'exp-share',
+  'soothe-bell', 'energy-root', 'rare-candy', 'evo-stone', 'link-cord', 'exp-share', 'mega-stone',
 ];
 
 export function isItemId(v: unknown): v is ItemId {
@@ -74,7 +78,7 @@ export type Inventory = Record<ItemId, number>;
 export function emptyInventory(): Inventory {
   return {
     'soothe-bell': 0, 'energy-root': 0, 'rare-candy': 0,
-    'evo-stone': 0, 'link-cord': 0, 'exp-share': 0,
+    'evo-stone': 0, 'link-cord': 0, 'exp-share': 0, 'mega-stone': 0,
   };
 }
 

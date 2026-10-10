@@ -134,7 +134,7 @@ async function loadFigures(run: JourneyRun, size: number): Promise<Figure[]> {
   return Promise.all(run.roster.slice(0, 6).map(async entry => {
     const colour = TYPE_COLORS[entry.types[0] ?? 'normal'] ?? '#888';
     try {
-      const img = await loadImg(spriteUrl(entry.id, entry.shiny ? 'pixel-shiny' : 'pixel-default'));
+      const img = await loadImg(spriteUrl(entry.megaId ?? entry.id, entry.shiny ? 'pixel-shiny' : 'pixel-default'));
       return { img: silhouetteFrom(img, size, colour, colour), colour };
     } catch {
       // A sprite mirror 403 or a hung request must not cost the whole clip —

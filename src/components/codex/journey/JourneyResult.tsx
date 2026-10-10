@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useI18n } from '@/i18n/useI18n';
 import { isEnabled } from '@/lib/flags';
 import { pixelSprite, POKEMON_BY_ID } from '@/lib/pokemon';
+import { displayId } from '@/journey/mega';
 import { rosterCaption } from '@/journey/content';
 import { LEGEND_FINISHES, renderLegendCard, type LegendFinish } from '@/journey/legend-card';
 import { PremiumUnlockCTA } from '@/components/codex/PremiumControl';
@@ -515,7 +516,7 @@ export function JourneyResult({
           {run.roster.map((entry, i) => (
             <div key={`${entry.id}-${i}`} className="rounded border p-1 text-center relative"
                  style={{ borderColor: i === 0 ? 'hsl(var(--primary))' : 'hsl(var(--border))' }}>
-              <img src={pixelSprite(entry.id, entry.shiny)} alt="" width={40} height={40}
+              <img src={pixelSprite(displayId(entry), entry.shiny)} alt="" width={40} height={40}
                    className="pixelated mx-auto" loading="lazy" />
               <div className="font-mono text-[10px] truncate text-muted-foreground">
                 {rosterCaption(entry.id)}{entry.shiny ? ' ★' : ''}
