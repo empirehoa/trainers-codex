@@ -44,7 +44,7 @@ export function HelpDialog({ open, onClose }: HelpDialogProps) {
           <section>
             <SectionHeading icon={<Sparkles size={13} />} title="what's inside" />
             <ul className="mt-2 space-y-1.5 text-xs font-mono">
-              <li className="text-muted-foreground">· <span className="text-foreground">1307 Pokémon &amp; forms</span> — all gens + megas, regionals, gigantamax</li>
+              <li className="text-muted-foreground">· <span className="text-foreground">1333 Pokémon &amp; forms</span> — all gens + every Mega (incl. Legends Z-A & Champions), regionals, gigantamax</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Journey Mode</span> — a seeded career sim with a daily puzzle, streaks and a shareable Legend Card</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Shiny variants</span> with full sprite support</li>
               <li className="text-muted-foreground">· <span className="text-foreground">Custom movesets</span> from full PokeAPI learnsets</li>

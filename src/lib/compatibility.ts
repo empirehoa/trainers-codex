@@ -3,6 +3,13 @@ import { MAINLINE_GAMES, LATEST_GAME_ID, HOME_BLOCKED_IDS } from './constants';
 import type { GameInfo } from './constants';
 import { POKEMON_BY_ID } from './pokemon';
 
+/**
+ * Games in which a Mega or Primal form can be used. Legends: Z-A is a mainline
+ * game, so a Mega team now has a mainline home; Champions is the ranked ladder.
+ * Exported so the UI can say "Mega-only" in one place and tests can sweep it.
+ */
+export const MEGA_GAMES: readonly string[] = ['plza', 'champions'];
+
 export interface CompatibilityResult {
   game: GameInfo;
   playable: boolean;
@@ -15,8 +22,10 @@ export interface CompatibilityResult {
  *
  * For base species: matched against the game's supported gen list.
  * For alternate forms: layered rules apply.
- *   - Mega Evolutions: Gen 6-7 historically, gone in the Switch era, and back in
- *     Pokémon Champions (the only game in this list that holds them).
+ *   - Mega Evolutions: Gen 6-7 historically, gone for the first Switch
+ *     generation, and back in two places — Pokémon Legends: Z-A (where Mega
+ *     Evolution is the headline mechanic and the 2025–26 Megas debuted) and
+ *     Pokémon Champions (which gives them abilities and a ranked ladder).
  *   - Primal forms (Kyogre/Groudon): Gen 6 ORAS, otherwise treated like Megas.
  *   - Gigantamax: only Sword/Shield. Cannot transfer to other games (form is lost).
  *   - Regional forms (Alolan/Galarian/Hisuian/Paldean): require their introduction generation
@@ -30,10 +39,12 @@ export function isPokemonAvailableIn(p: Pokemon, game: GameInfo): boolean {
 
   // Form-specific gating
   if (p.form === 'mega' || p.form === 'primal') {
-    // Megas/Primals vanished in the Switch era — Pokémon Champions is the one
-    // game that brings Mega Evolution back (and introduces the new Champions
-    // Megas). Available there, nowhere else in this list.
-    return game.id === 'champions';
+    // Megas/Primals vanished for the first Switch generation. Mega Evolution
+    // returned in Legends: Z-A (2025, with Mega Dimension adding more) and is
+    // the battle format of Pokémon Champions (2026). Nowhere else in this list.
+    // v5–v14 gated these to Champions alone, which told a Z-A player their
+    // Mega Lucario Z team was "not playable in any mainline game".
+    return MEGA_GAMES.includes(game.id);
   }
   if (p.form === 'gigantamax') {
     // Only Sword/Shield retain Gigantamax forms.
@@ -113,13 +124,14 @@ export function recommendTargetGame(
 
   if (ordered.length > 0) {
     const target = ordered[0];
+    const megas = target.available.filter(p => p.form === 'mega' || p.form === 'primal');
     if (target.game.id === 'champions') {
-      // A team only fully playable in Champions is carrying Megas/Primals.
-      const megas = target.available.filter(p => p.form === 'mega' || p.form === 'primal');
+      // Only reached when no mainline game holds the full team but Champions
+      // does — in practice a Mega alongside something Z-A's dex lacks.
       const instructions = [
-        `All 6 of your Pokémon are battle-legal in ${target.game.label}.`,
+        `All ${target.available.length} of your Pokémon are battle-legal in ${target.game.label}.`,
         megas.length
-          ? `${megas.map(p => p.display).join(', ')}: Mega Evolution returns in Champions — these can't be used in any mainline Switch-era game.`
+          ? `${megas.map(p => p.display).join(', ')}: Mega Evolve in battle from the base species — Champions gives every Mega its ability.`
           : `Champions is HOME-linked: bring each Pokémon in through Pokémon HOME.`,
         `Champions is a competitive battle title, so there's no overworld to catch in — teams are built from your HOME boxes.`,
       ];
@@ -127,22 +139,34 @@ export function recommendTargetGame(
     }
     const isLatest = target.game.id === LATEST_GAME_ID;
     const instructions = [
-      `All 6 of your Pokémon are transferable to ${target.game.label}.`,
+      `All ${target.available.length} of your Pokémon are transferable to ${target.game.label}.`,
       `Path: Deposit each from its origin game into Pokémon HOME, then withdraw to ${target.game.shortLabel}.`,
+    ];
+    if (megas.length) {
+      instructions.push(
+        `${megas.map(p => p.display).join(', ')}: transfer the base species — the Mega form is reached in battle with its Mega Stone.`,
+      );
+    }
+    instructions.push(
       isLatest
         ? `${target.game.shortLabel} is the newest mainline game — no further migration needed.`
         : `If you eventually want to move them to the newest game, transfer them through HOME again.`,
       `Pokémon must exist in the destination game's National Dex to transfer.`,
-    ];
+    );
     return { result: target, instructions };
   }
 
-  // Otherwise pick the one with most coverage, latest-first as tiebreaker
+  // Otherwise pick the one with most coverage; on a tie a mainline game beats
+  // Champions (same reasoning as above — it has no overworld), then latest-first.
   const ranked = [...results].sort((a, b) => {
     if (b.available.length !== a.available.length) return b.available.length - a.available.length;
+    const aChamp = a.game.id === 'champions' ? 1 : 0;
+    const bChamp = b.game.id === 'champions' ? 1 : 0;
+    if (aChamp !== bChamp) return aChamp - bChamp;
     return b.game.releaseYear - a.game.releaseYear;
   });
   const target = ranked[0];
+  const teamSize = target.available.length + target.missing.length;
 
   // Identify form-related blockers
   const megaIssues = target.missing.filter(p => p.form === 'mega' || p.form === 'primal');
@@ -151,10 +175,10 @@ export function recommendTargetGame(
 
   const instructions: string[] = [];
   instructions.push(`No single mainline game holds your full team natively.`);
-  instructions.push(`${target.game.label} holds the most (${target.available.length}/6).`);
+  instructions.push(`${target.game.label} holds the most (${target.available.length}/${teamSize}).`);
 
   if (megaIssues.length) {
-    instructions.push(`${megaIssues.map(p => p.display).join(', ')}: Mega/Primal forms exist in Gen 6-7 games (ORAS, SM, USUM) and return in Pokémon Champions. They cannot be obtained in any Switch-era mainline game.`);
+    instructions.push(`${megaIssues.map(p => p.display).join(', ')}: Mega/Primal forms exist in Gen 6-7 games (ORAS, SM, USUM), Legends: Z-A and Pokémon Champions. They cannot be used in Let's Go, Sword/Shield, BDSP, Legends: Arceus or Scarlet/Violet.`);
   }
   if (gmaxIssues.length) {
     instructions.push(`${gmaxIssues.map(p => p.display).join(', ')}: Gigantamax forms only exist in Sword/Shield. The base species can transfer, but the G-Max factor is lost.`);

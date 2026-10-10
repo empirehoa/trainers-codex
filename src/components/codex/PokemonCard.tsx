@@ -63,7 +63,7 @@ function placeholderSprite(color: string): string {
   return uri;
 }
 
-// memo: the grid holds up to 1,307 of these; without it every keystroke in the
+// memo: the grid holds up to 1,333 of these; without it every keystroke in the
 // search box re-renders the entire mounted set. With stable handlers from App,
 // only cards whose props actually changed re-render.
 export const PokemonCard = memo(function PokemonCard({ p, onSelect, onAdd, onToggleFavorite, favorite, inTeam, teamFull, illegal, illegalReason }: PokemonCardProps) {

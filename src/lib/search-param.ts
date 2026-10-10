@@ -3,7 +3,7 @@
 // Every page under /pokemon/<slug> ends with a link to `/?q=<Display Name>`.
 // Reading it here means a visitor who arrived from a search for "gengar
 // weaknesses" lands in the app with Gengar already filtered, instead of on an
-// empty grid of 1,307 cards with no idea what to do next.
+// empty grid of 1,333 cards with no idea what to do next.
 //
 // Kept separate from journey/deeplink.ts: that module owns the run-sharing
 // params (?seed, ?daily, ?issue) and has its own local-date and origin

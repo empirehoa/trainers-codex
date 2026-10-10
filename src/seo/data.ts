@@ -2,7 +2,7 @@
 //
 // WHY THIS EXISTS
 // ---------------
-// The app ships as one HTML file with 1,307 species, 919 moves and every
+// The app ships as one HTML file with 1,333 species, 919 moves and every
 // learnset inlined. That is superb for the product and catastrophic for
 // discovery: a crawler sees exactly one URL, so none of that data can rank for
 // the questions people actually type ("what is X weak to", "X base stats",
@@ -16,7 +16,7 @@
 // turns it into HTML and `scripts/gen-seo-pages.ts` does the file I/O.
 //
 // Everything here is a pure function of its arguments so it can be swept in
-// vitest rather than checked by eye across 1,307 outputs.
+// vitest rather than checked by eye across 1,333 outputs.
 
 import { TYPES, TYPE_CHART, TYPE_COLORS } from '../lib/constants.ts';
 import type { PokemonType } from '../lib/types.ts';
@@ -55,7 +55,7 @@ export const SITE_ORIGIN = 'https://trainerscodex.com';
  * Deliberately a re-implementation of `lib/analysis.ts`'s `eff` rather than an
  * import: `analysis.ts` pulls in the whole team-analysis module graph, which
  * this build-time script has no business loading. `seo/data.test.ts` asserts
- * the two agree for every attacker against every one of the 1,307 entries, so
+ * the two agree for every attacker against every one of the 1,333 entries, so
  * the copy cannot drift without the suite going red.
  */
 export function multiplier(attacker: PokemonType, defenderTypes: PokemonType[]): number {
@@ -111,7 +111,7 @@ export function offensiveProfile(types: PokemonType[]): OffensiveProfile {
   };
 }
 
-/** `1307` → the entry's own types, narrowed from the JSON's `string[]`. */
+/** `1333` → the entry's own types, narrowed from the JSON's `string[]`. */
 export function typesOf(e: RawEntry): PokemonType[] {
   return e.t as PokemonType[];
 }
@@ -173,7 +173,7 @@ export function countersFor(subject: RawEntry, pool: RawEntry[], limit = 8): Cou
  * Other Pokémon a visitor to this page plausibly wants next.
  *
  * Same primary type, closest base stat total. This is the internal-linking
- * layer: without it 1,307 pages are 1,307 orphans and a crawler has to take
+ * layer: without it 1,333 pages are 1,333 orphans and a crawler has to take
  * every one of them from the sitemap alone.
  */
 export function relatedTo(subject: RawEntry, pool: RawEntry[], limit = 8): RawEntry[] {
@@ -229,7 +229,7 @@ export function typeLine(e: RawEntry): string {
  * The meta description.
  *
  * Built from the entry's own numbers rather than a template with a name
- * substituted in, so no two of the 1,307 read alike — near-duplicate
+ * substituted in, so no two of the 1,333 read alike — near-duplicate
  * descriptions across a large page set are the classic way a bulk-generated
  * site gets filtered out of the index rather than ranked.
  */

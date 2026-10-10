@@ -275,7 +275,10 @@ These are mistakes that cost time in the v4/v5 build. Don't re-make them.
    `pokemon.ts` `getGenForId` + the `genSource` logic.
 
 4. **Form-specific game gating overrides generation gating.**
-   - Megas/Primals: never in any Switch-era game (return false unconditionally)
+   - Megas/Primals: only `plza` and `champions` (`MEGA_GAMES` in
+     `compatibility.ts`). v5–v14 said Champions alone; Legends: Z-A shipped
+     with Mega Evolution as its headline mechanic, so that told Z-A players
+     their Mega team had no mainline home.
    - Gigantamax: only `swsh`
    - Alolan: gen 7+ but not lgpe/bdsp
    - Galarian: gen 8+ but not lgpe/bdsp

@@ -44,6 +44,7 @@ import {
   type Ruleset, UNRESTRICTED, FORMAT_PRESETS, presetById,
   checkLegality, teamLegality, isUnrestricted, isLegal,
 } from '@/lib/formats';
+import { CHAMPIONS_PRESET_ID, regulationNote } from '@/lib/champions';
 import {
   getStoredLicense, bootstrapFromCheckoutReturn, isWorkerConfigured,
   applyOwnerUnlock, hasOwnerUnlock, clearLicense, maybeReverifyLicense,
@@ -551,7 +552,7 @@ export default function App() {
   }, [session, trainer, savedTeams]);
 
   // ---------- Derived list ----------
-  // Deferred search: filtering 1,307 entries is cheap, but the re-render it
+  // Deferred search: filtering 1,333 entries is cheap, but the re-render it
   // triggers isn't. Deferring lets React keep the input responsive and batch
   // the grid update behind it (React 19 concurrent rendering).
   const deferredSearch = useDeferredValue(search);
@@ -588,7 +589,7 @@ export default function App() {
   }, [deferredSearch, filterTypes, filterGens, filterRoles, filterCategory, sortBy, sortDir, favorites]);
 
   // ---------- Windowed grid ----------
-  // Mounting all 1,307 cards at once was the app's single biggest jank source:
+  // Mounting all 1,333 cards at once was the app's single biggest jank source:
   // ~1.3k component trees + sprite <img> nodes on first paint. Render the
   // first window immediately and grow it as the sentinel scrolls into view.
   // visible.length (the "N results" counter) is untouched by this.
@@ -1306,6 +1307,14 @@ export default function App() {
                     </button>
                   );
                 })}
+                {ruleset.id === CHAMPIONS_PRESET_ID && (
+                  // A dated allowlist has to say when it is from, or it keeps
+                  // asserting "Regulation M-C" long after the ladder moved on.
+                  <div data-testid="format-regulation-note"
+                       className="basis-full font-mono text-[10px] text-muted-foreground mt-1">
+                    {regulationNote()}
+                  </div>
+                )}
               </FilterGroup>
               <FilterGroup label="format · custom rules">
                 {([

@@ -11,11 +11,13 @@ import {
   contrastRatio, escapeHtml, jsonLd, pillColors, relativeLuminance, sitemap,
   speciesIndexPage, speciesPage, typeIndexPage, typePage,
 } from './render';
+import { resolveLearnset } from '../lib/learnset';
+import type { LearnsetTable } from '../lib/learnset';
 
 const ALL: RawEntry[] = Object.values(pokemonRaw as unknown as Record<string, RawEntry>)
   .sort((a, b) => a.i - b.i);
 const MOVES = movesRaw as unknown as Record<string, RawMove>;
-const LEARNSETS = learnsetsRaw as unknown as Record<string, number[]>;
+const LEARNSETS = learnsetsRaw as unknown as LearnsetTable;
 const EVOS = evolutionsRaw as unknown as Record<string, RawEvolution[]>;
 
 const BY_ID = new Map(ALL.map(e => [e.i, e]));
@@ -26,7 +28,7 @@ function render(entry: RawEntry): string {
     entry,
     all: ALL,
     sortedBst: SORTED_BST,
-    learnset: LEARNSETS[String(entry.i)],
+    learnset: resolveLearnset(LEARNSETS, entry.i, entry.sp),
     moves: MOVES,
     evolvesTo: EVOS[String(entry.i)],
     evolvesFrom: [],
@@ -62,13 +64,13 @@ describe('jsonLd', () => {
 });
 
 describe('speciesPage — full sweep', () => {
-  // Bulk generation fails silently: one bad branch prints `undefined` on 1,307
+  // Bulk generation fails silently: one bad branch prints `undefined` on 1,333
   // pages and nothing errors. Every page is rendered here and checked for the
   // structural invariants a crawler actually cares about.
   const pages = ALL.map(e => [e, render(e)] as const);
 
   it('renders every one of the entries without a template leak', () => {
-    expect(pages).toHaveLength(1307);
+    expect(pages).toHaveLength(1333);
     for (const [e, html] of pages) {
       expect(html, e.n).not.toMatch(/undefined|NaN|\[object Object\]|\$\{/);
     }
@@ -133,7 +135,7 @@ describe('speciesPage — full sweep', () => {
 
   it('never emits an external request', () => {
     // These pages must render on a cold connection with nothing to fetch, and
-    // hotlinking third-party artwork onto 1,307 indexed pages is a materially
+    // hotlinking third-party artwork onto 1,333 indexed pages is a materially
     // different IP posture than referencing it inside the tool.
     for (const [e, html] of pages) {
       const body = html.slice(html.indexOf('<body>'));
@@ -231,7 +233,7 @@ describe('sitemap', () => {
   });
 
   it('stays under the 50,000-URL limit for a single sitemap file', () => {
-    // 1,307 species + 18 types + 5 hub/legal pages. If the dataset ever grows
+    // 1,333 species + 18 types + 5 hub/legal pages. If the dataset ever grows
     // past 50,000 this has to become a sitemap index.
     expect(ALL.length + TYPES.length + 5).toBeLessThan(50_000);
   });

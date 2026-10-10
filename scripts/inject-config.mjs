@@ -24,7 +24,7 @@
 //   /tmp/tc-deploy/_headers    — copied from public/
 //   /tmp/tc-deploy/robots.txt
 //   /tmp/tc-deploy/sitemap.xml  — generated, lists every reference page
-//   /tmp/tc-deploy/pokemon/**  — 1,307 static species pages
+//   /tmp/tc-deploy/pokemon/**  — 1,333 static species pages
 //   /tmp/tc-deploy/type/**     — 18 static type pages + the 18x18 chart
 //   /tmp/tc-deploy/favicon.svg
 

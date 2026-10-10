@@ -1,0 +1,2494 @@
+{
+ "source": "Serebii — Pokémon Champions Ranked Battle regulation pages (\"Newly Useable Pokémon\") and the Recruit Ranch Regular Roster. Captured via page scrape; Serebii is not fetchable from CI, so the rows are committed here.",
+ "fetched": "2026-10-10",
+ "regulations": [
+  {
+   "id": "m-a",
+   "label": "Regulation M-A",
+   "start": "2026-04-08",
+   "end": "2026-06-17",
+   "url": "https://www.serebii.net/pokemonchampions/rankedbattle/regulationm-a.shtml",
+   "rows": [
+    {
+     "code": "003",
+     "name": "Venusaur"
+    },
+    {
+     "code": "003-m",
+     "name": "Mega Venusaur"
+    },
+    {
+     "code": "006",
+     "name": "Charizard"
+    },
+    {
+     "code": "006-mx",
+     "name": "Mega Charizard X"
+    },
+    {
+     "code": "006-my",
+     "name": "Mega Charizard Y"
+    },
+    {
+     "code": "009",
+     "name": "Blastoise"
+    },
+    {
+     "code": "009-m",
+     "name": "Mega Blastoise"
+    },
+    {
+     "code": "015",
+     "name": "Beedrill"
+    },
+    {
+     "code": "015-m",
+     "name": "Mega Beedrill"
+    },
+    {
+     "code": "018",
+     "name": "Pidgeot"
+    },
+    {
+     "code": "018-m",
+     "name": "Mega Pidgeot"
+    },
+    {
+     "code": "024",
+     "name": "Arbok"
+    },
+    {
+     "code": "025",
+     "name": "Pikachu"
+    },
+    {
+     "code": "026",
+     "name": "Raichu"
+    },
+    {
+     "code": "026-a",
+     "name": "Raichu"
+    },
+    {
+     "code": "036",
+     "name": "Clefable"
+    },
+    {
+     "code": "036-m",
+     "name": "Mega Clefable"
+    },
+    {
+     "code": "038",
+     "name": "Ninetales"
+    },
+    {
+     "code": "038-a",
+     "name": "Ninetales"
+    },
+    {
+     "code": "059",
+     "name": "Arcanine"
+    },
+    {
+     "code": "059-h",
+     "name": "Arcanine"
+    },
+    {
+     "code": "065",
+     "name": "Alakazam"
+    },
+    {
+     "code": "065-m",
+     "name": "Mega Alakazam"
+    },
+    {
+     "code": "068",
+     "name": "Machamp"
+    },
+    {
+     "code": "071",
+     "name": "Victreebel"
+    },
+    {
+     "code": "071-m",
+     "name": "Mega Victreebel"
+    },
+    {
+     "code": "080",
+     "name": "Slowbro"
+    },
+    {
+     "code": "080-m",
+     "name": "Mega Slowbro"
+    },
+    {
+     "code": "080-g",
+     "name": "Slowbro"
+    },
+    {
+     "code": "094",
+     "name": "Gengar"
+    },
+    {
+     "code": "094-m",
+     "name": "Mega Gengar"
+    },
+    {
+     "code": "115",
+     "name": "Kangaskhan"
+    },
+    {
+     "code": "115-m",
+     "name": "Mega Kangaskhan"
+    },
+    {
+     "code": "121",
+     "name": "Starmie"
+    },
+    {
+     "code": "121-m",
+     "name": "Mega Starmie"
+    },
+    {
+     "code": "127",
+     "name": "Pinsir"
+    },
+    {
+     "code": "127-m",
+     "name": "Mega Pinsir"
+    },
+    {
+     "code": "128",
+     "name": "Tauros"
+    },
+    {
+     "code": "128-p",
+     "name": "Tauros"
+    },
+    {
+     "code": "128-b",
+     "name": "Tauros"
+    },
+    {
+     "code": "128-a",
+     "name": "Tauros"
+    },
+    {
+     "code": "130",
+     "name": "Gyarados"
+    },
+    {
+     "code": "130-m",
+     "name": "Mega Gyarados"
+    },
+    {
+     "code": "132",
+     "name": "Ditto"
+    },
+    {
+     "code": "134",
+     "name": "Vaporeon"
+    },
+    {
+     "code": "135",
+     "name": "Jolteon"
+    },
+    {
+     "code": "136",
+     "name": "Flareon"
+    },
+    {
+     "code": "142",
+     "name": "Aerodactyl"
+    },
+    {
+     "code": "142-m",
+     "name": "Mega Aerodactyl"
+    },
+    {
+     "code": "143",
+     "name": "Snorlax"
+    },
+    {
+     "code": "149",
+     "name": "Dragonite"
+    },
+    {
+     "code": "149-m",
+     "name": "Mega Dragonite"
+    },
+    {
+     "code": "154",
+     "name": "Meganium"
+    },
+    {
+     "code": "154-m",
+     "name": "Mega Meganium"
+    },
+    {
+     "code": "157",
+     "name": "Typhlosion"
+    },
+    {
+     "code": "157-h",
+     "name": "Typhlosion"
+    },
+    {
+     "code": "160",
+     "name": "Feraligatr"
+    },
+    {
+     "code": "160-m",
+     "name": "Mega Feraligatr"
+    },
+    {
+     "code": "168",
+     "name": "Ariados"
+    },
+    {
+     "code": "181",
+     "name": "Ampharos"
+    },
+    {
+     "code": "181-m",
+     "name": "Mega Ampharos"
+    },
+    {
+     "code": "184",
+     "name": "Azumarill"
+    },
+    {
+     "code": "186",
+     "name": "Politoed"
+    },
+    {
+     "code": "196",
+     "name": "Espeon"
+    },
+    {
+     "code": "197",
+     "name": "Umbreon"
+    },
+    {
+     "code": "199",
+     "name": "Slowking"
+    },
+    {
+     "code": "199-g",
+     "name": "Slowking"
+    },
+    {
+     "code": "205",
+     "name": "Forretress"
+    },
+    {
+     "code": "208",
+     "name": "Steelix"
+    },
+    {
+     "code": "208-m",
+     "name": "Mega Steelix"
+    },
+    {
+     "code": "212",
+     "name": "Scizor"
+    },
+    {
+     "code": "212-m",
+     "name": "Mega Scizor"
+    },
+    {
+     "code": "214",
+     "name": "Heracross"
+    },
+    {
+     "code": "214-m",
+     "name": "Mega Heracross"
+    },
+    {
+     "code": "227",
+     "name": "Skarmory"
+    },
+    {
+     "code": "227-m",
+     "name": "Mega Skarmory"
+    },
+    {
+     "code": "229",
+     "name": "Houndoom"
+    },
+    {
+     "code": "229-m",
+     "name": "Mega Houndoom"
+    },
+    {
+     "code": "248",
+     "name": "Tyranitar"
+    },
+    {
+     "code": "248-m",
+     "name": "Mega Tyranitar"
+    },
+    {
+     "code": "279",
+     "name": "Pelipper"
+    },
+    {
+     "code": "282",
+     "name": "Gardevoir"
+    },
+    {
+     "code": "282-m",
+     "name": "Mega Gardevoir"
+    },
+    {
+     "code": "302",
+     "name": "Sableye"
+    },
+    {
+     "code": "302-m",
+     "name": "Mega Sableye"
+    },
+    {
+     "code": "306",
+     "name": "Aggron"
+    },
+    {
+     "code": "306-m",
+     "name": "Mega Aggron"
+    },
+    {
+     "code": "308",
+     "name": "Medicham"
+    },
+    {
+     "code": "308-m",
+     "name": "Mega Medicham"
+    },
+    {
+     "code": "310",
+     "name": "Manectric"
+    },
+    {
+     "code": "310-m",
+     "name": "Mega Manectric"
+    },
+    {
+     "code": "319",
+     "name": "Sharpedo"
+    },
+    {
+     "code": "319-m",
+     "name": "Mega Sharpedo"
+    },
+    {
+     "code": "323",
+     "name": "Camerupt"
+    },
+    {
+     "code": "323-m",
+     "name": "Mega Camerupt"
+    },
+    {
+     "code": "324",
+     "name": "Torkoal"
+    },
+    {
+     "code": "334",
+     "name": "Altaria"
+    },
+    {
+     "code": "334-m",
+     "name": "Mega Altaria"
+    },
+    {
+     "code": "350",
+     "name": "Milotic"
+    },
+    {
+     "code": "351",
+     "name": "Castform"
+    },
+    {
+     "code": "354",
+     "name": "Banette"
+    },
+    {
+     "code": "354-m",
+     "name": "Mega Banette"
+    },
+    {
+     "code": "358",
+     "name": "Chimecho"
+    },
+    {
+     "code": "358-m",
+     "name": "Mega Chimecho"
+    },
+    {
+     "code": "359",
+     "name": "Absol"
+    },
+    {
+     "code": "359-m",
+     "name": "Mega Absol"
+    },
+    {
+     "code": "362",
+     "name": "Glalie"
+    },
+    {
+     "code": "362-m",
+     "name": "Mega Glalie"
+    },
+    {
+     "code": "389",
+     "name": "Torterra"
+    },
+    {
+     "code": "392",
+     "name": "Infernape"
+    },
+    {
+     "code": "395",
+     "name": "Empoleon"
+    },
+    {
+     "code": "405",
+     "name": "Luxray"
+    },
+    {
+     "code": "407",
+     "name": "Roserade"
+    },
+    {
+     "code": "409",
+     "name": "Rampardos"
+    },
+    {
+     "code": "411",
+     "name": "Bastiodon"
+    },
+    {
+     "code": "428",
+     "name": "Lopunny"
+    },
+    {
+     "code": "428-m",
+     "name": "Mega Lopunny"
+    },
+    {
+     "code": "442",
+     "name": "Spiritomb"
+    },
+    {
+     "code": "445",
+     "name": "Garchomp"
+    },
+    {
+     "code": "445-m",
+     "name": "Mega Garchomp"
+    },
+    {
+     "code": "448",
+     "name": "Lucario"
+    },
+    {
+     "code": "448-m",
+     "name": "Mega Lucario"
+    },
+    {
+     "code": "450",
+     "name": "Hippowdon"
+    },
+    {
+     "code": "454",
+     "name": "Toxicroak"
+    },
+    {
+     "code": "460",
+     "name": "Abomasnow"
+    },
+    {
+     "code": "460-m",
+     "name": "Mega Abomasnow"
+    },
+    {
+     "code": "461",
+     "name": "Weavile"
+    },
+    {
+     "code": "464",
+     "name": "Rhyperior"
+    },
+    {
+     "code": "470",
+     "name": "Leafeon"
+    },
+    {
+     "code": "471",
+     "name": "Glaceon"
+    },
+    {
+     "code": "472",
+     "name": "Gliscor"
+    },
+    {
+     "code": "473",
+     "name": "Mamoswine"
+    },
+    {
+     "code": "475",
+     "name": "Gallade"
+    },
+    {
+     "code": "475-m",
+     "name": "Mega Gallade"
+    },
+    {
+     "code": "478",
+     "name": "Froslass"
+    },
+    {
+     "code": "478-m",
+     "name": "Mega Froslass"
+    },
+    {
+     "code": "479",
+     "name": "Rotom"
+    },
+    {
+     "code": "497",
+     "name": "Serperior"
+    },
+    {
+     "code": "500",
+     "name": "Emboar"
+    },
+    {
+     "code": "500-m",
+     "name": "Mega Emboar"
+    },
+    {
+     "code": "503",
+     "name": "Samurott"
+    },
+    {
+     "code": "503-h",
+     "name": "Samurott"
+    },
+    {
+     "code": "505",
+     "name": "Watchog"
+    },
+    {
+     "code": "510",
+     "name": "Liepard"
+    },
+    {
+     "code": "512",
+     "name": "Simisage"
+    },
+    {
+     "code": "514",
+     "name": "Simisear"
+    },
+    {
+     "code": "516",
+     "name": "Simipour"
+    },
+    {
+     "code": "530",
+     "name": "Excadrill"
+    },
+    {
+     "code": "530-m",
+     "name": "Mega Excadrill"
+    },
+    {
+     "code": "531",
+     "name": "Audino"
+    },
+    {
+     "code": "531-m",
+     "name": "Mega Audino"
+    },
+    {
+     "code": "534",
+     "name": "Conkeldurr"
+    },
+    {
+     "code": "547",
+     "name": "Whimsicott"
+    },
+    {
+     "code": "553",
+     "name": "Krookodile"
+    },
+    {
+     "code": "563",
+     "name": "Cofagrigus"
+    },
+    {
+     "code": "569",
+     "name": "Garbodor"
+    },
+    {
+     "code": "571",
+     "name": "Zoroark"
+    },
+    {
+     "code": "571-h",
+     "name": "Zoroark"
+    },
+    {
+     "code": "579",
+     "name": "Reuniclus"
+    },
+    {
+     "code": "584",
+     "name": "Vanilluxe"
+    },
+    {
+     "code": "587",
+     "name": "Emolga"
+    },
+    {
+     "code": "609",
+     "name": "Chandelure"
+    },
+    {
+     "code": "609-m",
+     "name": "Mega Chandelure"
+    },
+    {
+     "code": "614",
+     "name": "Beartic"
+    },
+    {
+     "code": "618",
+     "name": "Stunfisk"
+    },
+    {
+     "code": "618-g",
+     "name": "Stunfisk"
+    },
+    {
+     "code": "623",
+     "name": "Golurk"
+    },
+    {
+     "code": "623-m",
+     "name": "Mega Golurk"
+    },
+    {
+     "code": "635",
+     "name": "Hydreigon"
+    },
+    {
+     "code": "637",
+     "name": "Volcarona"
+    },
+    {
+     "code": "652",
+     "name": "Chesnaught"
+    },
+    {
+     "code": "652-m",
+     "name": "Mega Chesnaught"
+    },
+    {
+     "code": "655",
+     "name": "Delphox"
+    },
+    {
+     "code": "655-m",
+     "name": "Mega Delphox"
+    },
+    {
+     "code": "658",
+     "name": "Greninja"
+    },
+    {
+     "code": "658-m",
+     "name": "Mega Greninja"
+    },
+    {
+     "code": "660",
+     "name": "Diggersby"
+    },
+    {
+     "code": "663",
+     "name": "Talonflame"
+    },
+    {
+     "code": "666",
+     "name": "Vivillon"
+    },
+    {
+     "code": "670-m",
+     "name": "Mega Floette"
+    },
+    {
+     "code": "670-e",
+     "name": "Floette"
+    },
+    {
+     "code": "671",
+     "name": "Florges"
+    },
+    {
+     "code": "675",
+     "name": "Pangoro"
+    },
+    {
+     "code": "676",
+     "name": "Furfrou"
+    },
+    {
+     "code": "678",
+     "name": "Meowstic"
+    },
+    {
+     "code": "678-m",
+     "name": "Mega Meowstic"
+    },
+    {
+     "code": "681",
+     "name": "Aegislash"
+    },
+    {
+     "code": "683",
+     "name": "Aromatisse"
+    },
+    {
+     "code": "685",
+     "name": "Slurpuff"
+    },
+    {
+     "code": "693",
+     "name": "Clawitzer"
+    },
+    {
+     "code": "695",
+     "name": "Heliolisk"
+    },
+    {
+     "code": "697",
+     "name": "Tyrantrum"
+    },
+    {
+     "code": "699",
+     "name": "Aurorus"
+    },
+    {
+     "code": "700",
+     "name": "Sylveon"
+    },
+    {
+     "code": "701",
+     "name": "Hawlucha"
+    },
+    {
+     "code": "701-m",
+     "name": "Mega Hawlucha"
+    },
+    {
+     "code": "702",
+     "name": "Dedenne"
+    },
+    {
+     "code": "706",
+     "name": "Goodra"
+    },
+    {
+     "code": "706-h",
+     "name": "Goodra"
+    },
+    {
+     "code": "707",
+     "name": "Klefki"
+    },
+    {
+     "code": "709",
+     "name": "Trevenant"
+    },
+    {
+     "code": "711",
+     "name": "Gourgeist"
+    },
+    {
+     "code": "713",
+     "name": "Avalugg"
+    },
+    {
+     "code": "713-h",
+     "name": "Avalugg"
+    },
+    {
+     "code": "715",
+     "name": "Noivern"
+    },
+    {
+     "code": "724",
+     "name": "Decidueye"
+    },
+    {
+     "code": "724-h",
+     "name": "Decidueye"
+    },
+    {
+     "code": "727",
+     "name": "Incineroar"
+    },
+    {
+     "code": "730",
+     "name": "Primarina"
+    },
+    {
+     "code": "733",
+     "name": "Toucannon"
+    },
+    {
+     "code": "740",
+     "name": "Crabominable"
+    },
+    {
+     "code": "740-m",
+     "name": "Mega Crabominable"
+    },
+    {
+     "code": "745",
+     "name": "Lycanroc"
+    },
+    {
+     "code": "748",
+     "name": "Toxapex"
+    },
+    {
+     "code": "750",
+     "name": "Mudsdale"
+    },
+    {
+     "code": "752",
+     "name": "Araquanid"
+    },
+    {
+     "code": "758",
+     "name": "Salazzle"
+    },
+    {
+     "code": "763",
+     "name": "Tsareena"
+    },
+    {
+     "code": "765",
+     "name": "Oranguru"
+    },
+    {
+     "code": "766",
+     "name": "Passimian"
+    },
+    {
+     "code": "778",
+     "name": "Mimikyu"
+    },
+    {
+     "code": "780",
+     "name": "Drampa"
+    },
+    {
+     "code": "780-m",
+     "name": "Mega Drampa"
+    },
+    {
+     "code": "784",
+     "name": "Kommo-o"
+    },
+    {
+     "code": "823",
+     "name": "Corviknight"
+    },
+    {
+     "code": "841",
+     "name": "Flapple"
+    },
+    {
+     "code": "842",
+     "name": "Appletun"
+    },
+    {
+     "code": "844",
+     "name": "Sandaconda"
+    },
+    {
+     "code": "855",
+     "name": "Polteageist"
+    },
+    {
+     "code": "858",
+     "name": "Hatterene"
+    },
+    {
+     "code": "866",
+     "name": "Mr. Rime"
+    },
+    {
+     "code": "867",
+     "name": "Runerigus"
+    },
+    {
+     "code": "869",
+     "name": "Alcremie"
+    },
+    {
+     "code": "877",
+     "name": "Morpeko"
+    },
+    {
+     "code": "887",
+     "name": "Dragapult"
+    },
+    {
+     "code": "899",
+     "name": "Wyrdeer"
+    },
+    {
+     "code": "900",
+     "name": "Kleavor"
+    },
+    {
+     "code": "902",
+     "name": "Basculegion"
+    },
+    {
+     "code": "903",
+     "name": "Sneasler"
+    },
+    {
+     "code": "908",
+     "name": "Meowscarada"
+    },
+    {
+     "code": "911",
+     "name": "Skeledirge"
+    },
+    {
+     "code": "914",
+     "name": "Quaquaval"
+    },
+    {
+     "code": "925",
+     "name": "Maushold"
+    },
+    {
+     "code": "934",
+     "name": "Garganacl"
+    },
+    {
+     "code": "936",
+     "name": "Armarouge"
+    },
+    {
+     "code": "937",
+     "name": "Ceruledge"
+    },
+    {
+     "code": "939",
+     "name": "Bellibolt"
+    },
+    {
+     "code": "952",
+     "name": "Scovillain"
+    },
+    {
+     "code": "952-m",
+     "name": "Mega Scovillain"
+    },
+    {
+     "code": "956",
+     "name": "Espathra"
+    },
+    {
+     "code": "959",
+     "name": "Tinkaton"
+    },
+    {
+     "code": "964",
+     "name": "Palafin"
+    },
+    {
+     "code": "968",
+     "name": "Orthworm"
+    },
+    {
+     "code": "970",
+     "name": "Glimmora"
+    },
+    {
+     "code": "970-m",
+     "name": "Mega Glimmora"
+    },
+    {
+     "code": "981",
+     "name": "Farigiraf"
+    },
+    {
+     "code": "983",
+     "name": "Kingambit"
+    },
+    {
+     "code": "1013",
+     "name": "Sinistcha"
+    },
+    {
+     "code": "1018",
+     "name": "Archaludon"
+    },
+    {
+     "code": "1019",
+     "name": "Hydrapple"
+    }
+   ]
+  },
+  {
+   "id": "m-b",
+   "label": "Regulation M-B",
+   "start": "2026-06-17",
+   "end": "2026-09-09",
+   "url": "https://www.serebii.net/pokemonchampions/rankedbattle/regulationm-b.shtml",
+   "rows": [
+    {
+     "code": "026-mx",
+     "name": "Mega Raichu X"
+    },
+    {
+     "code": "026-my",
+     "name": "Mega Raichu Y"
+    },
+    {
+     "code": "045",
+     "name": "Vileplume"
+    },
+    {
+     "code": "211",
+     "name": "Qwilfish"
+    },
+    {
+     "code": "254",
+     "name": "Sceptile"
+    },
+    {
+     "code": "254-m",
+     "name": "Mega Sceptile"
+    },
+    {
+     "code": "257",
+     "name": "Blaziken"
+    },
+    {
+     "code": "257-m",
+     "name": "Mega Blaziken"
+    },
+    {
+     "code": "260",
+     "name": "Swampert"
+    },
+    {
+     "code": "260-m",
+     "name": "Mega Swampert"
+    },
+    {
+     "code": "303",
+     "name": "Mawile"
+    },
+    {
+     "code": "303-m",
+     "name": "Mega Mawile"
+    },
+    {
+     "code": "376",
+     "name": "Metagross"
+    },
+    {
+     "code": "376-m",
+     "name": "Mega Metagross"
+    },
+    {
+     "code": "398",
+     "name": "Staraptor"
+    },
+    {
+     "code": "398-m",
+     "name": "Mega Staraptor"
+    },
+    {
+     "code": "518",
+     "name": "Musharna"
+    },
+    {
+     "code": "545",
+     "name": "Scolipede"
+    },
+    {
+     "code": "545-m",
+     "name": "Mega Scolipede"
+    },
+    {
+     "code": "560",
+     "name": "Scrafty"
+    },
+    {
+     "code": "560-m",
+     "name": "Mega Scrafty"
+    },
+    {
+     "code": "604",
+     "name": "Eelektross"
+    },
+    {
+     "code": "604-m",
+     "name": "Mega Eelektross"
+    },
+    {
+     "code": "668",
+     "name": "Pyroar"
+    },
+    {
+     "code": "668-m",
+     "name": "Mega Pyroar"
+    },
+    {
+     "code": "687",
+     "name": "Malamar"
+    },
+    {
+     "code": "687-m",
+     "name": "Mega Malamar"
+    },
+    {
+     "code": "689",
+     "name": "Barbaracle"
+    },
+    {
+     "code": "689-m",
+     "name": "Mega Barbaracle"
+    },
+    {
+     "code": "691",
+     "name": "Dragalge"
+    },
+    {
+     "code": "691-m",
+     "name": "Mega Dragalge"
+    },
+    {
+     "code": "861",
+     "name": "Grimmsnarl"
+    },
+    {
+     "code": "870",
+     "name": "Falinks"
+    },
+    {
+     "code": "870-m",
+     "name": "Mega Falinks"
+    },
+    {
+     "code": "904",
+     "name": "Overqwil"
+    },
+    {
+     "code": "972",
+     "name": "Houndstone"
+    },
+    {
+     "code": "979",
+     "name": "Annihilape"
+    },
+    {
+     "code": "1000",
+     "name": "Gholdengo"
+    }
+   ]
+  },
+  {
+   "id": "m-c",
+   "label": "Regulation M-C",
+   "start": "2026-09-09",
+   "end": "2026-12-02",
+   "url": "https://www.serebii.net/pokemonchampions/rankedbattle/regulationm-c.shtml",
+   "rows": [
+    {
+     "code": "040",
+     "name": "Wigglytuff"
+    },
+    {
+     "code": "053",
+     "name": "Persian"
+    },
+    {
+     "code": "053-a",
+     "name": "Persian"
+    },
+    {
+     "code": "083",
+     "name": "Farfetch'd"
+    },
+    {
+     "code": "122",
+     "name": "Mr. Mime"
+    },
+    {
+     "code": "317",
+     "name": "Swalot"
+    },
+    {
+     "code": "359-mz",
+     "name": "Mega Absol Z"
+    },
+    {
+     "code": "373",
+     "name": "Salamence"
+    },
+    {
+     "code": "373-m",
+     "name": "Mega Salamence"
+    },
+    {
+     "code": "445-mz",
+     "name": "Mega Garchomp Z"
+    },
+    {
+     "code": "448-mz",
+     "name": "Mega Lucario Z"
+    },
+    {
+     "code": "673",
+     "name": "Gogoat"
+    },
+    {
+     "code": "768",
+     "name": "Golisopod"
+    },
+    {
+     "code": "768-m",
+     "name": "Mega Golisopod"
+    },
+    {
+     "code": "812",
+     "name": "Rillaboom"
+    },
+    {
+     "code": "815",
+     "name": "Cinderace"
+    },
+    {
+     "code": "818",
+     "name": "Inteleon"
+    },
+    {
+     "code": "828",
+     "name": "Thievul"
+    },
+    {
+     "code": "849",
+     "name": "Toxtricity"
+    },
+    {
+     "code": "849-l",
+     "name": "Toxtricity"
+    },
+    {
+     "code": "853",
+     "name": "Grapploct"
+    },
+    {
+     "code": "863",
+     "name": "Perrserker"
+    },
+    {
+     "code": "865",
+     "name": "Sirfetch'd"
+    },
+    {
+     "code": "871",
+     "name": "Pincurchin"
+    },
+    {
+     "code": "876",
+     "name": "Indeedee"
+    },
+    {
+     "code": "876-f",
+     "name": "Indeedee"
+    },
+    {
+     "code": "923",
+     "name": "Pawmot"
+    },
+    {
+     "code": "930",
+     "name": "Arboliva"
+    },
+    {
+     "code": "931",
+     "name": "Squawkabilly"
+    },
+    {
+     "code": "943",
+     "name": "Mabosstiff"
+    },
+    {
+     "code": "998",
+     "name": "Baxcalibur"
+    },
+    {
+     "code": "998-m",
+     "name": "Mega Baxcalibur"
+    }
+   ],
+   "seasons": [
+    {
+     "id": "m-6",
+     "start": "2026-09-09",
+     "end": "2026-10-07"
+    },
+    {
+     "id": "m-7",
+     "start": "2026-10-07",
+     "end": "2026-11-05"
+    }
+   ]
+  }
+ ],
+ "roster": {
+  "id": "regular-roster-m-c",
+  "label": "Regular Roster M-C",
+  "start": "2026-09-09",
+  "end": "2026-12-02",
+  "url": "https://www.serebii.net/pokemonchampions/recruit/regularrosterm-c.shtml",
+  "rows": [
+   {
+    "code": "003",
+    "name": "Venusaur"
+   },
+   {
+    "code": "006",
+    "name": "Charizard"
+   },
+   {
+    "code": "009",
+    "name": "Blastoise"
+   },
+   {
+    "code": "015",
+    "name": "Beedrill"
+   },
+   {
+    "code": "018",
+    "name": "Pidgeot"
+   },
+   {
+    "code": "024",
+    "name": "Arbok"
+   },
+   {
+    "code": "025",
+    "name": "Pikachu"
+   },
+   {
+    "code": "026",
+    "name": "Raichu"
+   },
+   {
+    "code": "026-a",
+    "name": "Alolan Raichu"
+   },
+   {
+    "code": "036",
+    "name": "Clefable"
+   },
+   {
+    "code": "038",
+    "name": "Ninetales"
+   },
+   {
+    "code": "038-a",
+    "name": "Alolan Ninetales"
+   },
+   {
+    "code": "040",
+    "name": "Wigglytuff"
+   },
+   {
+    "code": "045",
+    "name": "Vileplume"
+   },
+   {
+    "code": "053",
+    "name": "Persian"
+   },
+   {
+    "code": "053-a",
+    "name": "Alolan Persian"
+   },
+   {
+    "code": "059",
+    "name": "Arcanine"
+   },
+   {
+    "code": "059-h",
+    "name": "Hisuian Arcanine"
+   },
+   {
+    "code": "065",
+    "name": "Alakazam"
+   },
+   {
+    "code": "068",
+    "name": "Machamp"
+   },
+   {
+    "code": "071",
+    "name": "Victreebel"
+   },
+   {
+    "code": "080",
+    "name": "Slowbro"
+   },
+   {
+    "code": "080-g",
+    "name": "Galarian Slowbro"
+   },
+   {
+    "code": "083",
+    "name": "Farfetch'd"
+   },
+   {
+    "code": "094",
+    "name": "Gengar"
+   },
+   {
+    "code": "115",
+    "name": "Kangaskhan"
+   },
+   {
+    "code": "121",
+    "name": "Starmie"
+   },
+   {
+    "code": "122",
+    "name": "Mr. Mime"
+   },
+   {
+    "code": "127",
+    "name": "Pinsir"
+   },
+   {
+    "code": "128",
+    "name": "Tauros"
+   },
+   {
+    "code": "128-p",
+    "name": "Paldean Tauros"
+   },
+   {
+    "code": "128-p",
+    "name": "Paldean Tauros (Blaze Breed)"
+   },
+   {
+    "code": "128-p",
+    "name": "Paldean Tauros (Aqua Breed)"
+   },
+   {
+    "code": "130",
+    "name": "Gyarados"
+   },
+   {
+    "code": "132",
+    "name": "Ditto"
+   },
+   {
+    "code": "134",
+    "name": "Vaporeon"
+   },
+   {
+    "code": "135",
+    "name": "Jolteon"
+   },
+   {
+    "code": "136",
+    "name": "Flareon"
+   },
+   {
+    "code": "142",
+    "name": "Aerodactyl"
+   },
+   {
+    "code": "143",
+    "name": "Snorlax"
+   },
+   {
+    "code": "149",
+    "name": "Dragonite"
+   },
+   {
+    "code": "154",
+    "name": "Meganium"
+   },
+   {
+    "code": "157",
+    "name": "Typhlosion"
+   },
+   {
+    "code": "157-h",
+    "name": "Hisuian Typhlosion"
+   },
+   {
+    "code": "160",
+    "name": "Feraligatr"
+   },
+   {
+    "code": "168",
+    "name": "Ariados"
+   },
+   {
+    "code": "181",
+    "name": "Ampharos"
+   },
+   {
+    "code": "184",
+    "name": "Azumarill"
+   },
+   {
+    "code": "186",
+    "name": "Politoed"
+   },
+   {
+    "code": "196",
+    "name": "Espeon"
+   },
+   {
+    "code": "197",
+    "name": "Umbreon"
+   },
+   {
+    "code": "199",
+    "name": "Slowking"
+   },
+   {
+    "code": "199-g",
+    "name": "Galarian Slowking"
+   },
+   {
+    "code": "205",
+    "name": "Forretress"
+   },
+   {
+    "code": "208",
+    "name": "Steelix"
+   },
+   {
+    "code": "211",
+    "name": "Qwilfish"
+   },
+   {
+    "code": "212",
+    "name": "Scizor"
+   },
+   {
+    "code": "214",
+    "name": "Heracross"
+   },
+   {
+    "code": "227",
+    "name": "Skarmory"
+   },
+   {
+    "code": "229",
+    "name": "Houndoom"
+   },
+   {
+    "code": "248",
+    "name": "Tyranitar"
+   },
+   {
+    "code": "254",
+    "name": "Sceptile"
+   },
+   {
+    "code": "257",
+    "name": "Blaziken"
+   },
+   {
+    "code": "260",
+    "name": "Swampert"
+   },
+   {
+    "code": "279",
+    "name": "Pelipper"
+   },
+   {
+    "code": "282",
+    "name": "Gardevoir"
+   },
+   {
+    "code": "302",
+    "name": "Sableye"
+   },
+   {
+    "code": "303",
+    "name": "Mawile"
+   },
+   {
+    "code": "306",
+    "name": "Aggron"
+   },
+   {
+    "code": "308",
+    "name": "Medicham"
+   },
+   {
+    "code": "310",
+    "name": "Manectric"
+   },
+   {
+    "code": "317",
+    "name": "Swalot"
+   },
+   {
+    "code": "319",
+    "name": "Sharpedo"
+   },
+   {
+    "code": "323",
+    "name": "Camerupt"
+   },
+   {
+    "code": "324",
+    "name": "Torkoal"
+   },
+   {
+    "code": "334",
+    "name": "Altaria"
+   },
+   {
+    "code": "350",
+    "name": "Milotic"
+   },
+   {
+    "code": "351",
+    "name": "Castform"
+   },
+   {
+    "code": "354",
+    "name": "Banette"
+   },
+   {
+    "code": "358",
+    "name": "Chimecho"
+   },
+   {
+    "code": "359",
+    "name": "Absol"
+   },
+   {
+    "code": "362",
+    "name": "Glalie"
+   },
+   {
+    "code": "373",
+    "name": "Salamence"
+   },
+   {
+    "code": "376",
+    "name": "Metagross"
+   },
+   {
+    "code": "389",
+    "name": "Torterra"
+   },
+   {
+    "code": "392",
+    "name": "Infernape"
+   },
+   {
+    "code": "395",
+    "name": "Empoleon"
+   },
+   {
+    "code": "398",
+    "name": "Staraptor"
+   },
+   {
+    "code": "405",
+    "name": "Luxray"
+   },
+   {
+    "code": "407",
+    "name": "Roserade"
+   },
+   {
+    "code": "409",
+    "name": "Rampardos"
+   },
+   {
+    "code": "411",
+    "name": "Bastiodon"
+   },
+   {
+    "code": "428",
+    "name": "Lopunny"
+   },
+   {
+    "code": "442",
+    "name": "Spiritomb"
+   },
+   {
+    "code": "445",
+    "name": "Garchomp"
+   },
+   {
+    "code": "448",
+    "name": "Lucario"
+   },
+   {
+    "code": "450",
+    "name": "Hippowdon"
+   },
+   {
+    "code": "454",
+    "name": "Toxicroak"
+   },
+   {
+    "code": "460",
+    "name": "Abomasnow"
+   },
+   {
+    "code": "461",
+    "name": "Weavile"
+   },
+   {
+    "code": "464",
+    "name": "Rhyperior"
+   },
+   {
+    "code": "470",
+    "name": "Leafeon"
+   },
+   {
+    "code": "471",
+    "name": "Glaceon"
+   },
+   {
+    "code": "472",
+    "name": "Gliscor"
+   },
+   {
+    "code": "473",
+    "name": "Mamoswine"
+   },
+   {
+    "code": "475",
+    "name": "Gallade"
+   },
+   {
+    "code": "478",
+    "name": "Froslass"
+   },
+   {
+    "code": "479",
+    "name": "Rotom"
+   },
+   {
+    "code": "479-h",
+    "name": "Heat Rotom"
+   },
+   {
+    "code": "479-w",
+    "name": "Wash Rotom"
+   },
+   {
+    "code": "479-f",
+    "name": "Frost Rotom"
+   },
+   {
+    "code": "479-s",
+    "name": "Fan Rotom"
+   },
+   {
+    "code": "479-m",
+    "name": "Mow Rotom"
+   },
+   {
+    "code": "497",
+    "name": "Serperior"
+   },
+   {
+    "code": "500",
+    "name": "Emboar"
+   },
+   {
+    "code": "503",
+    "name": "Samurott"
+   },
+   {
+    "code": "503-h",
+    "name": "Hisuian Samurott"
+   },
+   {
+    "code": "505",
+    "name": "Watchog"
+   },
+   {
+    "code": "510",
+    "name": "Liepard"
+   },
+   {
+    "code": "512",
+    "name": "Simisage"
+   },
+   {
+    "code": "514",
+    "name": "Simisear"
+   },
+   {
+    "code": "516",
+    "name": "Simipour"
+   },
+   {
+    "code": "518",
+    "name": "Musharna"
+   },
+   {
+    "code": "530",
+    "name": "Excadrill"
+   },
+   {
+    "code": "531",
+    "name": "Audino"
+   },
+   {
+    "code": "534",
+    "name": "Conkeldurr"
+   },
+   {
+    "code": "545",
+    "name": "Scolipede"
+   },
+   {
+    "code": "547",
+    "name": "Whimsicott"
+   },
+   {
+    "code": "553",
+    "name": "Krookodile"
+   },
+   {
+    "code": "560",
+    "name": "Scrafty"
+   },
+   {
+    "code": "563",
+    "name": "Cofagrigus"
+   },
+   {
+    "code": "569",
+    "name": "Garbodor"
+   },
+   {
+    "code": "571",
+    "name": "Zoroark"
+   },
+   {
+    "code": "571-h",
+    "name": "Hisuian Zoroark"
+   },
+   {
+    "code": "579",
+    "name": "Reuniclus"
+   },
+   {
+    "code": "584",
+    "name": "Vanilluxe"
+   },
+   {
+    "code": "587",
+    "name": "Emolga"
+   },
+   {
+    "code": "604",
+    "name": "Eelektross"
+   },
+   {
+    "code": "609",
+    "name": "Chandelure"
+   },
+   {
+    "code": "614",
+    "name": "Beartic"
+   },
+   {
+    "code": "618",
+    "name": "Stunfisk"
+   },
+   {
+    "code": "618-g",
+    "name": "Galarian Stunfisk"
+   },
+   {
+    "code": "623",
+    "name": "Golurk"
+   },
+   {
+    "code": "635",
+    "name": "Hydreigon"
+   },
+   {
+    "code": "637",
+    "name": "Volcarona"
+   },
+   {
+    "code": "652",
+    "name": "Chesnaught"
+   },
+   {
+    "code": "655",
+    "name": "Delphox"
+   },
+   {
+    "code": "658",
+    "name": "Greninja"
+   },
+   {
+    "code": "660",
+    "name": "Diggersby"
+   },
+   {
+    "code": "663",
+    "name": "Talonflame"
+   },
+   {
+    "code": "666-h",
+    "name": "Vivillon (High Plains Pattern)"
+   },
+   {
+    "code": "668",
+    "name": "Pyroar"
+   },
+   {
+    "code": "671",
+    "name": "Florges"
+   },
+   {
+    "code": "671-b",
+    "name": "Florges (Blue Flower)"
+   },
+   {
+    "code": "671-o",
+    "name": "Florges (Orange Flower)"
+   },
+   {
+    "code": "671-w",
+    "name": "Florges (White Flower)"
+   },
+   {
+    "code": "671-y",
+    "name": "Florges (Yellow Flower)"
+   },
+   {
+    "code": "673",
+    "name": "Gogoat"
+   },
+   {
+    "code": "675",
+    "name": "Pangoro"
+   },
+   {
+    "code": "676",
+    "name": "Furfrou"
+   },
+   {
+    "code": "676-m",
+    "name": "Furfrou (Matron Trim)"
+   },
+   {
+    "code": "676-da",
+    "name": "Furfrou (Dandy Trim)"
+   },
+   {
+    "code": "678",
+    "name": "Meowstic"
+   },
+   {
+    "code": "678-f",
+    "name": "Meowstic (Female)"
+   },
+   {
+    "code": "681",
+    "name": "Aegislash"
+   },
+   {
+    "code": "683",
+    "name": "Aromatisse"
+   },
+   {
+    "code": "685",
+    "name": "Slurpuff"
+   },
+   {
+    "code": "687",
+    "name": "Malamar"
+   },
+   {
+    "code": "689",
+    "name": "Barbaracle"
+   },
+   {
+    "code": "691",
+    "name": "Dragalge"
+   },
+   {
+    "code": "693",
+    "name": "Clawitzer"
+   },
+   {
+    "code": "695",
+    "name": "Heliolisk"
+   },
+   {
+    "code": "697",
+    "name": "Tyrantrum"
+   },
+   {
+    "code": "699",
+    "name": "Aurorus"
+   },
+   {
+    "code": "700",
+    "name": "Sylveon"
+   },
+   {
+    "code": "701",
+    "name": "Hawlucha"
+   },
+   {
+    "code": "702",
+    "name": "Dedenne"
+   },
+   {
+    "code": "706",
+    "name": "Goodra"
+   },
+   {
+    "code": "706-h",
+    "name": "Hisuian Goodra"
+   },
+   {
+    "code": "707",
+    "name": "Klefki"
+   },
+   {
+    "code": "709",
+    "name": "Trevenant"
+   },
+   {
+    "code": "711",
+    "name": "Gourgeist"
+   },
+   {
+    "code": "711-s",
+    "name": "Gourgeist (Small Variety)"
+   },
+   {
+    "code": "711-l",
+    "name": "Gourgeist (Large Variety)"
+   },
+   {
+    "code": "711-l",
+    "name": "Gourgeist (Jumbo Variety)"
+   },
+   {
+    "code": "713",
+    "name": "Avalugg"
+   },
+   {
+    "code": "713-h",
+    "name": "Hisuian Avalugg"
+   },
+   {
+    "code": "715",
+    "name": "Noivern"
+   },
+   {
+    "code": "724",
+    "name": "Decidueye"
+   },
+   {
+    "code": "724-h",
+    "name": "Hisuian Decidueye"
+   },
+   {
+    "code": "727",
+    "name": "Incineroar"
+   },
+   {
+    "code": "730",
+    "name": "Primarina"
+   },
+   {
+    "code": "733",
+    "name": "Toucannon"
+   },
+   {
+    "code": "740",
+    "name": "Crabominable"
+   },
+   {
+    "code": "745",
+    "name": "Lycanroc"
+   },
+   {
+    "code": "745-m",
+    "name": "Lycanroc (Midnight Form)"
+   },
+   {
+    "code": "745-d",
+    "name": "Lycanroc (Dusk Form)"
+   },
+   {
+    "code": "748",
+    "name": "Toxapex"
+   },
+   {
+    "code": "750",
+    "name": "Mudsdale"
+   },
+   {
+    "code": "752",
+    "name": "Araquanid"
+   },
+   {
+    "code": "758",
+    "name": "Salazzle"
+   },
+   {
+    "code": "763",
+    "name": "Tsareena"
+   },
+   {
+    "code": "765",
+    "name": "Oranguru"
+   },
+   {
+    "code": "766",
+    "name": "Passimian"
+   },
+   {
+    "code": "768",
+    "name": "Golisopod"
+   },
+   {
+    "code": "778",
+    "name": "Mimikyu"
+   },
+   {
+    "code": "780",
+    "name": "Drampa"
+   },
+   {
+    "code": "784",
+    "name": "Kommo-o"
+   },
+   {
+    "code": "812",
+    "name": "Rillaboom"
+   },
+   {
+    "code": "815",
+    "name": "Cinderace"
+   },
+   {
+    "code": "818",
+    "name": "Inteleon"
+   },
+   {
+    "code": "823",
+    "name": "Corviknight"
+   },
+   {
+    "code": "828",
+    "name": "Thievul"
+   },
+   {
+    "code": "841",
+    "name": "Flapple"
+   },
+   {
+    "code": "842",
+    "name": "Appletun"
+   },
+   {
+    "code": "844",
+    "name": "Sandaconda"
+   },
+   {
+    "code": "849",
+    "name": "Toxtricity"
+   },
+   {
+    "code": "849-l",
+    "name": "Toxtricity (Low-Key Form)"
+   },
+   {
+    "code": "853",
+    "name": "Grapploct"
+   },
+   {
+    "code": "855",
+    "name": "Polteageist"
+   },
+   {
+    "code": "855-a",
+    "name": "Polteageist (Authentic Form)"
+   },
+   {
+    "code": "858",
+    "name": "Hatterene"
+   },
+   {
+    "code": "861",
+    "name": "Grimmsnarl"
+   },
+   {
+    "code": "863",
+    "name": "Perrserker"
+   },
+   {
+    "code": "865",
+    "name": "Sirfetch'd"
+   },
+   {
+    "code": "866",
+    "name": "Mr. Rime"
+   },
+   {
+    "code": "867",
+    "name": "Runerigus"
+   },
+   {
+    "code": "869",
+    "name": "Alcremie"
+   },
+   {
+    "code": "869-rc",
+    "name": "Alcremie (Ruby Cream)"
+   },
+   {
+    "code": "869-mac",
+    "name": "Alcremie (Matcha Cream)"
+   },
+   {
+    "code": "869-mic",
+    "name": "Alcremie (Mint Cream)"
+   },
+   {
+    "code": "869-lc",
+    "name": "Alcremie (Lemon Cream)"
+   },
+   {
+    "code": "869-sc",
+    "name": "Alcremie (Salted Cream)"
+   },
+   {
+    "code": "869-rs",
+    "name": "Alcremie (Ruby Swirl)"
+   },
+   {
+    "code": "869-cs",
+    "name": "Alcremie (Caramel Swirl)"
+   },
+   {
+    "code": "869-ras",
+    "name": "Alcremie (Rainbow Swirl)"
+   },
+   {
+    "code": "870",
+    "name": "Falinks"
+   },
+   {
+    "code": "871",
+    "name": "Pincurchin"
+   },
+   {
+    "code": "876",
+    "name": "Indeedee"
+   },
+   {
+    "code": "876-f",
+    "name": "Indeedee (Female)"
+   },
+   {
+    "code": "877",
+    "name": "Morpeko"
+   },
+   {
+    "code": "887",
+    "name": "Dragapult"
+   },
+   {
+    "code": "899",
+    "name": "Wyrdeer"
+   },
+   {
+    "code": "900",
+    "name": "Kleavor"
+   },
+   {
+    "code": "902",
+    "name": "Basculegion"
+   },
+   {
+    "code": "902-f",
+    "name": "Basculegion (Female)"
+   },
+   {
+    "code": "903",
+    "name": "Sneasler"
+   },
+   {
+    "code": "904",
+    "name": "Overqwil"
+   },
+   {
+    "code": "908",
+    "name": "Meowscarada"
+   },
+   {
+    "code": "911",
+    "name": "Skeledirge"
+   },
+   {
+    "code": "914",
+    "name": "Quaquaval"
+   },
+   {
+    "code": "923",
+    "name": "Pawmot"
+   },
+   {
+    "code": "925",
+    "name": "Maushold"
+   },
+   {
+    "code": "925-f",
+    "name": "Maushold (Family of Four)"
+   },
+   {
+    "code": "930",
+    "name": "Arboliva"
+   },
+   {
+    "code": "931",
+    "name": "Squawkabilly"
+   },
+   {
+    "code": "931-b",
+    "name": "Squawkabilly (Blue Plumage)"
+   },
+   {
+    "code": "931-y",
+    "name": "Squawkabilly (Yellow Plumage)"
+   },
+   {
+    "code": "931-w",
+    "name": "Squawkabilly (White Plumage)"
+   },
+   {
+    "code": "934",
+    "name": "Garganacl"
+   },
+   {
+    "code": "936",
+    "name": "Armarouge"
+   },
+   {
+    "code": "937",
+    "name": "Ceruledge"
+   },
+   {
+    "code": "939",
+    "name": "Bellibolt"
+   },
+   {
+    "code": "943",
+    "name": "Mabosstiff"
+   },
+   {
+    "code": "952",
+    "name": "Scovillain"
+   },
+   {
+    "code": "956",
+    "name": "Espathra"
+   },
+   {
+    "code": "959",
+    "name": "Tinkaton"
+   },
+   {
+    "code": "964",
+    "name": "Palafin"
+   },
+   {
+    "code": "968",
+    "name": "Orthworm"
+   },
+   {
+    "code": "970",
+    "name": "Glimmora"
+   },
+   {
+    "code": "972",
+    "name": "Houndstone"
+   },
+   {
+    "code": "979",
+    "name": "Annihilape"
+   },
+   {
+    "code": "981",
+    "name": "Farigiraf"
+   },
+   {
+    "code": "983",
+    "name": "Kingambit"
+   },
+   {
+    "code": "998",
+    "name": "Baxcalibur"
+   },
+   {
+    "code": "1000",
+    "name": "Gholdengo"
+   },
+   {
+    "code": "1013",
+    "name": "Sinistcha"
+   },
+   {
+    "code": "1013",
+    "name": "Sinistcha (Masterpiece Form)"
+   },
+   {
+    "code": "1018",
+    "name": "Archaludon"
+   },
+   {
+    "code": "1019",
+    "name": "Hydrapple"
+   }
+  ]
+ }
+}

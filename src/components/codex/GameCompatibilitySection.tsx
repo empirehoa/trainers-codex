@@ -63,7 +63,7 @@ export function GameCompatibilitySection({ team }: GameCompatibilitySectionProps
         onClick={() => setShowAll(v => !v)}
         className="w-full justify-between font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-primary"
       >
-        <span>{showAll ? 'hide' : 'show'} all 6 games</span>
+        <span>{showAll ? 'hide' : 'show'} all {results.length} games</span>
         <ChevronRight size={11} className={showAll ? 'rotate-90 transition' : 'transition'} />
       </Button>
 

@@ -1,4 +1,4 @@
-// V5 features suite — 12 tests covering features new in v5: 1307 entries,
+// V5 features suite — 12 tests covering features new in v5: 1307 entries (1333 since v15),
 // mega/gmax/regional form filters, form badges, live coverage strip,
 // Tera Type picker, all 12 poster styles, form-aware game compatibility.
 
@@ -51,8 +51,8 @@ const tests = [
       const m = text.match(/(\d+)\s+results?/);
       assert(m, 'result count missing');
       const count = parseInt(m[1], 10);
-      // 71 mega + 2 primal expected
-      assert(count >= 50 && count < 100, `expected ~73 mega/primal entries, got ${count}`);
+      // 97 mega + 2 primal expected (71 + 2 before the v15 Legends Z-A / Champions refresh)
+      assert(count >= 80 && count < 130, `expected ~99 mega/primal entries, got ${count}`);
     },
   },
   {
