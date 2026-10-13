@@ -10,7 +10,7 @@
 // Styling is a single inline <style> block (the deploy CSP allows inline
 // styles; see public/_headers) and no external requests of any kind — no
 // fonts, no sprites, no analytics. Sprite art in particular is deliberately
-// absent: hotlinking third-party artwork onto 1,307 indexed pages is a
+// absent: hotlinking third-party artwork onto 1,333 indexed pages is a
 // materially different IP posture than referencing it inside the tool.
 
 import { TYPES } from '../lib/constants.ts';
@@ -529,7 +529,7 @@ ${faqSection(faq)}
   });
 }
 
-/** The species hub — the crawl path from the site root to all 1,307 pages. */
+/** The species hub — the crawl path from the site root to all 1,333 pages. */
 export function speciesIndexPage(groups: { label: string; entries: RawEntry[] }[]): string {
   const total = groups.reduce((n, g) => n + g.entries.length, 0);
   const body = `

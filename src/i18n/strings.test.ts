@@ -6,6 +6,7 @@
 // tests close that gap: every key any content table can emit must exist in the
 // reference locale, and no locale may carry a key the reference doesn't have.
 
+import { ITEM_IDS } from '../journey/items';
 import { describe, expect, it } from 'vitest';
 import {
   DECISION_CARDS, CHAPTER_BEATS, CHAPTER_TITLES, VERDICTS, ARCHETYPES, PACES,
@@ -57,6 +58,12 @@ function contentKeys(): string[] {
       if (opt.payoff?.item) keys.push(`journey.item.${opt.payoff.item}.name`);
     }
   }
+  // Every item's name and description — the prepare panel renders both for
+  // whatever is in the bag, not only payoff items.
+  for (const id of ITEM_IDS) keys.push(`journey.item.${id}.name`, `journey.item.${id}.desc`);
+  // Mega Evolution (v15): beats pushed by the engine outside the CHAPTER_BEATS
+  // pools, and the held-stone explanation.
+  keys.push('journey.beat.key-stone', 'journey.beat.mega-debut', 'journey.prepare.noMegaForm');
   // The area map's chrome.
   for (const k of ['title', 'here', 'legend', 'badges', 'alt']) keys.push(`journey.map.${k}`);
   // Career saves / Hall of Fame rows, including the singular pitch form that

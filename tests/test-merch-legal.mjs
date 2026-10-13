@@ -1,7 +1,7 @@
 // Legal gate: the merch bright lines, exercised against the SHIPPED bundle.
 //
 //  1. Store-listing titles must never carry the Pokémon trademark or a species
-//     name (window.__tc.sanitizeListingTitle closes over the real 1307-name
+//     name (window.__tc.sanitizeListingTitle closes over the real 1333-name
 //     species list — not a mirror).
 //  2. No print design may fetch official artwork ('other/official-artwork') or
 //     the HOME renders ('other/home') — prints are built from derived

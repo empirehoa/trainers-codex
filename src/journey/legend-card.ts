@@ -269,7 +269,8 @@ export async function renderLegendCard(opts: LegendCardOptions): Promise<Blob> {
     const color = TYPE_COLORS[primaryType] ?? '#9fa19f';
     const accent = TYPE_COLORS[entry.types[1] ?? primaryType] ?? color;
     try {
-      const img = await loadImg(spriteUrl(entry.id, entry.shiny ? 'pixel-shiny' : 'pixel-default'));
+      // A Mega-capable member is drawn as its Mega form (v15).
+      const img = await loadImg(spriteUrl(entry.megaId ?? entry.id, entry.shiny ? 'pixel-shiny' : 'pixel-default'));
       return { entry, canvas: silhouetteFrom(img, silSize, color, accent), color };
     } catch {
       // Sprites are decorative here and the mirror rate-limits occasionally

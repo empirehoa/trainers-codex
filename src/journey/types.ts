@@ -107,6 +107,10 @@ export interface ChapterResult {
   /** Set when this chapter added a Pokémon to the roster. */
   recruitedId?: number;
   recruitedShiny?: boolean;
+  /** True on the chapter that handed the trainer their Key Stone (badge 4). */
+  keyStone?: boolean;
+  /** The Mega form that debuted at this chapter's prepare step, if one did. */
+  megaDebutId?: number;
   /**
    * The named fights this chapter resolved, in order.
    *
@@ -431,6 +435,12 @@ export interface RosterEntry {
   xp?: number;
   /** Nickname, if the player set one. */
   nickname?: string;
+  /**
+   * The Mega form this member can take in battle, once the Key Stone has been
+   * spent on it (see mega.ts). `types` is the Mega form's from then on; the
+   * member no longer evolves; the sprite shown is the Mega's.
+   */
+  megaId?: number;
 }
 
 /** A Pokémon sitting in the box — caught, not currently in the party. */
@@ -444,6 +454,8 @@ export interface BoxEntry {
   xp: number;
   /** Chapter it was caught at. */
   caughtAt: number;
+  /** Carried through the box so a swap never un-Megas a member (see mega.ts). */
+  megaId?: number;
 }
 
 export interface Verdict {

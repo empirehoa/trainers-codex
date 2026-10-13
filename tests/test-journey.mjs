@@ -36,7 +36,7 @@ const text = (page) => page.evaluate(() => document.body.innerText);
  * Text inside the Journey dialog only.
  *
  * `document.body.innerText` also contains the app rendered *behind* the modal —
- * including the browse grid, which lists all 1,307 species names. Any assertion
+ * including the browse grid, which lists all 1,333 species names. Any assertion
  * about what Journey Mode does or doesn't say must be scoped to the dialog, or
  * it silently reads the page underneath.
  */

@@ -3,6 +3,7 @@ import movesRaw from '@/data/moves.json';
 import learnsetsRaw from '@/data/learnsets.json';
 import type { Pokemon, Role, Stats, Move, SpriteKind } from './types';
 import { GENERATIONS, STAT_KEYS } from './constants';
+import { resolveLearnset, type LearnsetTable } from './learnset';
 
 interface RawPokemon {
   i: number;
@@ -34,7 +35,7 @@ interface RawMove {
 
 const rawPokemon = pokemonRaw as Record<string, RawPokemon>;
 const rawMoves = movesRaw as Record<string, RawMove>;
-const rawLearnsets = learnsetsRaw as Record<string, number[]>;
+const rawLearnsets = learnsetsRaw as LearnsetTable;
 
 function classifyRoles(stats: Stats): Role[] {
   const roles: Role[] = [];
@@ -111,11 +112,20 @@ MOVES_LIST.sort((a, b) => a.display.localeCompare(b.display));
 // LEARNSETS
 // ============================================================
 
+// Decoded once per id. The table is delta-encoded strings (see ./learnset.ts),
+// and a form with no list of its own — every Gigantamax form, the newest
+// Megas — learns what its base species learns.
+const learnsetCache = new Map<number, Move[]>();
+
 export function getLearnset(pokemonId: number): Move[] {
-  const ids = rawLearnsets[String(pokemonId)] || [];
-  return ids
+  const hit = learnsetCache.get(pokemonId);
+  if (hit) return hit;
+  const ids = resolveLearnset(rawLearnsets, pokemonId, POKEMON_BY_ID[pokemonId]?.baseSpeciesId);
+  const moves = ids
     .map(mid => MOVES_BY_ID[mid])
     .filter((m): m is Move => Boolean(m));
+  learnsetCache.set(pokemonId, moves);
+  return moves;
 }
 
 // Suggest 4 default moves for a Pokémon: high power, STAB-biased, diverse coverage

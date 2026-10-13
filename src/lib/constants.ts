@@ -162,8 +162,8 @@ export const MAINLINE_GAMES: GameInfo[] = [
   { id: 'bdsp',  label: 'Brilliant Diamond / Shining Pearl', shortLabel: 'BDSP',         console: 'Switch', releaseYear: 2021, supportedGens: [1,2,3,4],          notes: 'Sinnoh dex only. Some HOME-transferred mons.' },
   { id: 'pla',   label: 'Pokémon Legends: Arceus',          shortLabel: 'Legends Arceus', console: 'Switch', releaseYear: 2022, supportedGens: [1,2,3,4,5,6,7,8],  notes: 'Hisui dex + HOME. Hisuian forms.' },
   { id: 'sv',    label: 'Scarlet / Violet',                shortLabel: 'Scarlet/Violet', console: 'Switch', releaseYear: 2022, supportedGens: [1,2,3,4,5,6,7,8,9], notes: 'Paldea dex + HOME. Most permissive Switch-era game.' },
-  { id: 'plza',  label: 'Pokémon Legends: Z-A',            shortLabel: 'Legends Z-A',    console: 'Switch 2', releaseYear: 2025, supportedGens: [1,2,3,4,5,6,7,8,9], notes: 'Newest mainline. HOME 4.0 compatible.' },
-  { id: 'champions', label: 'Pokémon Champions',           shortLabel: 'Champions',      console: 'Switch / Switch 2 / Mobile', releaseYear: 2026, supportedGens: [1,2,3,4,5,6,7,8,9], notes: 'Competitive battle title. HOME-linked. The only game where Mega Evolution returns — including the new Champions-exclusive Megas.' },
+  { id: 'plza',  label: 'Pokémon Legends: Z-A',            shortLabel: 'Legends Z-A',    console: 'Switch 2', releaseYear: 2025, supportedGens: [1,2,3,4,5,6,7,8,9], notes: 'Newest mainline. Mega Evolution returns here (Mega Dimension DLC adds more). HOME 4.0 compatible.' },
+  { id: 'champions', label: 'Pokémon Champions',           shortLabel: 'Champions',      console: 'Switch / Switch 2 / Mobile', releaseYear: 2026, supportedGens: [1,2,3,4,5,6,7,8,9], notes: 'Competitive battle title. HOME-linked. Every Mega Evolution, with abilities — including the Legends Z-A Megas. Ranked ladder runs on dated Regulations.' },
 ];
 
 export const LATEST_GAME_ID = 'plza';

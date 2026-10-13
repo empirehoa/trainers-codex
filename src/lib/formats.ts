@@ -15,6 +15,9 @@
 // for its category filter. Everything else reads off real fields.
 
 import type { Pokemon, PokemonType } from './types';
+import {
+  CHAMPIONS_PRESET_ID, CHAMPIONS_REGULATION, formatRegulationWindow, shortRegulationLabel,
+} from './champions';
 
 // ---- Curated classification sets (no data field exists for these) ----
 
@@ -66,6 +69,11 @@ export interface Ruleset {
   bstCap?: number | null;
   monoType?: PokemonType | null;
   allowedGens?: number[] | null;
+  // Allowlist formats (a game's own roster, a dated Regulation): only these
+  // entry ids are legal. Null/undefined = no allowlist. `allowedLabel` names
+  // the list in the per-mon reason ("not usable in Champions Reg. M-C").
+  allowedIds?: readonly number[] | null;
+  allowedLabel?: string;
 }
 
 // The "anything goes" baseline. Spreading this guarantees every toggle has a
@@ -86,6 +94,8 @@ export const UNRESTRICTED: Ruleset = {
   bstCap: null,
   monoType: null,
   allowedGens: null,
+  allowedIds: null,
+  allowedLabel: undefined,
 };
 
 // ---- Presets ----
@@ -142,6 +152,18 @@ export const FORMAT_PRESETS: Ruleset[] = [
     description: 'Only Pokémon with a base-stat total of 350 or less.',
     bstCap: 350,
   },
+  // Pokémon Champions Ranked — a true allowlist, since the game only
+  // implements part of the dex and adds species + Megas per Regulation. The
+  // id list is generated (scripts/gen-champions-roster.mjs); the window is
+  // surfaced next to the chip by App.tsx via regulationNote().
+  {
+    ...UNRESTRICTED,
+    id: CHAMPIONS_PRESET_ID,
+    label: `Champions · ${shortRegulationLabel()}`,
+    description: `Pokémon Champions Ranked Battle, ${CHAMPIONS_REGULATION.label} (${formatRegulationWindow()}): the ${CHAMPIONS_REGULATION.ids.length} species, forms and Megas usable in the game as of ${CHAMPIONS_REGULATION.fetched}. Source: Serebii.`,
+    allowedIds: CHAMPIONS_REGULATION.ids,
+    allowedLabel: `Champions ${shortRegulationLabel()}`,
+  },
 ];
 
 export function presetById(id: string): Ruleset {
@@ -178,8 +200,20 @@ export function checkLegality(p: Pokemon, r: Ruleset): Legality {
   if (r.allowedGens && r.allowedGens.length && p.gen != null && !r.allowedGens.includes(p.gen)) {
     reasons.push(`gen ${p.gen} not allowed`);
   }
+  if (r.allowedIds && !allowedSet(r.allowedIds).has(p.id)) {
+    reasons.push(`not usable in ${r.allowedLabel ?? 'this format'}`);
+  }
 
   return { legal: reasons.length === 0, reasons };
+}
+
+// checkLegality runs per card on every grid render; build each allowlist's
+// Set once and key it on the array identity (presets are module constants).
+const ALLOWED_SETS = new WeakMap<readonly number[], Set<number>>();
+function allowedSet(ids: readonly number[]): Set<number> {
+  let s = ALLOWED_SETS.get(ids);
+  if (!s) { s = new Set(ids); ALLOWED_SETS.set(ids, s); }
+  return s;
 }
 
 export function isLegal(p: Pokemon, r: Ruleset): boolean {
@@ -192,7 +226,7 @@ export function isUnrestricted(r: Ruleset): boolean {
     !r.noMega && !r.noPrimal && !r.noGigantamax && !r.noRegional &&
     !r.noLegendary && !r.noMythical && !r.noParadox && !r.noUltraBeast &&
     !r.noRestricted && r.bstCap == null && r.monoType == null &&
-    (!r.allowedGens || r.allowedGens.length === 0)
+    (!r.allowedGens || r.allowedGens.length === 0) && !r.allowedIds
   );
 }
 

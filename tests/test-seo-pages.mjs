@@ -8,7 +8,7 @@
 //   2. `?q=` must actually seed the builder's search box. That is the entire
 //      conversion path from a search result into the product; if it silently
 //      stops working, 1,300 pages keep ranking and send everyone to an
-//      unfiltered grid of 1,307 cards.
+//      unfiltered grid of 1,333 cards.
 //
 // The pages are read from dist/, so this suite requires `pnpm build` to have
 // run — same precondition the rest of the runner has on bundle.html.
@@ -168,7 +168,7 @@ const tests = [
       await openStatic(page, 'pokemon/index.html');
       const links = await page.evaluate(() =>
         document.querySelectorAll('a[href^="/pokemon/"]').length);
-      assertGte(links, 1307, `hub links ${links} pages, expected all 1307`);
+      assertGte(links, 1333, `hub links ${links} pages, expected all 1333`);
     },
   },
 
@@ -186,7 +186,7 @@ const tests = [
   {
     name: 'no text on a species or type page renders below the 10px floor at 390px',
     async fn(page) {
-      // `.cell .t` shipped at .6rem = 9.6px on every one of the 1,307 species
+      // `.cell .t` shipped at .6rem = 9.6px on every one of the 1,333 species
       // pages — under the floor test-responsive.mjs holds the app to. Same
       // sweep, same viewport, over the two page templates that carry the
       // smallest type.

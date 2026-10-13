@@ -12,11 +12,13 @@ import {
   typesOf,
 } from './data';
 import type { RawEntry, RawMove } from './data';
+import { resolveLearnset } from '../lib/learnset';
+import type { LearnsetTable } from '../lib/learnset';
 
 const ALL: RawEntry[] = Object.values(pokemonRaw as unknown as Record<string, RawEntry>)
   .sort((a, b) => a.i - b.i);
 const MOVES = movesRaw as unknown as Record<string, RawMove>;
-const LEARNSETS = learnsetsRaw as unknown as Record<string, number[]>;
+const LEARNSETS = learnsetsRaw as unknown as LearnsetTable;
 
 const byName = (n: string) => {
   const e = ALL.find(x => x.n === n);
@@ -28,9 +30,9 @@ describe('multiplier', () => {
   // data.ts re-implements `eff` rather than importing the analysis module, to
   // keep the build-time script off the app's dependency graph. This is the
   // guard that makes the copy safe: it sweeps every attacking type against
-  // every one of the 1,307 entries — 23,526 comparisons — so a divergence in
+  // every one of the 1,333 entries — 23,994 comparisons — so a divergence in
   // either direction fails the suite instead of silently shipping a wrong
-  // matchup chart on 1,307 indexed pages.
+  // matchup chart on 1,333 indexed pages.
   it('agrees with lib/analysis.eff for every attacker against every entry', () => {
     let checked = 0;
     for (const e of ALL) {
@@ -187,7 +189,7 @@ describe('familyForms', () => {
 describe('topStabMoves', () => {
   it('returns only damaging same-type moves, strongest first', () => {
     for (const e of ALL.slice(0, 250)) {
-      const moves = topStabMoves(e, LEARNSETS[String(e.i)], MOVES);
+      const moves = topStabMoves(e, resolveLearnset(LEARNSETS, e.i, e.sp), MOVES);
       expect(moves.length).toBeLessThanOrEqual(6);
       let prev = Infinity;
       for (const m of moves) {

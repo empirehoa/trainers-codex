@@ -27,8 +27,8 @@ icon set), so deploying the `public/` folder alongside the bundle is all it take
 
 ### Team building (free)
 
-- **Browse all 1,307 Pokémon entries** — 1,025 base species + 282 form variants
-  (71 Mega, 2 Primal, 19 Alolan, 20 Galarian, 16 Hisuian, 4 Paldean, 34
+- **Browse all 1,333 Pokémon entries** — 1,025 base species + 308 form variants
+  (97 Mega, 2 Primal, 19 Alolan, 20 Galarian, 16 Hisuian, 4 Paldean, 34
   Gigantamax, 4 Therian, 5 Origin, 1 Fusion, 1 Eternamax, 2 Crowned, plus all
   Deoxys/Rotom/Castform/Calyrex/Urshifu/Necrozma variants).
 - **Filter chips**: all · base only · normal · legendary · mythical · mega ·
@@ -176,7 +176,7 @@ gating and a URL-deeplink fallback for Printful).
 | Radix UI + shadcn/ui primitives | ~30 KB |
 | Tailwind CSS (Vite-extracted) | ~10 KB |
 | App code (`src/**/*`) | ~25 KB |
-| Pokémon data (1307 entries, 919 moves, 1307 learnsets, JSON-inlined) | ~120 KB |
+| Pokémon data (1333 entries, 919 moves, 1333 learnsets, JSON-inlined) | ~120 KB |
 | Poster + merch canvas renderers | ~12 KB |
 | Sonner toasts + lucide icons (tree-shaken) | ~8 KB |
 | **Total bundle.html gzipped** | **~311 KB** |
@@ -244,8 +244,8 @@ src/
     types.ts
     utils.ts                       ← shadcn cn() helper
   data/
-    pokemon-data.json              ← 1307 entries
-    learnsets.json                 ← 1307 learnsets
+    pokemon-data.json              ← 1333 entries
+    learnsets.json                 ← 1333 learnsets (delta-encoded, see lib/learnset.ts)
     moves.json                     ← 919 moves
     species.json
 worker/                            ← Cloudflare Worker (Stripe + Printful + JWT + rate limit)

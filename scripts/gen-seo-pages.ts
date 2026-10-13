@@ -4,7 +4,7 @@
 //
 // Reads the same JSON the bundle inlines and writes:
 //
-//   <out>/pokemon/index.html          hub linking all 1,307 entries
+//   <out>/pokemon/index.html          hub linking all 1,333 entries
 //   <out>/pokemon/<slug>/index.html   one page per species and per form
 //   <out>/type/index.html             the 18x18 chart
 //   <out>/type/<type>/index.html      one page per type
@@ -27,6 +27,8 @@ import {
   sitemap, speciesIndexPage, speciesPage, typeIndexPage, typePage,
 } from '../src/seo/render.ts';
 import type { SitemapUrl } from '../src/seo/render.ts';
+import { resolveLearnset } from '../src/lib/learnset.ts';
+import type { LearnsetTable } from '../src/lib/learnset.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -57,7 +59,7 @@ const GEN_ORDER = Object.keys(GEN_LABELS);
 export function main(outDir: string): number {
   const pokemon = readJson<Record<string, RawEntry>>('src/data/pokemon-data.json');
   const moves = readJson<Record<string, RawMove>>('src/data/moves.json');
-  const learnsets = readJson<Record<string, number[]>>('src/data/learnsets.json');
+  const learnsets = readJson<LearnsetTable>('src/data/learnsets.json');
   const evolutions = readJson<Record<string, RawEvolution[]>>('src/data/evolutions.json');
   const species = readJson<Record<string, { g?: string }>>('src/data/species.json');
 
@@ -66,7 +68,7 @@ export function main(outDir: string): number {
   const sortedBst = all.map(e => e.b).sort((a, b) => a - b);
 
   // Invert the evolution map once: every page needs "evolves from", and
-  // scanning 1,307 evolution lists per page would be 1.7M comparisons.
+  // scanning 1,333 evolution lists per page would be 1.7M comparisons.
   const evolvesFrom = new Map<number, RawEntry[]>();
   for (const [fromId, list] of Object.entries(evolutions)) {
     const parent = byId.get(Number(fromId));
@@ -90,14 +92,14 @@ export function main(outDir: string): number {
       entry,
       all,
       sortedBst,
-      learnset: learnsets[String(entry.i)],
+      learnset: resolveLearnset(learnsets, entry.i, entry.sp),
       moves,
       evolvesTo: evolutions[String(entry.i)],
       evolvesFrom: evolvesFrom.get(entry.i) ?? [],
       byId,
     }));
     // Forms are genuine pages but rank behind their base species, and a flat
-    // priority across 1,307 URLs tells a crawler nothing about where to start.
+    // priority across 1,333 URLs tells a crawler nothing about where to start.
     urls.push({
       path: `/pokemon/${entry.n}`,
       priority: entry.sp === undefined ? '0.7' : '0.5',

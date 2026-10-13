@@ -33,7 +33,7 @@ export interface ArchiveEntry {
  *
  * Bounded by `limit` because the list grows by one every day and an unbounded
  * render would eventually mount thousands of rows into a dialog — the same
- * windowing mistake the 1,307-card browse grid already made once.
+ * windowing mistake the 1,333-card browse grid already made once.
  */
 export function listArchive(opts: {
   today?: string;

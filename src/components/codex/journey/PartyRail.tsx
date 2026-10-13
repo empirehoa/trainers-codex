@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Star, BookMarked, Sparkles, Gift } from 'lucide-react';
 import { useI18n } from '@/i18n/useI18n';
 import { pixelSprite } from '@/lib/pokemon';
+import { displayId } from '@/journey/mega';
 import { rosterCaption } from '@/journey/content';
 import { canEvolve } from '@/journey/evolution';
 import { cn } from '@/lib/utils';
@@ -62,7 +63,7 @@ export function PartyRail({ roster, dex, evolvableIds }: Props) {
           >
             {m ? (
               <>
-                <img src={pixelSprite(m.id, m.shiny)} alt={rosterCaption(m.id)} width={40} height={40}
+                <img src={pixelSprite(displayId(m), m.shiny)} alt={rosterCaption(m.id)} width={40} height={40}
                      className="pixelated w-full h-full object-contain p-0.5" loading="lazy" decoding="async" />
                 {i === 0 && (
                   <span className="absolute -top-1 -left-1 bg-primary text-primary-foreground rounded-full p-0.5"

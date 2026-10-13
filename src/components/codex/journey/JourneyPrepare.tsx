@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import {
   Wand2, Star, ChevronDown, ChevronUp, Undo2, Heart, Leaf, Candy, Gem, Link2,
-  Share2, ArrowLeftRight, Lock, Pencil, Dices, Clock,
+  Share2, ArrowLeftRight, Lock, Pencil, Dices, Clock, Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/i18n/useI18n';
 import { pixelSprite } from '@/lib/pokemon';
+import { canMegaEvolve, displayId } from '@/journey/mega';
 import { rosterCaption } from '@/journey/content';
 import { evolutionsOf } from '@/journey/evolution';
 import { xpProgress } from '@/journey/levels';
@@ -34,6 +35,7 @@ const ITEM_ICON: Record<ItemId, typeof Heart> = {
   'evo-stone': Gem,
   'link-cord': Link2,
   'exp-share': Share2,
+  'mega-stone': Zap,
 };
 
 /**
@@ -127,7 +129,7 @@ export function JourneyPrepare({
                    style={{ borderColor: 'hsl(var(--border))', background: 'hsl(var(--muted)/0.2)' }}
                    data-testid={`journey-member-${m.id}`}>
                 <div className="flex items-center gap-2">
-                  <img src={pixelSprite(m.id, m.shiny)} alt={rosterCaption(m.id)} width={30} height={30}
+                  <img src={pixelSprite(displayId(m), m.shiny)} alt={rosterCaption(m.id)} width={30} height={30}
                        className="pixelated shrink-0" loading="lazy" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -329,11 +331,16 @@ export function JourneyPrepare({
                   // Stones and cords are spent by the evolution they unlock,
                   // so they're shown as held resources rather than buttons.
                   const passive = id === 'evo-stone' || id === 'link-cord';
-                  if (passive) {
+                  // The Key Stone targets the ace. When the ace has no Mega
+                  // form (or already has one) the button would be a silent
+                  // no-op, so it is shown held, with the reason in its title.
+                  const megaBlocked = id === 'mega-stone' && !(roster[0] && canMegaEvolve(roster[0]));
+                  if (passive || megaBlocked) {
                     return (
                       <span key={id}
                             className="font-mono text-[10px] px-2 py-1 rounded border border-dashed border-border text-muted-foreground flex items-center gap-1"
-                            title={t(ITEMS[id].descKey)}>
+                            data-testid={megaBlocked ? 'journey-item-mega-stone-held' : undefined}
+                            title={megaBlocked ? t('journey.prepare.noMegaForm') : t(ITEMS[id].descKey)}>
                         <Icon size={10} />{t(ITEMS[id].nameKey)} ×{inventory[id]}
                       </span>
                     );
