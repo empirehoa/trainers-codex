@@ -24,14 +24,15 @@ WORKER_URL=https://trainers-codex-api.jrriestra.workers.dev
 ENV
 
 # every release
-scripts/release.sh --all                      # push → deploy → verify
-scripts/release.sh --all --bundle ~/Downloads/trainers-codex-v1.0-launch.bundle
-                                              # same, but first fast-forward onto a git bundle
+git checkout main && git pull --ff-only
+scripts/release.sh --deploy --verify          # deploy → verify (the usual)
+scripts/release.sh --all --bundle ~/Downloads/trainers-codex.bundle
+                                              # offline hand-off: fast-forward onto a git bundle, push, deploy, verify
 scripts/release.sh --deploy --dry-run         # print the plan, run nothing
 ```
 
 `scripts/release.sh` refuses to deploy unless the tree is clean, the branch is
-`claude/monetization-v1`, `pnpm lint` has 0 errors, `bundle.html` is under the
+`main` (or `$RELEASE_BRANCH`), `pnpm lint` has 0 errors, `bundle.html` is under the
 2,150,400-byte cap and `npx wrangler whoami` succeeds. It deploys the API
 worker first, then the site (`deploy/frontend-wrangler.toml` over
 `/tmp/tc-deploy`, staged by `scripts/inject-config.mjs`), and never prints a
