@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Trainer's Codex — release in one command.
 #
-# Runs on the owner's Mac (zsh or bash) from ~/Projects/tc-monetization. Every
+# Runs on the owner's Mac (zsh or bash) from a checkout of this repo. Every
 # step is printed before it runs; nothing here echoes a secret.
 #
-#   scripts/release.sh --all --bundle ~/Downloads/trainers-codex-v1.0-launch.bundle
+#   git checkout main && git pull --ff-only
+#   scripts/release.sh --deploy --verify          # the usual release
+#   scripts/release.sh --all --bundle ~/Downloads/trainers-codex.bundle   # offline hand-off
 #
 # Steps (each opt-in, --all turns on push + deploy + verify):
-#   --bundle <file>   fetch a git bundle, fast-forward claude/monetization-v1
-#                     onto it and move the dev line to the same commit
+#   --bundle <file>   fetch a git bundle, fast-forward the release branch
+#                     (main) onto it and move the dev line to the same commit
 #   --push            push both branches + tags to origin
 #   --deploy          install → lint → build → inline → size gate → inject
 #                     config → deploy the API worker → deploy the site
@@ -23,7 +25,7 @@
 #
 # Pre-deploy gates, all fatal:
 #   * working tree clean (bundle.html excepted — this script rebuilds it)
-#   * on claude/monetization-v1
+#   * on main (or $RELEASE_BRANCH)
 #   * pnpm lint → 0 errors
 #   * bundle.html ≤ 2,150,400 bytes (same cap as CI)
 #   * wrangler authenticated (npx wrangler whoami)
@@ -36,8 +38,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-RELEASE_BRANCH="claude/monetization-v1"
-DEV_BRANCH="claude/journey-mode-trainer-sim-1r2yvp"
+# The release branch is `main` since v15 (PR #3 folded claude/monetization-v1
+# into it; PR #4 merged v15). Override with RELEASE_BRANCH=… for a hotfix line.
+RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
+DEV_BRANCH="${DEV_BRANCH:-claude/journey-mode-trainer-sim-1r2yvp}"
 BUNDLE_CAP=2150400
 STAGE_DIR="/tmp/tc-deploy"
 
